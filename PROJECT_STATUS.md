@@ -724,11 +724,17 @@ be done in parallel.
      per §4.1 the DAG itself doesn't yet support a "full pseudo" mode to
      distinguish from.
    - [ ] **Cross optimisation** (§4.5) — not implemented.
-   - [ ] **Multiple scrambles**: `getOrCreateSession` is keyed per scramble
-     index and `onActiveScrambleChanged` is wired to the existing
-     scramble-navigation controls, but this has only been exercised with a
-     single scramble so far — not yet verified in the browser with 2+
-     scrambles and switching between them mid-solve.
+   - [x] **Multiple scrambles — verified in-browser (2026-10-03).** Set up
+     two scrambles, searched and committed a step on scramble 1, navigated
+     to scramble 2 (fresh search, empty solution box, independent results
+     — confirmed not merged with scramble 1), then navigated back to
+     scramble 1 (its committed step and prior result set were both
+     correctly preserved). One minor, non-blocking inefficiency noted:
+     `runSearch()` always re-invokes `searchCurrentNode` on navigation,
+     even back to an already-searched node — there's no per-(session,
+     node) results cache, so switching back and forth re-searches every
+     time (fast in practice since the underlying solver's prune tables
+     stay warm, but still redundant work worth caching later).
    - [ ] **Performance**: see §4.8's "finishing the last pair" cold-start
      cost (up to the better part of a minute, observed once over 8 minutes
      without finishing). No progress/latency mitigation beyond a generic
