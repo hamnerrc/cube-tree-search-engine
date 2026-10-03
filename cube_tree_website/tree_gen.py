@@ -65,8 +65,8 @@ def unsolved_pieces(state, category):
 def extract_solved_slots(state):
     return {
         "cross_solved": state["cross_solved"],
-        "corners": sorted(c[0] for c in CORNERS if state["pieces"][c][1]),
-        "edges": sorted(e[0] for e in EDGES if state["pieces"][e][1]),
+        "corners": sorted(state["pieces"][c][0] for c in CORNERS if state["pieces"][c][1]),
+        "edges": sorted(state["pieces"][e][0] for e in EDGES if state["pieces"][e][1]),
     }
 
 

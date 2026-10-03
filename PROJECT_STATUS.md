@@ -22,16 +22,18 @@ pipeline the README describes, and the one place that *does* wire them together
   the mismatch/pseudo-pair rules (`slot_mismatch_count`, `is_valid_pair_state`,
   `is_pure_mismatch_repair`).
 - Correctly produces XCross/XXCross/XXXCross and pseudo-pair nodes via BFS, then
-  prunes unreachable states.
-- **Output bug:** writes `f2l_nodes_and_edges.json`, but the frontend
-  ([script.js:1017](cube_tree_website/script.js:1017)) fetches that exact
-  filename and **the file does not exist anywhere in the repo**. The only
-  committed graph export is [F2L_tree.json](cube_tree_website/F2L_tree.json)
-  (36k lines, dated Jul 26, one commit behind the current `tree_gen.py`), which
-  is read only by the two Node.js test harnesses, never by the browser. **The
-  website's graph fetch 404s today; `solver.html` cannot load the DAG at all.**
-- No test/validation that the abstract DAG actually corresponds to reachable
-  real cube states — it's bookkeeping, not cube simulation.
+  prunes unreachable states. **As of 2026-10-02 this is verified**: 238 nodes,
+  2393 edges, acyclic, monotonic, every node's solved-piece labels are real
+  slot names, and 4 fully-solved terminal states exist with no outgoing edges
+  — see [test_tree_gen.py](cube_tree_website/test_tree_gen.py) and roadmap
+  step 1 below for the two bugs that were found and fixed to get here (a
+  wrong output path, and a label-extraction bug that silently zeroed out the
+  mismatch-validity filtering and made the DAG unable to reach a fully-solved
+  state at all).
+- `f2l_nodes_and_edges.json` (consumed by the frontend) and
+  [F2L_tree.json](cube_tree_website/F2L_tree.json) (consumed by the two
+  Node.js test harnesses) are now redundant copies of the same graph —
+  see the still-open cleanup item in roadmap step 1.
 
 ### 1.2 The WASM solvers
 
@@ -116,7 +118,7 @@ These prove the DAG+solver+scoring concept works, but:
 
 | README step | Status |
 |---|---|
-| 1. Pre-compute DAG of F2L states | Done, but output filename doesn't match what the frontend expects |
+| 1. Pre-compute DAG of F2L states | Done and verified (see §1.1) — frontend fetch and generation bugs fixed 2026-10-02 |
 | 2. Use DAG to guide legal piece combos | Done abstractly (`pruneGraph`); never actually drives a solver call |
 | 3. Run WASM scramble searches (matched + pseudo) | Both solvers work in isolation and via Node CLI harnesses; **zero integration into the website UI** |
 | 4. Score by speed model (SPP) and rank | `algSpeed`/`scoreAlgorithms` work and are proven in the Node harnesses; not connected to `solver.html`'s results table |
@@ -204,11 +206,29 @@ done in parallel.
 1. **Fix the DAG hand-off (blocking everything else) — DONE (2026-10-02)**
    - [x] `tree_gen.py` already wrote the right filename; the bug was that it
      resolved the path against the current working directory instead of its
-     own location. Fixed to resolve against `SCRIPT_DIR`, regenerated
-     `f2l_nodes_and_edges.json` (174 nodes / 449 edges) and
-     `f2l_table_inspector.html`, and verified in-browser that `solver.html`
-     fetches it with 200 OK (was a 404) and `pruneGraph` populates
-     `localStorage` correctly.
+     own location. Fixed to resolve against `SCRIPT_DIR`, and verified
+     in-browser that `solver.html` fetches it with 200 OK (was a 404) and
+     `pruneGraph` populates `localStorage` correctly.
+   - [x] **Follow-up bug found and fixed:** the first regeneration surfaced a
+     second, more serious bug in `extract_solved_slots()` — it read
+     `c[0]`/`e[0]` (the first character of the piece's dict *key*, e.g.
+     `"C_FR"[0]` → `"C"`) instead of `state["pieces"][c][0]` (the piece's
+     actual current slot, e.g. `"FR"`), so every node's `corners`/`edges`
+     labels were the literal strings `"C"`/`"E"` repeated, and — because
+     `slot_mismatch_count()` depends on those labels — the mismatch-validity
+     filtering used during generation was silently disabled. The buggy
+     generator produced 174 nodes/449 edges with **zero fully-solved terminal
+     states** (the DAG could never represent F2L being finished). Fixed to
+     mirror `extract_action_slots()`'s already-correct pattern; corrected
+     output is 238 nodes / 2393 edges / 4 terminal states, which exactly
+     matches the old committed `F2L_tree.json` — confirming this was a
+     regression introduced after that file was generated, not a
+     long-standing design choice. Added
+     [test_tree_gen.py](cube_tree_website/test_tree_gen.py) as a regression
+     test (structural + semantic DAG invariants, including a direct guard on
+     real slot labels) — verified it fails on the buggy code and passes on
+     the fix. Regenerated `f2l_nodes_and_edges.json` and
+     `f2l_table_inspector.html` with the corrected generator.
    - [ ] Still open: decide whether `F2L_tree.json` (root) stays as a second
      copy for the Node scripts or is deleted in favor of one canonical file
      both browser and Node code read.
