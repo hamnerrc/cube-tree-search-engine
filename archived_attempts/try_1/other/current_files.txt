@@ -1,0 +1,32 @@
+CF2L_AI/
+├── data/
+│   ├── csv/
+│   │   ├── full/
+│   │   │   ├── cn_RL.csv          # 12x augmented (6 CN × 2 RL)
+│   │   │   ├── cn.csv             # 6x augmented (CN only)
+│   │   │   ├── original.csv       # 1x base dataset
+│   │   │   └── RL.csv             # 2x augmented (RL only)
+│   │   ├── training/
+│   │   │   ├── cn_RL_train.csv
+│   │   │   ├── cn_train.csv
+│   │   │   ├── original_train.csv
+│   │   │   └── RL_train.csv
+│   │   └── validation/
+│   │       ├── cn_RL_val.csv
+│   │       ├── cn_val.csv
+│   │       ├── original_val.csv
+│   │       └── RL_val.csv
+│   └── npz/
+│       ├── training/
+│       │   ├── cn_RL_train.npz    # Ready for training
+│       │   ├── cn_train.npz
+│       │   ├── original_train.npz
+│       │   └── RL_train.npz
+│       └── validation/
+│           ├── cn_RL_val.npz      # Ready for validation
+│           ├── cn_val.npz
+│           ├── original_val.npz
+│           └── RL_val.npz
+├── other/
+├── utils/
+│   └── mirror_alg.py              # RL mirroring function

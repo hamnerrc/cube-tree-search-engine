@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cube⑂tree solver</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <header class="banner">
+        <a href="index.html" class="back-btn">back</a>
+        <h1>cube⑂tree</h1>
+    </header>
+
+    <div class="container">
+        <div class="scramble-viewer">
+            <div class="viewer-controls">
+                <button onclick="scrambleController.navigate(-1)">-</button>
+                <input type="number" id="current-scramble-num" min="1" value="1"
+                    onchange="scrambleController.jumpTo(this.value)">
+                <button onclick="scrambleController.navigate(1)">+</button>
+            </div>
+            <div id="scramble-display" class="scramble-display">loading scramble..</div>
+        </div>
+
+        <fieldset class="solution-box">
+            <legend>solution</legend>
+            <textarea id="solution-output" placeholder="click on a solution to search further" rows="4" readonly></textarea>
+        </fieldset>
+
+        <div class="table-wrapper">
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>rank</th>
+                        <th>color</th>
+                        <th>type</th>
+                        <th>rotation</th>
+                        <th>edges</th>
+                        <th>corners</th>
+                        <th>alg</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

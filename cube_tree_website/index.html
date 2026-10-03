@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cube⑂tree solver</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <header class="banner">
+        <h1>cube⑂tree</h1>
+    </header>
+
+    <div class="container">
+        <div class="options-grid">
+            <fieldset class="option-group" id="colors-group">
+                <legend>Colors</legend>
+                <label><input type="checkbox" value="white" checked> white</label>
+                <label><input type="checkbox" value="yellow"> yellow</label>
+                <label><input type="checkbox" value="green"> green</label>
+                <label><input type="checkbox" value="blue"> blue</label>
+                <label><input type="checkbox" value="red"> red</label>
+                <label><input type="checkbox" value="orange"> orange</label>
+            </fieldset>
+            
+            <fieldset class="option-group" id="advanced-group">
+                <legend>advanced</legend>
+                <label><input type="checkbox" value="xcross"> xcross</label>
+                <label><input type="checkbox" value="xxcross"> xxcross</label>
+                <label><input type="checkbox" value="xxxcross"> xxxcross</label>
+                <label><input type="checkbox" value="multislotting"> multislotting</label>
+                <label><input type="checkbox" value="full_pseudo"> pseudo F2L</label>
+                <label><input type="checkbox" value="cross_opt"> cross optimization</label>
+            </fieldset>
+        </div>
+
+        <fieldset class="scramble-section">
+            <legend>Scramble</legend>
+            <textarea id="scramble-input" placeholder="one scramble per line" rows="6"></textarea>
+        
+            <div class="scramble-controls">
+                <label>
+                    Generate:
+                    <input type="number" id="scramble-count" value="1" min="1" max="50">
+                </label>
+                <button onclick="populateScrambles()">Generate Scrambles</button>
+                <button onclick="clearScrambleData()">Clear</button>
+            </div>
+        </fieldset>
+
+        <div class="search-section">
+            <button onclick="persistAndNavigate()" class="search-btn">SEARCH</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

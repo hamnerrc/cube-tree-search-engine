@@ -1,0 +1,19 @@
+# System & Editor junk
+.DS_Store
+*.mov
+*.mp4
+
+# Machine Learning Checkpoints & Large Data
+*.pt
+*.pth
+*.onnx
+*.npz
+*.csv
+*.graphml
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Optional: Big JSON data trees if purely generated
+# F2L_tree.json

@@ -1,0 +1,196 @@
+**Detailed Plan: Building a Human-Like CFOP AI that Predicts & Improves Cross + F2L**  
+(aimed at someone with very basic Python knowledge, no prior ML/cube programming experience)
+
+This is a realistic, step-by-step, beginner-friendly roadmap for the entire project as discussed.
+
+Current date: late December 2025  
+Hardware: 2015 MacBook Pro (CPU only, no GPU) + free cloud notebooks (Kaggle/Colab) when needed  
+Goal: First train a model that imitates real pro CFOP Cross + F2L, then improve it with short lookahead + reward to prefer efficient, fingertrick-friendly solutions (multi-slot setups, free pairs, etc.)
+
+### Phase 0 – Preparation (1–3 days)
+
+**0.1 Install basic tools locally**
+
+```bash
+# In terminal (you already have Python 3.12)
+pip install tensorflow==2.16.2 keras numpy matplotlib scikit-learn pycuber kociemba
+```
+
+**0.2 Create project folder structure**
+
+```
+CF2L_AI/
+├── data/                  # all downloaded solves will go here
+├── notebooks/             # Jupyter notebooks
+│   ├── 01_data_prep.ipynb
+│   ├── 02_supervised.ipynb
+│   ├── 03_lookahead.ipynb
+│   └── 04_rl_tuning.ipynb
+├── models/                # saved Keras models
+├── utils/                 # helper functions
+│   ├── cube_utils.py
+│   └── reward.py
+└── README.md
+```
+
+**0.3 Choose your sticker ordering convention** (very important – do it once and never change)
+
+Most common simple order (used in many solvers):
+
+- U face: 0–8 (row-major: 0=top-left, 2=top-right, 6=bottom-left, 8=bottom-right)
+- R face: 9–17
+- F face: 18–26
+- D face: 27–35
+- L face: 36–44
+- B face: 45–53
+
+Center stickers are always fixed:  
+U=0 (white), D=1 (yellow), R=2 (red), L=3 (orange), F=4 (green), B=5 (blue)
+
+### Phase 1 – Data Collection & Preprocessing (3–10 days)
+
+**Goal**: Turn ~10k real solves into ~500k–600k (state, next_move) training examples
+
+1. Download data  
+   → Go to https://reco.nz/reco/3x3/  
+   → Use browser dev tools or simple script to download as many reconstructions as possible  
+   → Alternative: search speedsolving.com forums / GitHub for "cfop reconstructions dataset" or use existing Kaggle cube datasets as backup
+
+2. Filter for CFOP solves only  
+   → Keep only solves with avg ~50–65 stm moves  
+   → Look for common CFOP patterns in alg strings (no M/S/E heavy, no ZBLL/ZZ/etc.)
+
+3. Mirror solves (×2 dataset, remove righty bias)  
+   → Write a simple function that flips R↔L, M↔M', etc.  
+   → Example moves mapping: R→L, R'→L', R2→L2, U→U, etc.
+
+4. Generate (state, next_move) pairs  
+   For each solve:
+   - Start from scrambled cube
+   - For each move in sequence (except last):
+     - Current state → apply move → get next state
+     - Label = move id (0–17)
+   → Result: list of tuples (54-color-list, move_id)
+
+5. Save processed data  
+   → Use numpy .npz or pandas pickle  
+   → ~500k rows is fine for CPU training
+
+### Phase 2 – Supervised Next-Move Prediction (1–4 weeks)
+
+**Model**: Small transformer encoder (or ResNet-18 style CNN if transformer feels too heavy)
+
+**Input**: 54 tokens → each token = color_embedding(color) + position_embedding(position)
+
+**Output**: 18 classes (softmax)
+
+**Steps**
+
+1. Build embedding layers (Keras example)
+
+```python
+from tensorflow import keras
+from keras.layers import Embedding, Add, Dense, LayerNormalization, MultiHeadAttention
+
+d_model = 128
+
+color_emb = Embedding(input_dim=6, output_dim=d_model)
+pos_emb   = Embedding(input_dim=54, output_dim=d_model)
+
+# For one batch of states (shape: batch × 54)
+def make_input(stickers_batch):  # stickers_batch shape (batch, 54)
+    positions = tf.range(54)[None, :]           # 0..53 repeated for batch
+    color_vecs = color_emb(stickers_batch)      # (batch,54,128)
+    pos_vecs   = pos_emb(positions)             # (batch,54,128)
+    return color_vecs + pos_vecs
+```
+
+2. Simple transformer encoder (4–6 layers, 4 heads)
+
+3. Train (cross-entropy loss, Adam optimizer, batch 32–128)
+
+4. Save best model (checkpointing + early stopping)
+
+**Success criteria**  
+→ Validation accuracy > 65–75% on held-out solves  
+→ Visual inspection: predicted moves look "reasonable" on several test scrambles
+
+### Phase 3 – Add Lookahead + Ergonomics (1–4 weeks)
+
+**Goal**: Turn one-step predictor into full Cross+F2L solver with investment thinking
+
+1. Implement basic cube simulator wrapper around pycuber
+
+2. Write simple ergonomics reward (per move sequence)
+
+```python
+def ergonomics_score(moves):
+    score = 0
+    score -= len(moves) * 1.5                # basic move penalty
+    score -= count_slices(moves) * 5         # M/S/E bad
+    score -= count_y_rotations(moves) * 8    # y bad
+    score -= count_bad_regrips(moves) * 4    # approximate
+    score += count_fingertrick_nice(moves) * 3  # R U R', etc.
+    return score
+```
+
+3. Add shaped intermediate rewards
+
+```python
+def intermediate_bonus(state, previous_state):
+    bonus = 0
+    if new_pair_completed(state, previous_state):
+        bonus += 12
+    if pair_is_free(state):
+        bonus += 20
+    if f2l_slot_filled(state):
+        bonus += 10
+    return bonus
+```
+
+4. Implement shallow beam search (depth 4–6, beam 8–16)
+
+5. Solve full Cross+F2L with beam search + cumulative reward
+
+### Phase 4 – RL Fine-Tuning (optional, 2–8 weeks)
+
+**If supervised + beam already good enough → skip**
+
+**Otherwise**: Use PPO or simple REINFORCE
+
+1. Generate many full episodes with current policy + beam
+2. Compute total reward = sum(intermediate) + final_bonus
+3. Update policy to maximize expected reward
+4. Gradually reduce intermediate bonuses, increase focus on final efficiency
+
+### Final Deliverables (what success looks like)
+
+- Model that on most scrambles:
+  - Solves Cross + F2L in 25–38 moves
+  - Prefers fingertrick-friendly sequences
+  - Occasionally finds multi-slot / free pair setups
+- Visual comparison: show side-by-side human solve vs your AI solve on same scramble
+- Backup everything: model weights, configs, data processing scripts, reward functions
+
+### Time & Effort Estimate (realistic)
+
+- Phase 1 (data)        1–2 weeks
+- Phase 2 (supervised)  2–4 weeks
+- Phase 3 (lookahead)   1–3 weeks
+- Phase 4 (RL)          3–8 weeks (optional)
+
+Total: **1.5–4 months** of part-time work (evenings/weekends)
+
+### Final Advice
+
+Start small → celebrate every milestone  
+- First 100 pairs working  
+- First model with >40% accuracy  
+- First full Cross+F2L solve (even if 50 moves)  
+- First time it chooses a sledgehammer because of future free pair
+
+Document everything (notebook + screenshots + short videos)  
+→ You'll have an amazing progress story later.
+
+Good luck — this is one of the coolest beginner-to-intermediate ML projects you can do.  
+When you hit the first roadblock, just ask — we can debug together step by step. 🧊🤖
