@@ -252,7 +252,7 @@ DAG+solver+scoring wiring *can* work, but:
 | Abstract F2L DAG (unsolved → full Cross+F2L) | **Done, verified.** 238 nodes / 2393 edges, see §1.1. |
 | Multi-step click-to-commit interactive loop | **Working, verified in-browser** for matched (non-pseudo) Cross/XCross/XXCross/XXXCross + later single-pair/multislot. See §5 step 3. |
 | TPP ranking over the cumulative path | **Working, verified.** See §5 step 3. |
-| Luck filtering | **Not built.** See §4.3. |
+| Luck filtering | **Attempted and reverted** — a solver-probe approach proved unreliable, not just unbuilt. See §4.9. |
 | Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today; pseudo dispatch not wired up at all yet.** See §4.1 and §5 step 3. |
 | Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
 | Cross optimisation (wide-move post-processing) | **Not built at all.** See §4.5. |
@@ -294,13 +294,15 @@ and a cube-state GNN — and are not reusable here):
 3. **Real-cube-state solved-pair detector — [`try_1/utils/CFOPflags.py`](archived_attempts/try_1/utils/CFOPflags.py)**
    Takes a 54-character Kociemba-style facelet string and, via fixed
    bitmasks, returns `[cross, bl, br, fl, fr]` solved flags by comparing
-   facelets to their face centers. **This is now directly relevant to luck
-   filtering (§4.3)**: discarding a solution that solved more than its DAG
-   edge claims requires knowing the *actual* resulting state of all 12
-   pieces, not just the subset the solver's own coordinate space tracked.
+   facelets to their face centers. **Confirmed (not just suspected) to be a
+   prerequisite for luck filtering**: a solver-probe approach was actually
+   built and tested (§4.9) and found unreliable for exactly the reason this
+   item predicted — the solver's own coordinate space doesn't track pieces
+   outside what it was asked to search for, and probing around that
+   limitation turned out to be fundamentally ambiguous, not just slow.
    Porting this (as JS, operating on whatever facelet format the WASM
-   solvers expose, or a simple cube simulator) is close to a prerequisite
-   for implementing luck filtering correctly.
+   solvers expose, or a simple cube simulator) is the recommended next
+   attempt at luck filtering, not another solver-probe variant.
 
 4. **Cube-state simulation plumbing — [`try_4/cubestate_encoder.py`](archived_attempts/try_4/cubestate_encoder.py)**
    Partially reusable: wraps the `magiccube` Python library plus a
@@ -555,6 +557,58 @@ during earlier steps, or investigating whether a tighter move-restriction
 or different search strategy avoids needing the full 4-pair coordinate
 space at all for what is, physically, usually a short remaining solve.
 
+### 4.9 Luck filtering: a solver-probe implementation was attempted and reverted — it was unreliable, not just slow
+
+Implemented, tested, and **reverted** on 2026-10-03. Worth recording in
+detail because the failure mode is subtle and would be easy to
+reintroduce.
+
+**What was built:** for each candidate solution, probe every slot *not* in
+the edge's own goal via a cheap `solveXcross(..., { maxLength: 1 })` call,
+treating "0 `onProgress` (depth) events" as "already solved" — the exact
+technique this document's own verified findings (slot mapping, color
+orientation, §4.7) are built on, which all worked correctly when tested.
+
+**What went wrong:** that technique is only valid when the probe's
+`maxLength` comfortably exceeds the *true* solution depth for the
+"needs search" case. IDA* with an admissible prune-table heuristic skips
+announcing depths it can already prove infeasible (observed directly:
+requesting `maxLength: 6` for a case whose real minimum depth was 7
+produced **zero** `onProgress` events and an empty solution array —
+indistinguishable from "already solved" from the outside — while
+`maxLength: 11` on the identical call correctly found it, with progress
+events starting at depth 7, not 0). Every earlier validated use of this
+technique happened to use short, specifically-constructed test scrambles
+(e.g. a single face turn, or the "sexy move" from a solved cube) where the
+true "needs search" depth was always comfortably under the chosen
+`maxLength` — so the ambiguity never triggered. A `maxLength: 1` luck-probe
+against a real ~19-move WCA-style scramble is the opposite case: almost
+any genuinely-unsolved slot has a true depth far above 1, so the probe
+returned false "already solved" positives almost universally, making
+nearly every real candidate look "lucky" and get discarded — confirmed
+directly: on two different real scrambles, Cross, XCross, *and* XXCross
+categories all returned **zero** surviving candidates, and spot-checking
+individual "lucky" verdicts against a directly-run, adequately-deep search
+showed the slot was genuinely not yet solved.
+
+Separately (not the reason for reverting, but relevant to any future
+attempt): even a *correct* version of this probe would need a `maxLength`
+comparable to a real search of that category to avoid the ambiguity above,
+which is expensive — for a Cross-only search (0 goal slots), that's up to
+4 near-full-cost probes per candidate, across potentially dozens of unique
+candidates.
+
+**Conclusion:** solver probes are the wrong tool for luck filtering. The
+reliable path is a real cube-state check — exactly what §2 items 3–4
+(`CFOPflags.py`'s facelet-mask logic, ported to JS) were already flagged
+for, now with concrete evidence for *why* the solver-probe shortcut doesn't
+work rather than just "it wasn't built yet." Luck filtering remains
+unimplemented; `solver-bridge.js` currently returns every raw (deduped)
+candidate, including any that may over-solve. The rest of the loop
+(dispatch, TPP scoring, commit, rotation handling) is unaffected and still
+verified correct — this was caught and fully reverted before being
+shipped as a silent correctness bug, not left half-working.
+
 ---
 
 ## 5. Actionable Roadmap
@@ -648,12 +702,19 @@ be done in parallel.
    - [x] **Click-to-commit**, re-triggering search from the new node.
    - [x] **Search limits** per §4.6/§4.8 (`searchLimitFor`, keyed by total
      pairs in goal for later steps).
-   - [ ] **Luck filtering** (§4.3) — not yet implemented. Candidates are
-     shown as returned by the solver with no check for accidental
-     over-solving. Next concrete step: probe the slots *not* in a
-     candidate's own goal (via a cheap "already solved?" check, same
-     technique used throughout §4's empirical tests) and discard results
-     where one of those got solved too.
+   - [ ] **Luck filtering** (§4.3/§4.9) — attempted via solver probes and
+     **reverted**: the approach is unreliable (false positives), not just
+     slow — see §4.9 for the full finding. Candidates are currently shown
+     as returned by the solver (deduped) with no check for accidental
+     over-solving. Next concrete step is **not** another solver-probe
+     variant: port `CFOPflags.py`'s facelet-mask logic (§2 items 3–4) to
+     JS and check the real resulting cube state directly.
+   - [x] **Deduplication**: identical algorithm text returned multiple
+     times by the solver (common — `maxSolutions` frequently yields
+     repeats) is deduped before scoring/display. Note: dedup currently
+     runs per (edge, color) only, so identical results from *different*
+     edges can still both appear — a known, minor, low-priority cleanup
+     item, not a correctness issue.
    - [ ] **Pseudo edges are skipped entirely** (`isPseudoState` check just
      `continue`s past them) — `pseudoCrossSolver` dispatch isn't wired up
      yet. Not a regression: with the UI's current default checkboxes

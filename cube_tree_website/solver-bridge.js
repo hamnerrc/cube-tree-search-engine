@@ -25,8 +25,16 @@
  *   not just the newly-targeted ones), or it silently disturbs
  *   already-committed pairs about half the time.
  * - Pseudo (mismatched) edges are skipped for now — not yet wired up.
- * - Luck filtering (discarding over-solved results) is not yet implemented
- *   — see PROJECT_STATUS.md for why and what's next.
+ * - Luck filtering (README "Luck filtering") is NOT implemented here.
+ *   A solver-probe approach was attempted and reverted — see
+ *   PROJECT_STATUS.md §4.9: the "0 onProgress events = already solved"
+ *   signal used throughout this file's own verified findings is actually
+ *   ambiguous whenever the probe's maxLength is smaller than the TRUE
+ *   solution depth (IDA* skips announcing depths it can prove infeasible
+ *   via the prune table's lower bound, which looks identical to "already
+ *   solved" from the outside). A reliable implementation needs an actual
+ *   cube-state check, not a cheap solver probe — see PROJECT_STATUS.md §2
+ *   items 3–4 for the recommended approach.
  */
 'use strict';
 
@@ -176,17 +184,29 @@ async function searchCurrentNode(session, helper, onStatus) {
         continue;
       }
 
+      // Strip rotation + dedupe identical algorithms before altAlgs
+      // expansion — the solver commonly returns the same algorithm
+      // multiple times across its maxSolutions results.
+      const uniqueCoreAlgs = new Set();
       for (let sol of raw) {
         sol = (sol || '').trim();
         if (!sol) continue; // "already solved" (empty string) — not a real step here
-        const { token: foundRotationToken, rest: afterBaseRotation } = stripLeadingRotation(sol);
-        // The solver always prefixes exactly the `baseRotation` we passed
-        // (possibly multi-token); strip conservatively by prefix match.
         let coreAlg = sol;
         if (baseRotation && sol.startsWith(baseRotation)) {
           coreAlg = sol.slice(baseRotation.length).trim();
         }
+        if (coreAlg) uniqueCoreAlgs.add(coreAlg);
+      }
 
+      // NOTE: luck filtering (README "Luck filtering") is intentionally not
+      // applied here. See PROJECT_STATUS.md §4.9 — a solver-probe approach
+      // was implemented and reverted after discovering it produces false
+      // positives (the "already solved" signal this file's other verified
+      // findings rely on is ambiguous when the probe's maxLength is smaller
+      // than the true solution depth). Candidates may currently include
+      // "lucky" over-solves that should, per spec, be attributed to a
+      // different, higher-arity edge instead.
+      for (const coreAlg of uniqueCoreAlgs) {
         const variants = isRoot && typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
 
         for (const variant of variants) {
