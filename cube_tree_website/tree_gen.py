@@ -1,6 +1,9 @@
 from itertools import combinations, permutations
 from collections import defaultdict
+from pathlib import Path
 import json
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 SLOTS = ("FR", "FL", "BL", "BR")
 CORNERS = ("C_FR", "C_FL", "C_BL", "C_BR")
@@ -226,7 +229,7 @@ def export_graph(start_key):
             "transitions": transitions_for_html,
         }
 
-    with open("f2l_nodes_and_edges.json", "w", encoding="utf-8") as f:
+    with open(SCRIPT_DIR / "f2l_nodes_and_edges.json", "w", encoding="utf-8") as f:
         json.dump({"nodes": nodes, "edges": edges}, f, indent=2)
 
     build_html_inspector(node_mapping[start_key], html_node_map)
@@ -321,7 +324,7 @@ def build_html_inspector(start_id, node_map):
     </script>
 </body>
 </html>"""
-    with open("f2l_table_inspector.html", "w", encoding="utf-8") as f:
+    with open(SCRIPT_DIR / "f2l_table_inspector.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
 

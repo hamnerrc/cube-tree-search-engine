@@ -1,0 +1,9159 @@
+{
+  "nodes": [
+    {
+      "id": "N0",
+      "state": {
+        "cross_solved": false,
+        "corners": [],
+        "edges": []
+      }
+    },
+    {
+      "id": "N1",
+      "state": {
+        "cross_solved": true,
+        "corners": [],
+        "edges": []
+      }
+    },
+    {
+      "id": "N2",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N3",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N4",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N5",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N6",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N7",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N8",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N9",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N10",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N11",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N12",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N13",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N14",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N15",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N16",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N17",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N18",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N19",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N20",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N21",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N22",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N23",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N24",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N25",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N26",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N27",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N28",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N29",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N30",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N31",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N32",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N33",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N34",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N35",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N36",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N37",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N38",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N39",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N40",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N41",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N42",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N43",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N44",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N45",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N46",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N47",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N48",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N49",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N50",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N51",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N52",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N53",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N54",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N55",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N56",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N57",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N58",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N59",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N60",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N61",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N62",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N63",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N64",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N65",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N66",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N67",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N68",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N69",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N70",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N71",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N72",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N73",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N74",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N75",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N76",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N77",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N78",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N79",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N80",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N81",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N82",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N83",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N84",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N85",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N86",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N87",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N88",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N89",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N90",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N91",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N92",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N93",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N94",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N95",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N96",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N97",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N98",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N99",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N100",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N101",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N102",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N103",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N104",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N105",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N106",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N107",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N108",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N109",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N110",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N111",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N112",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N113",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N114",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N115",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N116",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N117",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N118",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N119",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N120",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N121",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N122",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N123",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N124",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N125",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N126",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N127",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N128",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N129",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N130",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N131",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N132",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N133",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N134",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N135",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N136",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N137",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C"
+        ],
+        "edges": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N138",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N139",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N140",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N141",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N142",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N143",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N144",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N145",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N146",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N147",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N148",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N149",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N150",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N151",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N152",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N153",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N154",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N155",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N156",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N157",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N158",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N159",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N160",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N161",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N162",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N163",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N164",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N165",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N166",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N167",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N168",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N169",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N170",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N171",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N172",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "N173",
+      "state": {
+        "cross_solved": true,
+        "corners": [
+          "C",
+          "C"
+        ],
+        "edges": [
+          "E",
+          "E"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N41",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N9",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N26",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N45",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N46",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N15",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N37",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N22",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N41",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N42",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N6",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N32",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N40",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N52",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N53",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N17",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N12",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N2",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N25",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N30",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N39",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N16",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N32",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N30",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N50",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N8",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N10",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N29",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N47",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N65",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N24",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N31",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N44",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N5",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N1",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [],
+        "edges": []
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N35",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N25",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N24",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N14",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N18",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N39",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N31",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N19",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N50",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N20",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N33",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N18",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N67",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N29",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N33",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N47",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N44",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N48",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N20",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N48",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N27",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N49",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N38",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N19",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N3",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N37",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N51",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N53",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N40",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N42",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N36",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N23",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N4",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N34",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N54",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N28",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N38",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N58",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N49",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N21",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N21",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N11",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N43",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N23",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N27",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N69",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N45",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N7",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N63",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N51",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N13",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N56",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N36",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N55",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N34",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N62",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N61",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N22",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N26",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N28",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N46",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N57",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N35",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N43",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N59",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N64",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N66",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N52",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N68",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N0",
+      "target": "N60",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N110",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N135",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N96",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N130",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N148",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N159",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N162",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N41",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N9",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N86",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N173",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N74",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N88",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N105",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N143",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N26",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N109",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N45",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N46",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N101",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N111",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N15",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N98",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N85",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N37",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N22",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N153",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N163",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N102",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N78",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N41",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N86",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N153",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N42",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N101",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N6",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N32",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N40",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N139",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N152",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N52",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N166",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N53",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N169",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N122",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N143",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N17",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N12",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N140",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N144",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N132",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N75",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N2",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N72",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N25",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N100",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N151",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N136",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N140",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N30",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N39",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N92",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N139",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N152",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N166",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N168",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N138",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N107",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N116",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N16",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N87",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N90",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N169",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N157",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N32",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N154",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N30",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N50",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N138",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N149",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N116",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N155",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N8",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N106",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N161",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N100",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N10",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N29",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N126",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N47",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N24",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N31",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N44",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N89",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N5",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N142",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N167",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N87",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N35",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N25",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N158",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N82",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N24",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N14",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N151",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N161",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N119",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N18",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N125",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N120",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N39",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N99",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N165",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N31",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N123",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N19",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N107",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N50",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N20",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N33",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N147",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N18",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N149",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N106",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N167",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N103",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N29",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N147",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N171",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N33",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N94",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N119",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N97",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N150",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N47",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N44",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N84",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N150",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N77",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N89",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N158",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N141",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N73",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N146",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N164",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N110",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N99",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N48",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N20",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N162",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N97",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N145",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N91",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N124",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N104",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N70",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N108",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N48",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N27",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N49",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N38",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N165",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N19",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N79",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N3",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N103",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N111",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N94",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N92",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N37",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N51",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N112",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N129",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N157",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N118",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N163",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N53",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N80",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N127",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N171",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N83",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N40",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N42",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N133",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N170",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N36",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N154",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N113",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N23",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N4",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N34",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N95",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N112",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N118",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N146",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N164",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N172",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N93",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N28",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N38",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N98",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N115",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N141",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N49",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N144",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N21",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N91",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N134",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N128",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FR"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N156",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N145",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N108",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N21",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N11",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N121",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N142",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N160",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N43",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N23",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N27",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N170",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N114",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N76",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N117",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N45",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N90",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N7",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N96",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N156",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N51",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N13",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N120",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N71",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N88",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N148",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N105",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N115",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N36",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N93",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N34",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N131",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N172",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N22",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N26",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N104",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N113",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N28",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N46",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N81",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR"
+        ],
+        "edges": [
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N95",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N102",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N121",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N155",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N35",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "BR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N173",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N43",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FL"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N109",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N114",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N168",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "FL"
+        ],
+        "edges": [
+          "BR",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N159",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "FL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N160",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "FL",
+          "FR"
+        ],
+        "edges": [
+          "BL",
+          "FR"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N117",
+      "setup_rotation": "y",
+      "solved_step": {
+        "corners": [
+          "BR",
+          "FR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N52",
+      "setup_rotation": "-",
+      "solved_step": {
+        "corners": [
+          "BL",
+          "BR"
+        ],
+        "edges": [
+          "BR",
+          "FL"
+        ]
+      }
+    },
+    {
+      "source": "N1",
+      "target": "N137",
+      "setup_rotation": "y'",
+      "solved_step": {
+        "corners": [
+          "BL"
+        ],
+        "edges": [
+          "BL"
+        ]
+      }
+    }
+  ]
+}
