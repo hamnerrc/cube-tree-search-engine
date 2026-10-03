@@ -20,7 +20,7 @@ in the README.
 **Current state:** the core interactive solver loop works end-to-end and is
 verified — both in a Node harness and live in the browser — for matched
 (non-pseudo) Cross/XCross/XXCross/XXXCross plus later single-pair/multislot
-steps. See §5 step 3 for the full picture. Full test suite (4 suites) passes;
+steps (note from developer: the later single pairs and/or multislots do not generate valid solutions, and all searches create many duplicate solutions). See §5 step 3 for the full picture. Full test suite (4 suites) passes;
 run them before and after any change:
 
 ```
