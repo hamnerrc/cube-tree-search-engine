@@ -17,7 +17,7 @@
  * console.log(sols); // ['U F2 D B2 L\'  D ', ...]
  *
  * @example
- * // Xcross (slot 0 = back-right)
+ * // Xcross (slot 0 = back-left)
  * const sols = await helper.solveXcross('R U R2 F D D2 L B', 0, { maxSolutions: 2 });
  *
  * @example
@@ -138,7 +138,8 @@ class CrossSolverHelperNode {
   /**
    * Solve xcross (cross + one F2L pair).
    * @param {string} scramble
-   * @param {number} slot - F2L slot to include: 0=BR, 1=BL, 2=FL, 3=FR
+   * @param {number} slot - F2L slot to include: 0=BL, 1=BR, 2=FR, 3=FL
+   *   (verified empirically against solver.wasm; see crossSolver/README.md)
    * @param {Object} [options] - Same as solveCross; default maxLength=10.
    * @returns {Promise<string[]>}
    */

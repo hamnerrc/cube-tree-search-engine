@@ -59,17 +59,16 @@ Two independent C++/Emscripten solvers, architecturally very different:
   ([worker3.js](cube_tree_website/pseudoCrossSolver/worker3.js)) is a thin
   17-line shim with no cancel support and no result-type normalization (just
   forwards raw `postMessage` strings).
-- **Unresolved slot-index mismatch:** `crossSolver/README.md` documents the
-  xcross/xxcross slot convention as `0=BR, 1=BL, 2=FL, 3=FR`. But the only code
-  that actually calls these solvers end-to-end
-  ([cross_xcross.js:37](cube_tree_website/cross_xcross.js:37),
-  [backend_test.js:41](cube_tree_website/backend_test.js:41)) defines
-  `SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 }` — the opposite pairing. One of
-  these is wrong. If it's the JS side, every Xcross/Xxcross/Xxxcross solve
-  silently searches the wrong F2L pair (no error, just a wrong-but-valid
-  solution). **This must be verified against `solver.cpp`'s actual
-  `corner_index`/`edge_index` tables before any multi-pair search result is
-  trusted.**
+- **Slot-index mismatch — RESOLVED (2026-10-02):** `crossSolver/README.md`
+  documented the xcross/xxcross slot convention as `0=BR, 1=BL, 2=FL, 3=FR`,
+  contradicting `cross_xcross.js`/`backend_test.js`'s
+  `SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 }`. Verified empirically
+  against the compiled `solver.wasm` (see
+  [crossSolver/test/slot-mapping.test.js](cube_tree_website/crossSolver/test/slot-mapping.test.js)):
+  the actual convention is **`0=BL, 1=BR, 2=FR, 3=FL`**, matching the JS side
+  exactly. The docs (`README.md`, `IMPLEMENTATION_NOTES.md`,
+  `solver-helper.js`, `solver-helper-node.js`) were wrong and have been
+  corrected; `cross_xcross.js`/`backend_test.js` needed no changes.
 
 ### 1.3 Frontend ([index.html](cube_tree_website/index.html) / [solver.html](cube_tree_website/solver.html) / [script.js](cube_tree_website/script.js))
 
@@ -202,23 +201,29 @@ abandoned neural-net approach and have no bearing on the DAG+WASM design.
 Ordered so each step unblocks the next; items in the same numbered step can be
 done in parallel.
 
-1. **Fix the DAG hand-off (blocking everything else)**
-   - [ ] Make `tree_gen.py`'s output filename match what `script.js` fetches
-     (either rename the `tree_gen.py` output to `f2l_nodes_and_edges.json`, or
-     change the fetch target — pick one canonical name) and regenerate it so a
-     real file exists at that path for the browser to load.
-   - [ ] Decide whether `F2L_tree.json` (root) stays as a second copy for the
-     Node scripts or is deleted in favor of one canonical file both browser and
-     Node code read.
+1. **Fix the DAG hand-off (blocking everything else) — DONE (2026-10-02)**
+   - [x] `tree_gen.py` already wrote the right filename; the bug was that it
+     resolved the path against the current working directory instead of its
+     own location. Fixed to resolve against `SCRIPT_DIR`, regenerated
+     `f2l_nodes_and_edges.json` (174 nodes / 449 edges) and
+     `f2l_table_inspector.html`, and verified in-browser that `solver.html`
+     fetches it with 200 OK (was a 404) and `pruneGraph` populates
+     `localStorage` correctly.
+   - [ ] Still open: decide whether `F2L_tree.json` (root) stays as a second
+     copy for the Node scripts or is deleted in favor of one canonical file
+     both browser and Node code read.
 
-2. **Resolve the slot-index contradiction before trusting any multi-pair solve**
-   - [ ] Trace `solver.cpp`'s `corner_index`/`edge_index` tables (or write a
-     throwaway test: solve a scramble with a known, hand-verified Xcross pair
-     at each slot 0–3 and check which physical pair comes back solved) to
-     determine ground truth for `0,1,2,3 → BR/BL/FL/FR`.
-   - [ ] Fix whichever of `crossSolver/README.md`'s table or
-     `cross_xcross.js`/`backend_test.js`'s `SLOT_INDICES` is wrong, and add a
-     comment at the definition site citing how it was verified.
+2. **Resolve the slot-index contradiction before trusting any multi-pair solve — DONE (2026-10-02)**
+   - [x] Verified ground truth empirically by running the compiled
+     `solver.wasm` directly (no `emcc` needed): a commutator that disturbs
+     exactly one F2L pair was solved once per slot under four setup
+     rotations, pinning down all four slots unambiguously. True mapping:
+     `0=BL, 1=BR, 2=FR, 3=FL`. Saved as a regression test at
+     [crossSolver/test/slot-mapping.test.js](cube_tree_website/crossSolver/test/slot-mapping.test.js).
+   - [x] The docs side (`README.md`, `IMPLEMENTATION_NOTES.md`,
+     `solver-helper.js`, `solver-helper-node.js`) was wrong and has been
+     corrected to match. `cross_xcross.js`/`backend_test.js`'s
+     `SLOT_INDICES` was already correct and needed no change.
 
 3. **Build the missing browser-side bridge (DAG → solver → results table)**
    - [ ] Extract the solve-dispatch logic already proven in `cross_xcross.js`
@@ -248,8 +253,10 @@ done in parallel.
      function) to double the ranked-algorithm pool with mirrored variants.
    - [ ] Port `CFOPflags.py`'s facelet-mask logic into a small JS verification
      helper; use it in a test script to confirm a handful of DAG transitions
-     against real WASM solver output (this doubles as the slot-index
-     verification tool needed in step 2).
+     against real WASM solver output (general DAG correctness checking — the
+     slot-index question itself was already resolved in step 2 via direct
+     empirical probing of `solver.wasm`, see
+     [crossSolver/test/slot-mapping.test.js](cube_tree_website/crossSolver/test/slot-mapping.test.js)).
 
 6. **Once the above works for Cross/Xcross, extend to Xxcross/Xxxcross/multislotting**
    - [ ] Revisit `backend_test.js`'s Phase 2 logic (already drafted, flagged as

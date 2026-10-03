@@ -34,12 +34,18 @@ python3 -m http.server 8000
 
 **Slot convention** (xcross / xxcross / xxxcross):
 
+Verified empirically against `solver.wasm` (see git history for the probe
+script): a scramble that disturbs only one physical F2L pair (e.g. `R U R'
+U'` disturbs only Front-Right) was solved once per slot, and the slot whose
+solve actually required a search — rather than reporting the position
+already solved — identifies that pair.
+
 | Value | F2L pair included |
 |---|---|
-| 0 | Back-Right (BR) |
-| 1 | Back-Left  (BL) |
-| 2 | Front-Left (FL) |
-| 3 | Front-Right (FR) |
+| 0 | Back-Left  (BL) |
+| 1 | Back-Right (BR) |
+| 2 | Front-Right (FR) |
+| 3 | Front-Left (FL) |
 
 ---
 
@@ -61,7 +67,7 @@ python3 -m http.server 8000
   });
   console.log('cross:', cross);
 
-  // Xcross (F2L slot 0 = Back-Right)
+  // Xcross (F2L slot 0 = Back-Left)
   const xcross = await helper.solveXcross("R U R' U' R' F R2 U' R'", 0, {
     maxSolutions: 2,
     maxLength: 10,

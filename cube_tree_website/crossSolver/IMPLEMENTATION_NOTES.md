@@ -503,7 +503,7 @@ const Module = await createModule();
 
 // Create instances
 const cross   = new Module.PersistentCrossSolver();
-const xcross0 = new Module.PersistentXcrossSolver(0);  // slot=0 (BR)
+const xcross0 = new Module.PersistentXcrossSolver(0);  // slot=0 (BL)
 const xxcross = new Module.PersistentXxcrossSolver(0, 3);
 const ll      = new Module.PersistentLLSolver();
 

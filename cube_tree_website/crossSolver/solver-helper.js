@@ -193,7 +193,8 @@ class CrossSolverHelper {
   /**
    * Solve xcross (cross + one F2L pair).
    * @param {string} scramble
-   * @param {number} slot - 0=BR, 1=BL, 2=FL, 3=FR
+   * @param {number} slot - 0=BL, 1=BR, 2=FR, 3=FL
+   *   (verified empirically against solver.wasm; see crossSolver/README.md)
    * @param {Object} [options] - Same as solveCross; default maxLength=10.
    * @returns {Promise<string[]>}
    */
