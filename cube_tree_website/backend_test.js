@@ -451,13 +451,13 @@ const run = async () => {
     const step1Scores = scoreAlgorithms(uniqueExpandedFirstSteps.map(s => s.moves));
 
     const rankedPhase1Targets = uniqueExpandedFirstSteps
-        .map((sol, idx) => ({ ...sol, score: step1Scores[idx], spp: Number((step1Scores[idx] / sol.piecesSolved).toFixed(4)) }))
-        .sort((a, b) => a.spp - b.spp)
+        .map((sol, idx) => ({ ...sol, score: step1Scores[idx], tpp: Number((step1Scores[idx] / sol.piecesSolved).toFixed(4)) }))
+        .sort((a, b) => a.tpp - b.tpp)
         .slice(0, CONFIG.topFirstStepsToExpand);
 
     console.table(rankedPhase1Targets.slice(0, 10).map((item, idx) => ({
         Rank: idx + 1, Color: item.color, Type: item.type, Setup: item.setup,
-        Edges: item.edges, Corners: item.corners, SPP: item.spp.toFixed(4), Alg: item.moves
+        Edges: item.edges, Corners: item.corners, TPP: item.tpp.toFixed(4), Alg: item.moves
     })));
 
     triggerGC();

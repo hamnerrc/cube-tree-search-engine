@@ -249,9 +249,9 @@ const findBestCrossAndXcross = async () => {
         .map((sol, idx) => ({
             ...sol,
             score: scores[idx],
-            spp: Number((scores[idx] / sol.piecesSolved).toFixed(4))
+            tpp: Number((scores[idx] / sol.piecesSolved).toFixed(4))
         }))
-        .sort((a, b) => a.spp - b.spp);
+        .sort((a, b) => a.tpp - b.tpp);
 
     console.log(`\nFound ${ranked.length} total expanded solutions. Top ${CONFIG.topResultsToDisplay}:\n`);
 
@@ -262,7 +262,7 @@ const findBestCrossAndXcross = async () => {
         Setup: item.setup,
         Edges: item.edges,
         Corners: item.corners,
-        SPP: item.spp.toFixed(4),
+        TPP: item.tpp.toFixed(4),
         Alg: item.moves
     })));
 };
