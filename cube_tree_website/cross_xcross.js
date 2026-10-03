@@ -29,9 +29,13 @@ const PATHS = {
     pseudoWasm: path.join(BASE_DIR, 'pseudoCrossSolver/pseudo.wasm'),
 };
 
+// Verified empirically against solver.wasm (see rotation_face_probe in
+// PROJECT_STATUS.md): rotation='' targets whatever color sits on D given
+// our White=U/Green=F convention (README "standard orientation"), which is
+// Yellow, not White. White needs a 180 flip (z2) to bring it to D.
 const COLOR_ORIENTATIONS = {
-    white: ['none'],
-    yellow: ['z2']
+    white: ['z2'],
+    yellow: ['none']
 };
 
 const SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 };

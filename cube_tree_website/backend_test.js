@@ -34,8 +34,11 @@ const PATHS = {
     pseudoWasm: path.join(BASE_DIR, 'pseudoCrossSolver/pseudo.wasm'),
 };
 
+// Verified empirically against solver.wasm (see rotation_face_probe in
+// PROJECT_STATUS.md): only white/yellow were swapped here -- green/blue/
+// red/orange were already correct.
 const COLOR_ORIENTATIONS = {
-    white: ['none'], yellow: ['z2'], green: ["x'"], blue: ['x'], red: ['z'], orange: ["z'"]
+    white: ['z2'], yellow: ['none'], green: ["x'"], blue: ['x'], red: ['z'], orange: ["z'"]
 };
 
 const SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 };

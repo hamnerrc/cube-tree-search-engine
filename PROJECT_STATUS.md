@@ -165,6 +165,23 @@ Two independent C++/Emscripten solvers, architecturally very different:
   side exactly. The docs (`README.md`, `IMPLEMENTATION_NOTES.md`,
   `solver-helper.js`, `solver-helper-node.js`) were wrong and have been
   corrected; `cross_xcross.js`/`backend_test.js` needed no changes.
+- **Color/rotation mismatch — RESOLVED (2026-10-03):** the engine's C++ core
+  has no color semantics at all (verified by reading `solver.cpp`: pure
+  coordinate math, no "white"/"yellow" anywhere) — color is purely a
+  label *we* choose to overlay on the `rotation` parameter, per the
+  README's stated convention (White=U, Green=F, so by the standard color
+  wheel Yellow=D, Blue=B, Red=R, Orange=L). `cross_xcross.js`/
+  `backend_test.js`'s `COLOR_ORIENTATIONS` tables had **white and yellow
+  swapped** (`white: ['none']` when `rotation=''` actually targets the
+  D-face cross, which under our convention is yellow, not white) — green/
+  blue/red/orange were already correct. Verified empirically (not just by
+  re-deriving rotation algebra by hand, which produced a wrong answer on
+  the first attempt) by testing, for each whole-cube rotation, which
+  single original face's turns leave a solved cross undisturbed — that
+  face is the new-U, and its antipode is the new-D/cross-color face. See
+  [crossSolver/test/color-orientation.test.js](cube_tree_website/crossSolver/test/color-orientation.test.js).
+  Fixed both tables; `cross_xcross.js`'s smoke-test output now correctly
+  labels its (unchanged) results as `white` instead of `yellow`.
 
 ### 1.3 Frontend ([index.html](cube_tree_website/index.html) / [solver.html](cube_tree_website/solver.html) / [script.js](cube_tree_website/script.js))
 
@@ -173,13 +190,12 @@ Two independent C++/Emscripten solvers, architecturally very different:
   `cross_opt`). Working UI, persists criteria to `localStorage` and
   navigates to `solver.html`. **Missing per spec:** a "simplified pseudo"
   checkbox, independent of `full_pseudo`, does not exist yet.
-- `solver.html`: scramble viewer + empty results table, with no notion of a
-  "current DAG node" or a committed path at all. **Nothing in `script.js`
-  ever populates `#results-body`, calls either WASM solver, or implements
-  the click-to-commit-and-research loop.** The `DOMContentLoaded` handler
-  on this page only fetches the graph JSON, prunes it per the checked
-  options (`pruneGraph`), and stores the pruned tree in `localStorage` —
-  then stops.
+- `solver.html`: **now a working interactive solver** — see §5 step 3 for
+  the full picture. `script.js`'s `DOMContentLoaded` handler still only
+  fetches the graph JSON, prunes it, and stores it in `localStorage` as
+  before, but now also calls `window.onPrunedTreeReady(...)` (a small hook
+  added for this), which `solver-ui.js` uses to kick off the actual
+  search/render/click-to-commit loop implemented in `solver-bridge.js`.
 - `script.js` also contains, already implemented, tested, and usable as
   building blocks (though none of them yet implement the spec's
   path-cumulative TPP — see §0/§4.2):
@@ -205,7 +221,7 @@ Two independent C++/Emscripten solvers, architecturally very different:
     cumulative **whole path** (see §4.2), exported via `module.exports` for
     reuse in Node.
 
-### 1.4 The only working multi-piece pipeline today is in Node, not the browser
+### 1.4 The original Node-only pipeline (superseded by §5 step 3 for the browser, kept as a CLI diagnostic tool)
 
 [cross_xcross.js](cube_tree_website/cross_xcross.js) and
 [backend_test.js](cube_tree_website/backend_test.js) are standalone CLI
@@ -234,19 +250,22 @@ DAG+solver+scoring wiring *can* work, but:
 | Spec requirement | Current state |
 |---|---|
 | Abstract F2L DAG (unsolved → full Cross+F2L) | **Done, verified.** 238 nodes / 2393 edges, see §1.1. |
-| Multi-step click-to-commit interactive loop | **Not built.** See §0 and §5 step 3. |
-| TPP ranking over the cumulative path | **Not built.** Only per-edge TPP exists today. See §4.2. |
+| Multi-step click-to-commit interactive loop | **Working, verified in-browser** for matched (non-pseudo) Cross/XCross/XXCross/XXXCross + later single-pair/multislot. See §5 step 3. |
+| TPP ranking over the cumulative path | **Working, verified.** See §5 step 3. |
 | Luck filtering | **Not built.** See §4.3. |
-| Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today.** See §4.1. |
-| Procedural (distance-1-only) inspection rotations | **Partially exists** (`altAlgs`), applied too broadly today. See §4.4. |
+| Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today; pseudo dispatch not wired up at all yet.** See §4.1 and §5 step 3. |
+| Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
 | Cross optimisation (wide-move post-processing) | **Not built at all.** See §4.5. |
-| Search limits matching the spec's table | **Not yet** — existing harnesses use different ad hoc numbers. See §4.6. |
-| WASM scramble search (matched + pseudo) | Both solvers work correctly in isolation and via Node CLI harnesses; **zero integration into the website UI.** |
+| Search limits matching the spec's table | **Working, verified** — see §4.6/§4.8 for the one place this needed to extend beyond the spec's literal numbers (later steps scale by total pairs, not a flat per-category number). |
+| WASM scramble search (matched + pseudo) | Matched: **integrated and verified end-to-end in the browser.** Pseudo: still solver-only, not wired into the website UI. |
 
-**Bottom line:** every individual component has a working implementation
-somewhere, but `solver.html` — the actual product — does not call a solver
-at all, and even the Node-only proof-of-concept pipeline only demonstrates
-the first step of what's now a fully-specified multi-step product.
+**Bottom line:** the core interactive loop — the thing that was entirely
+missing before — now works end-to-end in the actual browser for the
+non-pseudo subset of the product, verified against both a Node harness and
+a live click-through session with matching results. The remaining gaps are
+specific and bounded: luck filtering, pseudo dispatch, simplified-pseudo
+DAG support, cross optimisation, multi-scramble verification, and the
+Xxxxcross cold-start latency.
 
 ---
 
@@ -443,8 +462,98 @@ code gets written for §5 step 3 should use the spec's numbers, not these.
 
 **Note:** the spec's search-limits table does not give a number for
 **XXXCross**, even though XXXCross is a named, still-in-scope checkbox
-(only XXXXCross is explicitly out of scope). This is flagged to the user in
-the accompanying report rather than guessed at here.
+(only XXXXCross is explicitly out of scope). Not specified anywhere;
+resolved experimentally as 13 moves (the `+1` pattern the given numbers
+already follow) pending real-world evidence this needs adjusting.
+
+### 4.7 CRITICAL: a later-step search must include every already-solved slot in its own goal, not just the new one(s)
+
+Discovered empirically while building the step-3 dispatch logic (2026-10-03),
+before this was ever shipped — not a production bug, a design trap avoided
+during implementation. Hypothesis: for a later step (e.g. a "single pair"
+search after an XCross already solved one pair elsewhere), dispatching via
+`PersistentXcrossSolver(newSlot)` alone — mirroring exactly how a
+*distance-1* XCross search is dispatched — would be the natural first
+instinct, since that's the solver class whose name matches "solve one more
+pair."
+
+Tested directly: scripted solving an XCross at slot A, then another XCross
+at a different slot B from the resulting compounded scramble, then checking
+whether slot A was still solved afterward. Across 15 trials, slot A was
+disturbed in **8 of them (~53%)**. The reason: `PersistentXcrossSolver`'s
+IDA* coordinate space only tracks cross + the one slot it's constructed
+with — it has zero awareness that slot A exists, so nothing stops a found
+solution from moving slot A's pieces as a side effect.
+
+**Fix, verified over 16 trials with zero disturbances:** dispatch using the
+solver class whose *arity matches the total number of pairs that must be
+solved after this step* (already-solved + newly-targeted), not just the new
+ones — e.g. a single-pair step after one pair is already solved uses
+`PersistentXxcrossSolver(oldSlot, newSlot)`, not `PersistentXcrossSolver(newSlot)`.
+Concretely, by total-pairs-in-goal:
+
+| Total pairs in goal | Solver class |
+|---|---|
+| 0 | `PersistentCrossSolver` |
+| 1 | `PersistentXcrossSolver(slot)` |
+| 2 | `PersistentXxcrossSolver(slot1, slot2)` |
+| 3 | `PersistentXxxcrossSolver(slot1, slot2, slot3)` |
+| 4 | `PersistentXxxxcrossSolver()` (no slot args — all four) |
+
+This naturally covers every case, including "finish the last remaining pair
+after XXXCross" (3 old + 1 new = 4 total → `Xxxxcross`). **This is not a
+violation of the spec's "XXXXCross is deliberately not offered" rule** —
+that rule is about never *offering* a distance-1 jump from the unsolved
+node straight to all-four-pairs-at-once as a primary target; using
+`Xxxxcross` internally to correctly finish an already-committed path's last
+pair is a different thing entirely and never surfaces as a user-facing
+"XXXXCross" result. **Update:** the search-limit number for a later step
+also had to change as a result — see §4.8.
+
+Not yet verified for the pseudo solver (`pseudoCrossSolver`) — defer that
+check to when pseudo dispatch is actually wired up (§5 step 3); there is no
+a priori reason to assume it behaves differently from `crossSolver` here,
+but it hasn't been tested.
+
+### 4.8 A later step's move-limit must scale with TOTAL pairs in goal, not stay flat at "single pair = 10 / multislot = 12"
+
+Direct consequence of §4.7: since a later step must now be dispatched via
+the solver class matching *all* pairs that have to end up solved (old +
+new), the search is correspondingly more constrained as more pairs
+accumulate, and a flat 10-move budget for every "single pair" step
+(regardless of how many other pairs it also has to preserve) turned out to
+be insufficient in practice. First discovered as a *correctness* failure
+while building the step-3 loop (not a style preference): a real later-step
+search (2 pairs already solved, 1 new) returned **zero solutions** at both
+10 and 12 moves and needed 14.
+
+Resolved by keying the later-step move limit off **total pairs in goal**
+(1/2/3/4) instead of "single pair vs. multislot," using crossSolver's own
+documented per-arity default maxLength for each total — `{1: 10, 2: 12,
+3: 14, 4: 16}`. This is not an arbitrary table: for the *first* use of each
+category it reproduces the spec's literal numbers exactly (total=1 from
+Cross → 10, matching "single pair"; total=2 from Cross → 12, matching
+"multislot"), and only extends beyond the spec's flat table for deeper,
+more-constrained later steps the spec didn't originally distinguish.
+Implemented as `searchLimitFor()` in
+[solver-bridge.js](cube_tree_website/solver-bridge.js), covered by
+[test/solver-bridge.test.js](cube_tree_website/test/solver-bridge.test.js).
+
+**Known performance cost:** the total=4 ("finishing the last pair") case
+uses `PersistentXxxxcrossSolver`, whose prune table is the largest the
+engine builds (~22 MB). Measured cold-start cost for this one case: ~45
+seconds for a single search in one trial, and over 8 minutes without
+finishing in another (same scramble shape, fresh process) before being
+killed. This is a one-time cost *per solver-class-arity, per browser
+session* (the table is cached in the persistent worker and reused for
+every subsequent "finish the last pair" search for any scramble in the
+same session) — but it's a real, currently-unmitigated interactive-latency
+problem for whichever scramble first triggers it. See §5 step 3 for
+possible mitigations (not yet attempted): a progress indicator that sets
+real expectations, pre-warming the Xxxxcross table in the background
+during earlier steps, or investigating whether a tighter move-restriction
+or different search strategy avoids needing the full 4-pair coordinate
+space at all for what is, physically, usually a short remaining solve.
 
 ---
 
@@ -500,50 +609,94 @@ be done in parallel.
      this particular ambiguity) to confirm it works correctly — see §3.
 
 3. **Build the browser-side multi-step solver loop (the major remaining
-   milestone) — NOT STARTED**
+   milestone) — CORE LOOP WORKING (2026-10-03), several items still open**
 
    This is the real product, scoped per README.md and the deviations in
-   §4. It is **not** "populate one results table" — it's the full
-   interactive click-to-commit-and-research loop. Suggested build order:
+   §4. New files:
+   [solver-bridge.js](cube_tree_website/solver-bridge.js) (the search/
+   scoring/session logic, Node-testable) and
+   [solver-ui.js](cube_tree_website/solver-ui.js) (DOM glue for
+   `solver.html`). `script.js` gained two small integration hooks
+   (`window.onPrunedTreeReady`, `window.onActiveScrambleChanged`) called
+   from the existing DOMContentLoaded handler and `scrambleController`,
+   rather than duplicating that logic.
 
-   - [ ] **Path/session state.** A small piece of state (not necessarily
-     more than a JS object) tracking: the current DAG node, the concatenated
-     algorithm string of every committed step so far, cumulative pieces
-     solved so far, and the committed display rows (for showing the
-     solve-so-far above the active results table).
-   - [ ] **Single-step search dispatch**, extracted from the proven logic
-     in `cross_xcross.js` but rewritten against `worker-persistent.js`
-     (persistent prune tables) instead of forked child processes: given the
-     current node, walk its outgoing pruned-tree edges, dispatch each to
-     the matched (`crossSolver`) or pseudo (`pseudoCrossSolver`) worker per
-     `isPseudoState`, using the spec's search limits (§4.6) rather than the
-     old harnesses' numbers.
-   - [ ] **Luck filtering** (§4.3) on returned solutions before they're
-     shown as candidates for a given edge.
-   - [ ] **TPP scoring** (§4.2): score every candidate as
-     `algSpeed(pathSoFar + candidate) / piecesSoFar(path + candidate)`, not
-     via the existing per-edge `scoreAlgorithms`.
-   - [ ] **Distance-1-only rotation expansion** (§4.4): apply `altAlgs`-style
-     y/y2/y' variant generation only when searching from the unsolved root;
-     treat it as fixed context for every later step.
-   - [ ] **Single combined, TPP-sorted results table** — no per-type
-     grouping — rendered into `#results-body`, including the `colour` /
-     `type` / `rotation` / `edges` / `corners` / `alg` columns the spec
-     requires.
-   - [ ] **Click-to-commit**: clicking a row appends that edge's algorithm
-     to the path, advances the current node, and re-triggers search from
-     the new node (back to the top of this loop) instead of ending the
-     interaction.
-   - [ ] **Simplified-pseudo checkbox**, wired to whichever DAG-generation
-     resolution is chosen per §4.1.
-   - [ ] **Cross optimisation** (§4.5): implement the wide-move rewrite /
-     rotation-tracking / orientation-filter / re-score pass against
-     first-step Cross results only.
-   - [ ] Multiple scrambles get independent path-state and independent
-     results tables; never merge results across scrambles.
-   - [ ] Leave look-ahead out of this pass (optional future enhancement per
-     spec); single-step search of the current node is the correct scope
-     for the initial build.
+   **Verified working, both in Node (against the real DAG + real
+   `solver.wasm`) and live in the browser (same scramble, same result
+   counts and top results in both — 80 → 240 → 180 candidates across three
+   real steps):** distance-1 search across multiple colors for
+   Cross/XCross/XXCross/XXXCross, later-step single-pair and multislot
+   search, TPP scored over the cumulative path (not per-edge), rotation
+   carried correctly across every step via the solver's `rotation` option,
+   the click-to-commit loop advancing the DAG node and re-searching, and
+   the results table rendering the spec's columns.
+
+   - [x] **Path/session state** — `SolveSession` class: current DAG node,
+     cumulative `rotation` (locked in once, at the first commit),
+     `scoredPath` (space-joined core algs), `committedRows` for display.
+   - [x] **Single-step search dispatch** against `worker-persistent.js`
+     (persistent prune tables) via the existing `CrossSolverHelper`
+     Promise API, not forked child processes.
+   - [x] **TPP scoring** (§4.2) over the cumulative path, reusing
+     `calculateSolvedPieces(rootNode, targetNode)` as-is (pieces solved is
+     monotonic, so scoring against the original root node already gives
+     the cumulative total — no separate running counter needed) and
+     `algSpeed(scoredPath + ' ' + candidate)`.
+   - [x] **Distance-1-only rotation expansion** (§4.4) — `altAlgs` is only
+     called when `isRoot`.
+   - [x] **Single combined, TPP-sorted results table**, all spec columns.
+   - [x] **Click-to-commit**, re-triggering search from the new node.
+   - [x] **Search limits** per §4.6/§4.8 (`searchLimitFor`, keyed by total
+     pairs in goal for later steps).
+   - [ ] **Luck filtering** (§4.3) — not yet implemented. Candidates are
+     shown as returned by the solver with no check for accidental
+     over-solving. Next concrete step: probe the slots *not* in a
+     candidate's own goal (via a cheap "already solved?" check, same
+     technique used throughout §4's empirical tests) and discard results
+     where one of those got solved too.
+   - [ ] **Pseudo edges are skipped entirely** (`isPseudoState` check just
+     `continue`s past them) — `pseudoCrossSolver` dispatch isn't wired up
+     yet. Not a regression: with the UI's current default checkboxes
+     (pseudo off), this matches intended behavior already; it becomes a
+     real gap only once "pseudo F2L" is checked.
+   - [ ] **Simplified-pseudo checkbox** doesn't exist in the UI yet, and
+     per §4.1 the DAG itself doesn't yet support a "full pseudo" mode to
+     distinguish from.
+   - [ ] **Cross optimisation** (§4.5) — not implemented.
+   - [ ] **Multiple scrambles**: `getOrCreateSession` is keyed per scramble
+     index and `onActiveScrambleChanged` is wired to the existing
+     scramble-navigation controls, but this has only been exercised with a
+     single scramble so far — not yet verified in the browser with 2+
+     scrambles and switching between them mid-solve.
+   - [ ] **Performance**: see §4.8's "finishing the last pair" cold-start
+     cost (up to the better part of a minute, observed once over 8 minutes
+     without finishing). No progress/latency mitigation beyond a generic
+     "Searching..." status message yet. The *first* search of a session
+     (distance-1, all checked colors × all checked pair-counts) is also
+     unoptimized — fine for a handful of edges, untested at the scale of
+     e.g. all 6 colors + xxcross + xxxcross + multislotting checked at
+     once, which simplied to hundreds of edges in early testing and should
+     be expected to take a while on first use.
+   - [ ] **Look-ahead** deliberately left out, per spec.
+   - [ ] **A concrete, reproducible test scramble + checkbox state was used
+     for all verification above** (white only, no advanced options,
+     scramble `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2`) —
+     worth re-running this same scenario as a quick smoke test after any
+     future change to `solver-bridge.js`.
+
+   **Incidental fix made while testing this in the browser:** `script.js`,
+   `solver-bridge.js`, and `solver-ui.js` are now loaded with a
+   `?v=20261003` cache-busting query string from `solver.html`/`index.html`
+   — the browser was aggressively heuristic-caching these (no
+   `Cache-Control` header from the dev server, only `Last-Modified`),
+   serving stale JS across page loads within the same tab during testing.
+   `crossSolver/solver-helper.js` deliberately does **not** get this query
+   string: its `CrossSolverHelper` class self-detects its own script path
+   via `document.currentScript.src` to compute the worker/wasm URLs, and a
+   query string on that breaks the computed worker URL (confirmed: throws
+   `Invalid URL` inside the worker). Bump the version string if
+   `script.js`/`solver-bridge.js`/`solver-ui.js` change again and stale
+   content seems to be served.
 
 4. **Give `pseudoCrossSolver` the same persistent-table treatment as
    `crossSolver`**
@@ -608,11 +761,16 @@ blocking ambiguities in the spec itself:
    first-step result vs. top-N only) — not yet decided; defer until
    cross-optimisation (§4.5/§5 step 3) is actually being built and real
    first-step result counts are known.
-4. **Concrete `maxSolutions`/time-budget defaults** — not yet decided; per
-   spec, these should come from observed interactive performance once the
-   §5 step 3 loop exists, not be guessed at now.
+4. **Concrete `maxSolutions`/time-budget defaults** — a placeholder
+   `maxSolutions: 20` is hardcoded in `solver-bridge.js`'s `solverCallFor`
+   now that the loop exists and can be observed; not yet tuned against real
+   interactive-performance data (the Xxxxcross cold-start cost in §4.8 is
+   the dominant latency issue right now, far more than this number). Revisit
+   once luck filtering and pseudo dispatch are in and the loop's typical
+   end-to-end timing is representative of the finished feature set.
 
 A fifth, spec-adjacent gap surfaced during this review and is **not** one of
 the four above, so it's called out separately: the spec's search-limits
-table has no stated value for **XXXCross** (see §4.6). This should be
-confirmed with the user before §5 step 3 needs it.
+table has no stated value for **XXXCross** (see §4.6). `solver-bridge.js`
+currently uses 13 (the established `+1` pattern); this should be confirmed
+or adjusted once real XXXCross usage data exists.

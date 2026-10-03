@@ -114,6 +114,10 @@ const scrambleController = {
         if (displayNode) {
             displayNode.textContent = this.sequenceList[this.activeIndex] ?? '';
         }
+
+        if (typeof window.onActiveScrambleChanged === 'function') {
+            window.onActiveScrambleChanged(this.activeIndex, this.sequenceList[this.activeIndex]);
+        }
     },
 
     navigate(offset) {
@@ -1021,5 +1025,9 @@ if (typeof document !== 'undefined') {
         const prunedTree = pruneGraph(rawTree, criteria);
 
         localStorage.setItem('cubecrit_pruned_tree', JSON.stringify(prunedTree));
+
+        if (typeof window.onPrunedTreeReady === 'function') {
+            window.onPrunedTreeReady(prunedTree, criteria);
+        }
     });
 }
