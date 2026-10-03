@@ -15,6 +15,62 @@ this document's job is to track the gap and close it, not to redefine the
 target. Bug lists, implementation status, and roadmap detail belong here, not
 in the README.
 
+## Quick orientation (read this first if you're new to the session)
+
+**Current state:** the core interactive solver loop works end-to-end and is
+verified — both in a Node harness and live in the browser — for matched
+(non-pseudo) Cross/XCross/XXCross/XXXCross plus later single-pair/multislot
+steps. See §5 step 3 for the full picture. Full test suite (4 suites) passes;
+run them before and after any change:
+
+```
+python3 cube_tree_website/test_tree_gen.py
+node cube_tree_website/test/script.test.js
+node cube_tree_website/test/solver-bridge.test.js
+node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
+node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
+```
+
+A good smoke test after touching `solver-bridge.js`: scramble
+`R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2`, colors=`['white']`,
+advanced=`[]`. Expect 80 candidates at step 1, 240 at step 2, 180 at step 3,
+with the same top algorithms recorded in §5 step 3.
+
+**Two reasonable next tasks** (pick one, don't block on the other):
+1. Port `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask logic to
+   JS to get a real cube-state check — this unblocks luck filtering (§4.3),
+   which was attempted via solver probes and deliberately reverted as
+   unreliable (§4.9 — **read this before attempting luck filtering again**,
+   it explains a non-obvious trap).
+2. Implement Cross optimisation (README "Wide moves and Cross optimisation",
+   §4.5) — a net-new feature (wide-move rewrite + rotation-tracking tree
+   search + orientation filter + re-score), not yet started.
+
+**Traps already discovered the hard way — don't rediscover these:**
+- A whole-cube rotation must go through the solver's `rotation` *option* on
+  every call. Embedding it as a literal move in the `scramble` string
+  silently corrupts parsing (§4.7 area / `solver-bridge.js` header comment).
+- A later-step search must include every already-solved slot in its own
+  goal (dispatch via the solver class matching *total* pairs needed, not
+  just new ones), or it silently disturbs committed pairs about half the
+  time (§4.7).
+- A later step's move-limit must scale with total pairs in goal, not stay
+  flat at the spec's "single pair=10/multislot=12" (§4.8).
+- "0 `onProgress` events" from the solver does **not** reliably mean
+  "already solved" — it's ambiguous whenever the call's `maxLength` is
+  shorter than the true solution depth (IDA* silently skips announcing
+  depths it can prove infeasible). Only trust this signal when `maxLength`
+  is generous relative to the case being tested (§4.9).
+- Browser HTTP caching in this dev setup (`python3 -m http.server`) is
+  aggressive with no `Cache-Control` header. `script.js`/`solver-bridge.js`/
+  `solver-ui.js` are loaded with a `?v=` cache-busting query string from
+  `solver.html`/`index.html` — bump it if edits don't seem to take effect in
+  the browser. `crossSolver/solver-helper.js` deliberately does **not** get
+  one (breaks its self-path detection) — see §5 step 3's "Incidental fix"
+  note.
+- This repo has no `LICENSE` file and the vendored solver code is GPL-3.0
+  (§6) — don't add one or make redistribution decisions without the user.
+
 ---
 
 ## 0. Specification alignment (2026-10-03)
