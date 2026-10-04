@@ -362,6 +362,17 @@ re-deriving rotation algebra by hand.
   for the move, but older prose mentions may still say e.g. "script.js"
   without the `js/` prefix — that's still the same file, just moved.
 
+**2026-10-04 (tenth pass): background searching, undo, reload persistence,
+and granular per-category search config all implemented — see §4.28 for the
+full writeup. Includes one open, not-yet-root-caused finding**: a later-step
+search that is the very first call on a fresh browser worker (reachable via
+undo-then-recommit, or a reload that restores straight to a non-root node)
+can show real candidates discarded by the luck check that three independent
+Node reproductions of the same scenario against the real engine could not
+reproduce — likely a pre-existing browser-worker timing issue, not this
+pass's own dispatch logic (which the Node attempts rule out directly); fewer
+results, never wrong ones, but worth a dedicated browser-side investigation.
+
 **2026-10-04 (cleanup pass): codebase restructured from a flat
 `cube_tree_website/` into `js/`/`data/`/`tools/`/`docs/` (see the layout
 bullet above) and the copy-pasted `PATHS`/engine-bootstrap boilerplate in
@@ -1620,6 +1631,81 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.28 (2026-10-04, tenth pass): background search, undo, reload persistence, granular config — implemented, plus one open finding
+
+Four features added on top of the existing multi-scramble/queue
+infrastructure (§4.18):
+
+1. **Background searching.** `solver-ui.js`'s `scheduleBackgroundSearches`
+   enqueues every scramble's search onto the existing single `searchQueue`
+   as soon as the pruned tree is ready (active scramble first), instead of
+   only when a scramble becomes active. `resultsFor`'s existing per-session
+   cache means switching scrambles never restarts or blocks on a search —
+   it either shows a cached result instantly or displays a per-scramble
+   status badge (`pending`/`searching…`/`ready`/`search failed`) until the
+   background entry resolves.
+2. **Undo.** `SolveSession.undo()`/`canUndo` (solver-bridge.js) pop the last
+   commit, step `currentNodeId` back, and — mirroring `commit()`'s root-only
+   rotation capture — re-arm `rotation` when popped back to zero commits.
+   Unit-tested (`test/solver-bridge.test.js`) including the "undo then
+   commit a different branch" case and the rotation re-arm asymmetry.
+3. **Reload persistence.** New `localStorage` key `cubecrit_session_state`
+   (`{scrambles, colors, advanced, activeIndex, sessions}`, validated
+   against the current criteria before being trusted) is written after
+   every commit/undo/scramble-switch and replayed on load through the same
+   `commit()` a click would use, not a hand-rolled reconstruction.
+4. **Granular search configuration.** `categoryFor`/`categoryKeyFor` map an
+   edge to one of `cross`/`xcross`/`xxcross`/`xxxcross`/`singlePair`/
+   `multislot` (+ a `...Pseudo` variant each); `searchLimitFor` and the new
+   `maxSolutionsFor` take optional `(searchConfig, isPseudo)` params that
+   override the existing `DISTANCE1_LIMITS`/`LATER_LIMITS_BY_TOTAL`/
+   `session.maxSolutions` defaults per category, falling back unchanged
+   when no override is set (existing 3-arg call sites and
+   `test/solver-bridge.test.js`'s exact-value assertions are untouched). A
+   new `<details>` block on index.html exposes 6 rows × 4 fields; blank
+   means "use the default."
+
+**Verified:** full fast `test/` suite (new undo/config-override unit tests
+included); `test/solver-bridge-e2e.js` and `test/pro-references-e2e.js`
+(real WASM, unaffected — identical candidate counts to before this pass);
+headless-Chrome CDP walkthroughs covering all four features end-to-end
+(background fill-in while viewing another scramble, undo reverting then
+re-committing a different pick, a simulated reload restoring committed
+state from `localStorage`, and a deliberately-tiny `cfg-cross-maxlen`
+override reducing a real search's result count to 0).
+
+**Open finding, not yet root-caused — flagged for follow-up, not fixed
+here:** while CDP-verifying undo and reload persistence, a cluster of
+`"Discarding candidate: slot X claimed solved but is not actually solved"`
+warnings appeared during the later-step (non-root) search that follows (a)
+an undo-then-recommit cycle, and (b) a cold reload that lands straight on a
+persisted non-root node (i.e. the search's *first-ever* call on a fresh
+worker is a later-step, not a Cross-class root call — a code path reload
+persistence newly makes reachable). This discards some real candidates
+(never shows a wrong one — the luck-check's job is exactly to discard, not
+to mislabel) so the user-visible effect is fewer results, not wrong ones.
+**Could not reproduce in Node** despite three targeted attempts against the
+real engine via `CrossSolverHelperNode`: (1) replaying the exact scramble +
+exact committed candidate and searching the later step directly, (2) the
+same thing with a second session's root search interleaved through one
+shared queue (matching `scheduleBackgroundSearches`' actual call pattern),
+and (3) a deliberate "cold start" that commits via `SolveSession.commit()`
+directly (no prior search at all) before the later-step search — all three
+gave 0 warnings. Since it only appears through the browser's persistent
+Worker (`crossSolver/worker-persistent.js` + `solver-helper.js`), not
+through `solver-helper-node.js`, and specifically for a later-step
+(`postAlg`-bearing) call, this looks like a pre-existing timing fragility in
+the worker/message-passing layer — possibly related to the per-call-state
+isolation work already done for pseudoCrossSolver (§4.23's
+`g_prune_cache`/"fresh per-call state" fix) but not yet confirmed to extend
+to crossSolver's worker path — rather than anything in this pass's own
+dispatch logic (which the Node reproductions rule out directly). **Next
+step for whoever picks this up:** CDP-instrument `Runtime.consoleAPICalled`
+warnings (not just exceptions) across a longer, repeated-navigation browser
+session to get a reliable repro, then bisect `worker-persistent.js`'s
+message handling for the specific call shape (non-root, `postAlg` set) as
+the first call on a fresh worker.
+
 ### 4.27 FIXED (2026-10-04, ninth pass): browsers could keep running cached old engines
 
 Found while browser-verifying the rebuilt engines: the server log showed no
@@ -2071,6 +2157,10 @@ be done in parallel.
      time (fast in practice since the underlying solver's prune tables
      stay warm, but still redundant work worth caching later). **Done
      (2026-10-04), see §4.18**, which also fixes navigation mid-search.
+   - [x] **Background searching, undo, reload persistence, granular
+     per-category search config — done (2026-10-04, tenth pass), see §4.28**
+     for the full writeup, including one open (unreproduced-in-Node) finding
+     about later-step searches through the browser's persistent worker.
    - [ ] **Performance**: see §4.8's "finishing the last pair" cold-start
      cost (up to the better part of a minute, observed once over 8 minutes
      without finishing). No progress/latency mitigation beyond a generic

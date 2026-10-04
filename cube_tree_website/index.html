@@ -44,6 +44,65 @@
                 solutions per search
                 <input type="number" id="max-solutions" value="500" min="1" max="5000">
             </label>
+
+            <details class="search-config-details">
+                <summary>Per-type search limits (optional — blank uses the default)</summary>
+                <table class="search-config-table">
+                    <thead>
+                        <tr>
+                            <th>type</th>
+                            <th>max solutions</th>
+                            <th>move depth</th>
+                            <th>pseudo max solutions</th>
+                            <th>pseudo move depth</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cross</td>
+                            <td><input type="number" id="cfg-cross-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-cross-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-cross-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-cross-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td>XCross</td>
+                            <td><input type="number" id="cfg-xcross-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xcross-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-xcross-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xcross-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td>XXCross</td>
+                            <td><input type="number" id="cfg-xxcross-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xxcross-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-xxcross-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xxcross-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td>XXXCross</td>
+                            <td><input type="number" id="cfg-xxxcross-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xxxcross-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-xxxcross-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-xxxcross-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td>Single pair</td>
+                            <td><input type="number" id="cfg-singlePair-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-singlePair-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-singlePair-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-singlePair-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td>Multislot</td>
+                            <td><input type="number" id="cfg-multislot-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-multislot-maxlen" min="1" max="20"></td>
+                            <td><input type="number" id="cfg-multislot-pseudo-maxsol" min="1" max="20000"></td>
+                            <td><input type="number" id="cfg-multislot-pseudo-maxlen" min="1" max="20"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </details>
         </fieldset>
 
         <fieldset class="scramble-section">

@@ -178,9 +178,39 @@ const DISTANCE1_LIMITS = { 0: 10, 1: 11, 2: 12, 3: 13 };
 // later steps the spec's table didn't distinguish.
 const LATER_LIMITS_BY_TOTAL = { 1: 10, 2: 12, 3: 14, 4: 16 };
 
-function searchLimitFor(pairCount, isRoot, totalPairsInGoal) {
+// Semantic category keys matching the results table's "type" column
+// (edgeTypeLabel below) -- this is the axis granular per-type search config
+// (README "Granular search configuration") lets a user override, independent
+// of the engine's own internal totalPairsInGoal/pairCount bookkeeping.
+function categoryFor(pairCount, isRoot) {
+  if (isRoot) return ['cross', 'xcross', 'xxcross', 'xxxcross'][pairCount] || 'xxxcross';
+  return pairCount === 1 ? 'singlePair' : 'multislot';
+}
+
+function categoryKeyFor(pairCount, isRoot, isPseudo) {
+  const base = categoryFor(pairCount, isRoot);
+  return isPseudo ? `${base}Pseudo` : base;
+}
+
+/**
+ * `searchConfig` (optional; from criteria.searchConfig, README "Granular
+ * search configuration") overrides the move-depth limit for the edge's whole
+ * semantic category (cross/xcross/xxcross/xxxcross/singlePair/multislot,
+ * each matched or pseudo) -- a flat override replaces LATER_LIMITS_BY_TOTAL's
+ * per-total nuance entirely for that category, since a user configuring this
+ * manually is opting out of that empirically-tuned table, not refining it.
+ */
+function searchLimitFor(pairCount, isRoot, totalPairsInGoal, searchConfig, isPseudo) {
+  const override = searchConfig && searchConfig[categoryKeyFor(pairCount, isRoot, isPseudo)];
+  if (override && override.maxLength) return override.maxLength;
   if (isRoot) return DISTANCE1_LIMITS[pairCount];
   return LATER_LIMITS_BY_TOTAL[totalPairsInGoal];
+}
+
+/** Same override lookup as searchLimitFor, for maxSolutions instead of maxLength. */
+function maxSolutionsFor(pairCount, isRoot, searchConfig, isPseudo, fallback) {
+  const override = searchConfig && searchConfig[categoryKeyFor(pairCount, isRoot, isPseudo)];
+  return (override && override.maxSolutions) || fallback;
 }
 
 // Empirically derived (not hand-derived -- see PROJECT_STATUS.md §4.11/§4.12
@@ -348,6 +378,7 @@ class SolveSession {
     this.colors = colors; // checked color names, e.g. ['white']
     this.crossOptEnabled = (advancedOptions || []).includes('cross_opt');
     this.maxSolutions = DEFAULT_MAX_SOLUTIONS;
+    this.searchConfig = null; // per-category {maxSolutions, maxLength} overrides; see searchLimitFor/maxSolutionsFor
     this.proMoves = (advancedOptions || []).includes('pro_moves');
     this.nodeMap = new Map(prunedTree.nodes.map(n => [n.id, n]));
     const unsolved = prunedTree.nodes.find(n => n.state.cross_solved === false);
@@ -360,6 +391,7 @@ class SolveSession {
   }
 
   get isAtRoot() { return this.currentNodeId === this.rootId; }
+  get canUndo() { return this.committedRows.length > 0; }
   get currentNode() { return this.nodeMap.get(this.currentNodeId); }
   get rootNode() { return this.nodeMap.get(this.rootId); }
   get scoredPath() { return this.stepAlgs.join(' ').trim(); }
@@ -385,6 +417,28 @@ class SolveSession {
     this.stepAlgs.push(candidate.coreAlg);
     this.committedRows.push(candidate);
     this.currentNodeId = candidate.targetNodeId;
+    this.resultsCache = null;
+  }
+
+  /**
+   * Undo the most recent commit (README "Search tree navigation (undo)"):
+   * steps back to the previous node so a different outgoing edge can be
+   * explored. Mirrors commit()'s root-only rotation capture in reverse --
+   * undoing back to zero commits re-arms it, so a later re-commit captures
+   * rotation correctly again (see test/solver-bridge.test.js's root-rotation
+   * test for the asymmetry this must respect). Returns false (no-op) at the
+   * root, where there is nothing to undo.
+   */
+  undo() {
+    if (!this.committedRows.length) return false;
+    this.committedRows.pop();
+    this.stepAlgs.pop();
+    this.currentNodeId = this.committedRows.length
+      ? this.committedRows[this.committedRows.length - 1].targetNodeId
+      : this.rootId;
+    if (!this.committedRows.length) this.rotation = '';
+    this.resultsCache = null;
+    return true;
   }
 }
 
@@ -478,8 +532,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
 
     const allCorners = targetNode.state.corners || [];
     const allEdges = targetNode.state.edges || [];
-    const maxLength = searchLimitFor(pairCount, isRoot, allCorners.length);
+    const maxLength = searchLimitFor(pairCount, isRoot, allCorners.length, session.searchConfig, isPseudo);
     if (maxLength === undefined) continue;
+    const effectiveMaxSolutions = maxSolutionsFor(pairCount, isRoot, session.searchConfig, isPseudo, session.maxSolutions);
 
     for (const color of colorList) {
       const baseRotation = isRoot ? (COLOR_ROTATIONS[color] || '') : session.rotation;
@@ -512,8 +567,8 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       let raw;
       try {
         raw = isPseudo
-          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall, session.maxSolutions)
-          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall, session.maxSolutions,
+          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall, effectiveMaxSolutions)
+          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall, effectiveMaxSolutions,
             session.proMoves ? proEngineOptions(callRotation) : {});
       } catch (err) {
         console.error('Solver error', err);
@@ -815,7 +870,7 @@ function edgeLabel(pairCount, isRoot, isPseudo) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
-    DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
+    DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor, maxSolutionsFor, categoryFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,

@@ -25,6 +25,8 @@ const {
   stripLeadingRotation,
   composeRotations,
   searchLimitFor,
+  maxSolutionsFor,
+  categoryFor,
   DISTANCE1_LIMITS,
   LATER_LIMITS_BY_TOTAL,
   SLOT_INDICES,
@@ -119,6 +121,58 @@ test('DISTANCE1_LIMITS and LATER_LIMITS_BY_TOTAL have the expected shape', () =>
 });
 
 // ---------------------------------------------------------------------
+// categoryFor / searchLimitFor + maxSolutionsFor overrides
+// (README "Granular search configuration")
+// ---------------------------------------------------------------------
+
+test('categoryFor: maps root pair counts to the results-table semantic categories', () => {
+  assert.strictEqual(categoryFor(0, true), 'cross');
+  assert.strictEqual(categoryFor(1, true), 'xcross');
+  assert.strictEqual(categoryFor(2, true), 'xxcross');
+  assert.strictEqual(categoryFor(3, true), 'xxxcross');
+});
+
+test('categoryFor: maps later-step pair counts to singlePair/multislot', () => {
+  assert.strictEqual(categoryFor(1, false), 'singlePair');
+  assert.strictEqual(categoryFor(2, false), 'multislot');
+  assert.strictEqual(categoryFor(3, false), 'multislot');
+});
+
+test('searchLimitFor: with no searchConfig, behaves exactly as before (no override)', () => {
+  assert.strictEqual(searchLimitFor(0, true, 0), 10);
+  assert.strictEqual(searchLimitFor(1, false, 2), 12);
+});
+
+test('searchLimitFor: a matched-category override replaces the default for that category only', () => {
+  const cfg = { xcross: { maxLength: 7 } };
+  assert.strictEqual(searchLimitFor(1, true, 1, cfg), 7); // overridden
+  assert.strictEqual(searchLimitFor(0, true, 0, cfg), 10); // untouched
+});
+
+test('searchLimitFor: a pseudo override only applies when isPseudo is true', () => {
+  const cfg = { xcrossPseudo: { maxLength: 9 } };
+  assert.strictEqual(searchLimitFor(1, true, 1, cfg, true), 9);
+  assert.strictEqual(searchLimitFor(1, true, 1, cfg, false), 11); // matched variant untouched
+});
+
+test('searchLimitFor: a singlePair/multislot override replaces the WHOLE per-total table for that category', () => {
+  const cfg = { multislot: { maxLength: 20 } };
+  assert.strictEqual(searchLimitFor(2, false, 2, cfg), 20);
+  assert.strictEqual(searchLimitFor(2, false, 4, cfg), 20); // same flat override regardless of total
+  assert.strictEqual(searchLimitFor(1, false, 2, cfg), 12); // singlePair untouched, falls back to default
+});
+
+test('maxSolutionsFor: falls back to the given default with no override', () => {
+  assert.strictEqual(maxSolutionsFor(0, true, null, false, 500), 500);
+});
+
+test('maxSolutionsFor: a category override wins over the fallback', () => {
+  const cfg = { cross: { maxSolutions: 50 } };
+  assert.strictEqual(maxSolutionsFor(0, true, cfg, false, 500), 50);
+  assert.strictEqual(maxSolutionsFor(1, true, cfg, false, 500), 500); // different category, untouched
+});
+
+// ---------------------------------------------------------------------
 // SLOT_INDICES / COLOR_ROTATIONS (verified empirically; see crossSolver/test/*)
 // ---------------------------------------------------------------------
 
@@ -193,6 +247,56 @@ test('SolveSession: isComplete becomes true once all 4 corners/edges are solved'
   assert.strictEqual(s.isComplete, false);
   s.commit({ rotation: '', coreAlg: 'C', targetNodeId: 'N3' });
   assert.strictEqual(s.isComplete, true);
+});
+
+// ---------------------------------------------------------------------
+// SolveSession.undo() / canUndo (README "Search tree navigation (undo)")
+// ---------------------------------------------------------------------
+
+test('SolveSession: canUndo/undo are false/no-op at the root', () => {
+  const s = new SolveSession('R U', makeTinyTree(), ['white']);
+  assert.strictEqual(s.canUndo, false);
+  assert.strictEqual(s.undo(), false);
+  assert.strictEqual(s.currentNodeId, 'N0');
+});
+
+test('SolveSession: undo() pops the last commit and steps back one node', () => {
+  const s = new SolveSession('R U', makeTinyTree(), ['white']);
+  s.commit({ rotation: 'z2', coreAlg: 'A', targetNodeId: 'N1' });
+  s.commit({ rotation: '', coreAlg: 'B', targetNodeId: 'N2' });
+  assert.strictEqual(s.canUndo, true);
+
+  assert.strictEqual(s.undo(), true);
+  assert.strictEqual(s.currentNodeId, 'N1');
+  assert.strictEqual(s.scoredPath, 'A');
+  assert.strictEqual(s.rotation, 'z2'); // not at root yet -- stays locked in
+});
+
+test('SolveSession: undo() back to zero commits re-arms root rotation capture', () => {
+  const s = new SolveSession('R U', makeTinyTree(), ['white']);
+  s.commit({ rotation: 'z2', coreAlg: 'A', targetNodeId: 'N1' });
+
+  s.undo();
+  assert.strictEqual(s.isAtRoot, true);
+  assert.strictEqual(s.rotation, ''); // re-armed
+
+  // A fresh root commit with a different rotation must be captured, not
+  // ignored -- this is the exact asymmetry a buggy undo could violate.
+  s.commit({ rotation: "x'", coreAlg: 'A2', targetNodeId: 'N1' });
+  assert.strictEqual(s.rotation, "x'");
+});
+
+test('SolveSession: undo() lets a different branch be explored afterward', () => {
+  const s = new SolveSession('R U', makeTinyTree(), ['white']);
+  s.commit({ rotation: 'z2', coreAlg: 'A', targetNodeId: 'N1' });
+  s.commit({ rotation: '', coreAlg: 'B', targetNodeId: 'N2' });
+  s.undo();
+  assert.strictEqual(s.outgoingEdges()[0].target, 'N2'); // same outgoing options as before B was committed
+
+  // Commit a different algorithm to the SAME target -- a different branch,
+  // same node, which undo must make possible again.
+  s.commit({ rotation: '', coreAlg: 'DIFFERENT', targetNodeId: 'N2' });
+  assert.strictEqual(s.scoredPath, 'A DIFFERENT');
 });
 
 // ---------------------------------------------------------------------

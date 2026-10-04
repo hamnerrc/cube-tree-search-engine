@@ -2,6 +2,14 @@ const FACES = ['U', 'D', 'R', 'L', 'F', 'B'];
 const TURN_MODIFIERS = ['', "'", '2'];
 const OPPOSITES = { U: 'D', D: 'U', R: 'L', L: 'R', F: 'B', B: 'F' };
 const STORAGE_KEY = 'cubecrit_search_criteria';
+// Must match solver-ui.js's SESSION_STATE_KEY -- duplicated as a literal
+// here since index.html (where this is used) never loads solver-ui.js.
+const SESSION_STATE_KEY = 'cubecrit_session_state';
+
+// README "Granular search configuration": one row per results-table
+// category, each with an optional matched and pseudo override. Keys match
+// solver-bridge.js's categoryFor()/categoryKeyFor() exactly.
+const SEARCH_CONFIG_CATEGORIES = ['cross', 'xcross', 'xxcross', 'xxxcross', 'singlePair', 'multislot'];
 
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
@@ -52,6 +60,47 @@ function clearScrambleData() {
     if (textareaNode) textareaNode.value = '';
 
     localStorage.removeItem(STORAGE_KEY);
+    // A fresh scramble list must not resurrect progress persisted against a
+    // different (now-cleared) search criteria blob.
+    localStorage.removeItem(SESSION_STATE_KEY);
+}
+
+/** Reads the per-category search-limit overrides (README "Granular search
+ * configuration") into { [category]: {maxSolutions, maxLength}, [category + 'Pseudo']: {...} },
+ * omitting any category/variant with nothing filled in. */
+function readSearchConfig() {
+    const config = {};
+    const readPair = (idPrefix) => {
+        const maxSolutions = parseInt(document.getElementById(`${idPrefix}-maxsol`)?.value, 10) || undefined;
+        const maxLength = parseInt(document.getElementById(`${idPrefix}-maxlen`)?.value, 10) || undefined;
+        return (maxSolutions || maxLength) ? { maxSolutions, maxLength } : null;
+    };
+
+    for (const key of SEARCH_CONFIG_CATEGORIES) {
+        const matched = readPair(`cfg-${key}`);
+        if (matched) config[key] = matched;
+        const pseudo = readPair(`cfg-${key}-pseudo`);
+        if (pseudo) config[`${key}Pseudo`] = pseudo;
+    }
+
+    return Object.keys(config).length ? config : undefined;
+}
+
+/** Inverse of readSearchConfig: fills the per-category inputs from a saved config. */
+function restoreSearchConfigInputs(searchConfig) {
+    if (!searchConfig) return;
+    const writePair = (idPrefix, override) => {
+        if (!override) return;
+        const maxSolEl = document.getElementById(`${idPrefix}-maxsol`);
+        const maxLenEl = document.getElementById(`${idPrefix}-maxlen`);
+        if (maxSolEl && override.maxSolutions) maxSolEl.value = override.maxSolutions;
+        if (maxLenEl && override.maxLength) maxLenEl.value = override.maxLength;
+    };
+
+    for (const key of SEARCH_CONFIG_CATEGORIES) {
+        writePair(`cfg-${key}`, searchConfig[key]);
+        writePair(`cfg-${key}-pseudo`, searchConfig[`${key}Pseudo`]);
+    }
 }
 
 function persistAndNavigate() {
@@ -71,6 +120,9 @@ function persistAndNavigate() {
         // Solutions requested per engine call (README "Search limits":
         // as high as practical); blank/invalid falls back to the default.
         maxSolutions: parseInt(document.getElementById('max-solutions')?.value, 10) || undefined,
+        // Per-category overrides (README "Granular search configuration");
+        // undefined when every per-category field was left blank.
+        searchConfig: readSearchConfig(),
         scrambles
     };
 
@@ -82,9 +134,10 @@ function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions, searchConfig } = JSON.parse(rawState);
     const maxSolutionsInput = document.getElementById('max-solutions');
     if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
+    restoreSearchConfigInputs(searchConfig);
 
     const checkMatching = (selector, values) => {
         document.querySelectorAll(selector).forEach(cb => {

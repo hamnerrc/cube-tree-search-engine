@@ -408,3 +408,75 @@ button:hover {
         width: 100%;
     }
 }
+
+/* Per-type search limits (index.html) */
+.search-config-details {
+    margin-top: 0.85rem;
+    border-top: 1px solid var(--accent);
+    padding-top: 0.65rem;
+}
+
+.search-config-details summary {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #888;
+}
+
+.search-config-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.82rem;
+    margin-top: 0.65rem;
+}
+
+.search-config-table th,
+.search-config-table td {
+    border: 1px solid var(--accent);
+    padding: 0.4rem 0.5rem;
+}
+
+.search-config-table th {
+    background: #111111;
+    color: #888;
+    font-weight: normal;
+}
+
+.search-config-table input[type="number"] {
+    padding: 0.35rem;
+    min-height: auto;
+}
+
+/* Scramble status badge (solver.html) */
+.scramble-status {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--accent);
+    white-space: nowrap;
+}
+
+.scramble-status-searching {
+    color: #ccaa55;
+    border-color: #ccaa55;
+}
+
+.scramble-status-done {
+    color: #7bbf7b;
+    border-color: #7bbf7b;
+}
+
+.scramble-status-error {
+    color: #d16a6a;
+    border-color: #d16a6a;
+}
+
+/* Undo (solver.html) */
+.undo-btn {
+    margin-top: 0.75rem;
+}
+
+.undo-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

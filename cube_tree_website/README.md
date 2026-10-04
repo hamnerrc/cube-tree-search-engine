@@ -186,6 +186,20 @@ solutions, not just the shortest ones:
 be set as high as practical while the tool stays interactively responsive;
 there is no fixed target number yet — see PROJECT_STATUS.md.
 
+### Granular search configuration
+
+The table above and the single `maxSolutions` value are the *defaults*. Each
+row of the table — Cross, XCross, XXCross, XXXCross, Single pair, Multislot
+— can be given its own `maxSolutions`/move-depth override, independently for
+the matched and pseudo variant of that same category (e.g. a tighter depth
+for plain XCross than for pseudo XCross, or a larger `maxSolutions` just for
+Multislot). An override on Single pair or Multislot replaces the whole
+step's depth for every later occurrence of that category, regardless of how
+many pairs are already committed — the per-total-pairs nuance behind the
+default table (see PROJECT_STATUS §4.8) is an internal tuning detail, not
+something this override is meant to re-expose. Leaving a field blank keeps
+the corresponding default.
+
 ## Procedural inspection rotations
 
 A single null-rotation (no pre-rotation) search at distance-1 is enough to
@@ -309,6 +323,32 @@ table — results are never merged or compared across different scrambles.
 Generated scrambles are random-state (a uniformly random cube state, solved
 with a two-phase search and inverted), the same approach WCA scramble
 programs use.
+
+## Multi-scramble queueing, undo, and persistence
+
+- **Asynchronous background searching.** Every scramble's search starts as
+  soon as the scramble list loads, not only when it becomes the one on
+  screen. Switching to a scramble whose search is still running does not
+  restart it; switching to one that already finished shows its results
+  instantly. A small status indicator next to the scramble shows whether its
+  current step is still searching, ready, or failed. Because the underlying
+  solver can only run one search at a time, scrambles are still searched one
+  at a time behind the scenes — "background" means *you* never have to wait
+  idle for it, not that every scramble searches in true parallel.
+- **Undo.** Each committed step can be undone, one at a time, back to the
+  unsolved start. Undoing does not just erase the step — it re-runs the
+  search at the node you've stepped back to, so every other option at that
+  point (including ones you didn't pick the first time) is available again.
+  This is the mechanism for exploring a different branch of the search tree,
+  not a separate branching-history view.
+- **State persistence on reload.** Every committed step, for every scramble
+  in the current list, is saved as it happens. Reloading the page (by
+  accident or on purpose) restores exactly where you left off — the same
+  scramble active, the same steps committed, each scramble's own progress
+  intact — rather than starting over. Starting a new search from the config
+  page (a new scramble list, or different colors/advanced options) does not
+  carry old progress forward; it's tied to the exact search configuration it
+  was made under.
 
 ## Out of scope (for now)
 
