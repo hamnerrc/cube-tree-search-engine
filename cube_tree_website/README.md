@@ -314,17 +314,23 @@ programs use.
 
 ## Provenance & licensing
 
+cube⑂tree is licensed under the **GNU General Public License v3.0** — see
+[LICENSE](../LICENSE). GPL-3.0 is required (and is the simplest compliant
+choice) because the solver engines are GPL-3.0; the MIT-licensed `alg_speed`
+model is GPL-compatible and keeps its notice. Third-party notices, and the
+record of changes made to the vendored engine code, are in
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
 - The core solver engines — F2L Lite, Pseudo F2L Lite, and Pairing, plus
   related solver infrastructure (prune-table construction, move tables, the
-  persistent-solver/worker architecture) — were copied, without
-  modification, from [or18/RubiksSolverDemo](https://github.com/or18/RubiksSolverDemo),
-  which is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
-  Any distribution of cube⑂tree that includes this solver code needs to
-  honor those GPL-3.0 terms; see PROJECT_STATUS.md for the current state of
-  license-file housekeeping in this repo.
-- `alg_speed` is based on **Triangium's MCC** (move-cost/comfort) model and
-  is MIT-licensed. cube⑂tree currently uses the **untuned** version of this
-  model deliberately (see Ranking, above) — the fitted/tuned variant is out
-  of scope for now.
+  persistent-solver/worker architecture) — come from
+  [or18/RubiksSolverDemo](https://github.com/or18/RubiksSolverDemo) (GPL-3.0).
+  Any modifications made here are listed in THIRD_PARTY_NOTICES.md, as
+  GPL-3.0 requires. The upstream engine documentation is kept as
+  [or18_solver_docs.html](or18_solver_docs.html) for reference.
+- `alg_speed` is based on **Triangium's MCC** (move-cost/comfort) model,
+  MIT-licensed (Copyright (c) 2021 trangium). cube⑂tree uses the **untuned**
+  version of this model deliberately (see Ranking, above), with one change:
+  every move has a cost, including `x` rotations (see Ranking).
 - Other utility/glue code (the DAG generator, UI, scoring plumbing) was
   originally written with AI assistance.

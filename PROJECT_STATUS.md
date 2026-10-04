@@ -342,8 +342,8 @@ re-deriving rotation algebra by hand.
   the browser. `crossSolver/solver-helper.js` deliberately does **not** get
   one (breaks its self-path detection) — see §5 step 3's "Incidental fix"
   note.
-- This repo has no `LICENSE` file and the vendored solver code is GPL-3.0
-  (§6) — don't add one or make redistribution decisions without the user.
+- The repo is GPL-3.0 (§6). Any change to vendored engine code must be
+  listed in THIRD_PARTY_NOTICES.md.
 
 ---
 
@@ -1988,24 +1988,18 @@ be done in parallel.
 
 ## 6. Provenance & licensing housekeeping
 
-(See README.md's "Provenance & licensing" section for the user-facing
-statement; this is the implementation-side follow-up.)
-
-- Confirmed via the upstream GitHub repo: the vendored solver code in
-  `crossSolver/` and `pseudoCrossSolver/` originates from
-  [or18/RubiksSolverDemo](https://github.com/or18/RubiksSolverDemo), which
-  is licensed **GPL-3.0** (confirmed by fetching that repo's actual
-  `LICENSE` file, not just inferred).
-- **This repo currently has no `LICENSE` file at all.** `crossSolver/README.md`
-  itself references a top-level `LICENSE` (`../../../LICENSE`) that doesn't
-  exist — another instance of the vendored docs describing the upstream
-  project's layout rather than this repo's actual state.
-- Adding an actual `LICENSE` file, and deciding how GPL-3.0 obligations
-  interact with the rest of this repo (the MIT-licensed `alg_speed` logic,
-  the AI-assisted utility code, the archived ML experiments), is a genuine
-  decision with consequences and has **not** been made unilaterally here —
-  it needs the user's input before any license file is added or any
-  redistribution happens.
+**Resolved (2026-10-04, user-authorised):** the repository is licensed
+**GPL-3.0** (`LICENSE`, canonical gnu.org text; or18's own LICENSE is the
+same text modulo whitespace, checked). That is the simplest licence that
+complies with everything included: the or18 engines are GPL-3.0, so the
+combined work must be; Trangium's MCC (`algSpeed`) is MIT, which is
+GPL-compatible as long as its notice is kept. `THIRD_PARTY_NOTICES.md`
+reproduces the MCC notice verbatim (fetched from trangium/trangium.github.io),
+credits or18, and lists every modification made to vendored engine files
+(GPL-3.0 §5a) — keep that list current whenever `crossSolver/` or
+`pseudoCrossSolver/` sources change. `magiccube`/`kociemba` are test-only
+tools and are not distributed. `or18_solver_docs.html` (upstream docs) is
+committed for context.
 
 ---
 

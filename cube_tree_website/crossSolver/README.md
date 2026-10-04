@@ -486,5 +486,5 @@ em++ solver.cpp -o solver.js \
 
 ## 📝 License
 
-See top-level [LICENSE](../../../LICENSE).
+See top-level [LICENSE](../../LICENSE) (GPL-3.0) and [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
