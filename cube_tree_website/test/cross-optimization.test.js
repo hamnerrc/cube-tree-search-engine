@@ -12,10 +12,10 @@ const path = require('path');
 
 // cross-optimization.js expects MOVE_TABLE/composePerm/invertPerm/
 // IDENTITY_PERM as bare globals (shared <script> scope in the browser).
-const faceletCube = require(path.join(__dirname, '..', 'facelet-cube.js'));
+const faceletCube = require(path.join(__dirname, '..', 'js', 'facelet-cube.js'));
 Object.assign(global, faceletCube);
 const { applyAlgorithm, SOLVED_FACELETS, MOVE_TABLE, IDENTITY_PERM } = faceletCube;
-const { WIDE_MOVE_RULES, keepsCrossOnBottom, optimizeCrossSolution } = require(path.join(__dirname, '..', 'cross-optimization.js'));
+const { WIDE_MOVE_RULES, keepsCrossOnBottom, optimizeCrossSolution } = require(path.join(__dirname, '..', 'js', 'cross-optimization.js'));
 
 let failures = 0;
 function test(name, fn) {

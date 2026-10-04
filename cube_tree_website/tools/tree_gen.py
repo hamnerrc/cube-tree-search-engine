@@ -243,7 +243,7 @@ def export_graph(start_key):
             "transitions": transitions_for_html,
         }
 
-    with open(SCRIPT_DIR / "f2l_nodes_and_edges.json", "w", encoding="utf-8") as f:
+    with open(SCRIPT_DIR.parent / "data" / "f2l_nodes_and_edges.json", "w", encoding="utf-8") as f:
         json.dump({"nodes": nodes, "edges": edges}, f, indent=2)
 
     build_html_inspector(node_mapping[start_key], html_node_map)
@@ -338,7 +338,7 @@ def build_html_inspector(start_id, node_map):
     </script>
 </body>
 </html>"""
-    with open(SCRIPT_DIR / "f2l_table_inspector.html", "w", encoding="utf-8") as f:
+    with open(SCRIPT_DIR.parent / "f2l_table_inspector.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
 

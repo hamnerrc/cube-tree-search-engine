@@ -29,10 +29,10 @@ second, more serious bug discovered and fixed while verifying it — see §4.12
 for the full writeup.** Summary:
 1. **Luck filtering (§4.3) is now implemented**, resolving the open gap from
    §4.9 (the reverted solver-probe attempt). New files
-   [facelet-cube.js](cube_tree_website/facelet-cube.js) (a plain-JS 54-facelet
+   [facelet-cube.js](cube_tree_website/js/facelet-cube.js) (a plain-JS 54-facelet
    cube simulator, cross-verified bit-for-bit against `magiccube` for 328
    cases — see [test/facelet-cube.test.js](cube_tree_website/test/facelet-cube.test.js))
-   and [facelet-flags.js](cube_tree_website/facelet-flags.js) (a JS port of
+   and [facelet-flags.js](cube_tree_website/js/facelet-flags.js) (a JS port of
    `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask slot check)
    give `searchCurrentNode` a real cube-state check: replay
    `[scramble, rotation, priorPath, coreAlg]` as literal moves and compare the
@@ -99,7 +99,7 @@ section. Summary:
 **2026-10-04 (fourth pass, same day): Cross optimisation (README "Wide
 moves and Cross optimisation") implemented — the last unimplemented item
 from §0's original spec-alignment review.** Full writeup in §4.13. Summary:
-6. New [cross-optimization.js](cube_tree_website/cross-optimization.js)
+6. New [cross-optimization.js](cube_tree_website/js/cross-optimization.js)
    explores rewriting a Cross solution's `L`/`R`/`D` (and primes/doubles,
    `D2` excluded) moves into wide-move form, tracking the cumulative
    rotation each substitution implies and keeping only combinations that
@@ -345,6 +345,36 @@ re-deriving rotation algebra by hand.
   `pseudoCrossSolver/compile.sh`; emsdk at `~/emsdk`), bump `ENGINE_VERSION`
   in solver-ui.js or browsers keep the cached old binary (§4.27), and check
   the dev server log shows the new `.wasm` being fetched.
+- **Directory layout (2026-10-04 cleanup):** the browser app lives in
+  `js/` (`script.js`, `facelet-cube.js`, `facelet-flags.js`,
+  `cross-optimization.js`, `random-state-scramble.js`, `solver-bridge.js`,
+  `solver-ui.js`); runtime/reference data is in `data/`
+  (`F2L_tree.json`, `f2l_nodes_and_edges.json`, `pro_references.txt`);
+  Node/Python dev scripts are in `tools/` (`backend_test.js`,
+  `cross_xcross.js`, `pro-references.js`, `tree_gen.py`, `test_tree_gen.py`,
+  `gen_facelet_fixture.py`, plus the new shared `harness.js`); upstream docs
+  are in `docs/`. `index.html`, `solver.html`, `f2l_table_inspector.html`,
+  `styles.css` stay at the site root, as do the vendored `crossSolver/` and
+  `pseudoCrossSolver/` engines (untouched — `THIRD_PARTY_NOTICES.md`
+  documents their modifications by these exact paths). `test/` is unchanged.
+  Old flat-layout paths you may remember from earlier entries in this file no
+  longer exist; the file-path *links* throughout this document were updated
+  for the move, but older prose mentions may still say e.g. "script.js"
+  without the `js/` prefix — that's still the same file, just moved.
+
+**2026-10-04 (cleanup pass): codebase restructured from a flat
+`cube_tree_website/` into `js/`/`data/`/`tools/`/`docs/` (see the layout
+bullet above) and the copy-pasted `PATHS`/engine-bootstrap boilerplate in
+`backend_test.js`/`cross_xcross.js` extracted into `tools/harness.js`
+(also fixed a real bug there: a hardcoded machine-specific absolute
+`BASE_DIR` became `path.join(__dirname, '..')`). Vendored engines
+(`crossSolver/`, `pseudoCrossSolver/`) and `archived_attempts/` were left
+untouched. Verified after the move: the full fast `test/` suite, both slow
+real-WASM e2e harnesses (`solver-bridge-e2e.js`, `pro-references-e2e.js`),
+`test_tree_gen.py`, both refactored `tools/` debug scripts end-to-end,
+byte-identical `tree_gen.py` regeneration output, and a full headless-Chrome
+browser run of index.html → solver.html (500 results populated, zero
+console errors).**
 
 ---
 
@@ -432,7 +462,7 @@ one place that *does* chain DAG → solver → scoring (the Node test scripts)
 only ever does a single first step (plus an unfinished, unscored
 experimental second phase), never a full interactive path.
 
-### 1.1 The DAG ([tree_gen.py](cube_tree_website/tree_gen.py))
+### 1.1 The DAG ([tree_gen.py](cube_tree_website/tools/tree_gen.py))
 
 - Builds a **purely abstract** state graph: each node is `{cross_solved,
   corners solved, edges solved}` (no real facelet/cubie state, no move
@@ -443,13 +473,13 @@ experimental second phase), never a full interactive path.
   then prunes unreachable states. **As of 2026-10-02 this is verified**: 238
   nodes, 2393 edges, acyclic, monotonic, every node's solved-piece labels
   are real slot names, and 4 fully-solved terminal states exist with no
-  outgoing edges — see [test_tree_gen.py](cube_tree_website/test_tree_gen.py)
+  outgoing edges — see [test_tree_gen.py](cube_tree_website/tools/test_tree_gen.py)
   and §5 roadmap for the two bugs that were found and fixed to get here (a
   wrong output path, and a label-extraction bug that silently zeroed out
   the mismatch-validity filtering and made the DAG unable to reach a
   fully-solved state at all).
 - `f2l_nodes_and_edges.json` (consumed by the frontend) and
-  [F2L_tree.json](cube_tree_website/F2L_tree.json) (consumed by the two
+  [F2L_tree.json](cube_tree_website/data/F2L_tree.json) (consumed by the two
   Node.js test harnesses) are now redundant copies of the same graph — see
   the still-open cleanup item in §5 step 1.
 - **Pseudo-mode finding (answers spec open question #1 — see §4.1):** the
@@ -514,7 +544,7 @@ Two independent C++/Emscripten solvers, architecturally very different:
   Fixed both tables; `cross_xcross.js`'s smoke-test output now correctly
   labels its (unchanged) results as `white` instead of `yellow`.
 
-### 1.3 Frontend ([index.html](cube_tree_website/index.html) / [solver.html](cube_tree_website/solver.html) / [script.js](cube_tree_website/script.js))
+### 1.3 Frontend ([index.html](cube_tree_website/index.html) / [solver.html](cube_tree_website/solver.html) / [script.js](cube_tree_website/js/script.js))
 
 - `index.html`: scramble entry + checkboxes for colors and advanced options
   (`xcross`, `xxcross`, `xxxcross`, `multislotting`, `full_pseudo`,
@@ -554,8 +584,8 @@ Two independent C++/Emscripten solvers, architecturally very different:
 
 ### 1.4 The original Node-only pipeline (superseded by §5 step 3 for the browser, kept as a CLI diagnostic tool)
 
-[cross_xcross.js](cube_tree_website/cross_xcross.js) and
-[backend_test.js](cube_tree_website/backend_test.js) are standalone CLI
+[cross_xcross.js](cube_tree_website/tools/cross_xcross.js) and
+[backend_test.js](cube_tree_website/tools/backend_test.js) are standalone CLI
 scripts (hardcoded absolute `BASE_DIR`, not reusable as a library) that
 **do** load the DAG, dispatch to both WASM solvers via forked child
 processes (one process per solve call — far too slow for interactive use;
@@ -632,8 +662,8 @@ and a cube-state GNN — and are not reusable here):
    solved flags by comparing facelets to their face centers. This was
    confirmed to be the right prerequisite for luck filtering (a solver-probe
    approach was tried first and found unreliable, §4.9) and is now ported as
-   [facelet-flags.js](cube_tree_website/facelet-flags.js), operating on a
-   purpose-built JS facelet simulator ([facelet-cube.js](cube_tree_website/facelet-cube.js))
+   [facelet-flags.js](cube_tree_website/js/facelet-flags.js), operating on a
+   purpose-built JS facelet simulator ([facelet-cube.js](cube_tree_website/js/facelet-cube.js))
    rather than `try_4/cubestate_encoder.py`'s `magiccube`-wrapping approach
    (item 4 below) — a self-contained JS simulator avoids a Python
    dependency in the browser-facing code path; `magiccube` was still used,
@@ -881,7 +911,7 @@ Cross → 10, matching "single pair"; total=2 from Cross → 12, matching
 "multislot"), and only extends beyond the spec's flat table for deeper,
 more-constrained later steps the spec didn't originally distinguish.
 Implemented as `searchLimitFor()` in
-[solver-bridge.js](cube_tree_website/solver-bridge.js), covered by
+[solver-bridge.js](cube_tree_website/js/solver-bridge.js), covered by
 [test/solver-bridge.test.js](cube_tree_website/test/solver-bridge.test.js).
 
 **Known performance cost:** the total=4 ("finishing the last pair") case
@@ -1114,7 +1144,7 @@ hand-derived FACE_MAP-for-slot-names table. Not yet investigated further.
 ### 4.12 FIXED (2026-10-04): luck filtering implemented, plus a newly-discovered later-step dispatch bug found and fixed while verifying it
 
 **Luck filtering (§4.3/§4.9) is now implemented.** Two new files:
-[facelet-cube.js](cube_tree_website/facelet-cube.js) is a plain-JS 54-facelet
+[facelet-cube.js](cube_tree_website/js/facelet-cube.js) is a plain-JS 54-facelet
 3×3 cube simulator (apply ordinary face turns plus whole-cube x/y/z
 rotations to a Kociemba-convention facelet string). Its 9 base-generator
 permutations (U/D/R/L/F/B/x/y/z) were **derived empirically against
@@ -1127,7 +1157,7 @@ re-verified against 30 more random trials. The whole simulator is also
 cross-checked bit-for-bit against 328 `magiccube`-generated cases (random
 algorithms up to 30 moves, every single move token in isolation) in
 [test/facelet-cube.test.js](cube_tree_website/test/facelet-cube.test.js) —
-all match exactly. [facelet-flags.js](cube_tree_website/facelet-flags.js) is
+all match exactly. [facelet-flags.js](cube_tree_website/js/facelet-flags.js) is
 a JS port of `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask
 slot-solved check (operating on the same facelet convention), sanity-checked
 against the `R U R' U'` commutator this project's own
@@ -1309,7 +1339,7 @@ same way (real DAG + real solver + `facelet-cube.js`/`facelet-flags.js`, or
 > described below was a mistake: `u` (= D + y) is correct and `d` is U + y'.
 > Committed results with a residual rotation were also broken. Fixed in §4.19.
 
-New file [cross-optimization.js](cube_tree_website/cross-optimization.js),
+New file [cross-optimization.js](cube_tree_website/js/cross-optimization.js),
 wired into `searchCurrentNode` for root, Cross-only (`pairCount === 0`)
 candidates, gated by a new `cross_opt` entry in `SolveSession`'s
 `advancedOptions` (4th constructor arg; `solver-ui.js` now passes
@@ -1922,7 +1952,7 @@ be done in parallel.
      exactly matches the old committed `F2L_tree.json` — confirming this
      was a regression introduced after that file was generated, not a
      long-standing design choice. Added
-     [test_tree_gen.py](cube_tree_website/test_tree_gen.py) as a regression
+     [test_tree_gen.py](cube_tree_website/tools/test_tree_gen.py) as a regression
      test (structural + semantic DAG invariants, including a direct guard
      on real slot labels) — verified it fails on the buggy code and passes
      on the fix. Regenerated `f2l_nodes_and_edges.json` and
@@ -1952,9 +1982,9 @@ be done in parallel.
 
    This is the real product, scoped per README.md and the deviations in
    §4. New files:
-   [solver-bridge.js](cube_tree_website/solver-bridge.js) (the search/
+   [solver-bridge.js](cube_tree_website/js/solver-bridge.js) (the search/
    scoring/session logic, Node-testable) and
-   [solver-ui.js](cube_tree_website/solver-ui.js) (DOM glue for
+   [solver-ui.js](cube_tree_website/js/solver-ui.js) (DOM glue for
    `solver.html`). `script.js` gained two small integration hooks
    (`window.onPrunedTreeReady`, `window.onActiveScrambleChanged`) called
    from the existing DOMContentLoaded handler and `scrambleController`,

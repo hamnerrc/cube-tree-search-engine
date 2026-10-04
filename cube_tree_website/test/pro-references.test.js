@@ -9,7 +9,7 @@
 'use strict';
 const assert = require('assert');
 const path = require('path');
-const P = require(path.join(__dirname, '..', 'pro-references.js'));
+const P = require(path.join(__dirname, '..', 'tools', 'pro-references.js'));
 
 let failures = 0;
 function test(name, fn) {

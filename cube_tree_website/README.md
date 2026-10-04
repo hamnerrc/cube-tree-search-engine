@@ -240,7 +240,7 @@ pieces even when they move no goal piece (e.g. `R' U R'` instead of `R2`).
 
 ## Professional reference solves and known gaps
 
-[pro_references.txt](pro_references.txt) contains benchmark solves from
+[pro_references.txt](data/pro_references.txt) contains benchmark solves from
 professional cubers. **The solver must be capable of processing these
 scrambles and finding the exact same solutions within its search tree,
 regardless of how the current scoring algorithm ranks them.** They are the
@@ -334,7 +334,7 @@ record of changes made to the vendored engine code, are in
   [or18/RubiksSolverDemo](https://github.com/or18/RubiksSolverDemo) (GPL-3.0).
   Any modifications made here are listed in THIRD_PARTY_NOTICES.md, as
   GPL-3.0 requires. The upstream engine documentation is kept as
-  [or18_solver_docs.html](or18_solver_docs.html) for reference.
+  [or18_solver_docs.html](docs/or18_solver_docs.html) for reference.
 - `alg_speed` is based on **Triangium's MCC** (move-cost/comfort) model,
   MIT-licensed (Copyright (c) 2021 trangium). cube⑂tree uses the **untuned**
   version of this model deliberately (see Ranking, above), with one change:

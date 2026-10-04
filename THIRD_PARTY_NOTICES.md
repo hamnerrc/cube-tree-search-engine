@@ -12,7 +12,7 @@ text as [LICENSE](LICENSE)).
 Included in `cube_tree_website/crossSolver/` and
 `cube_tree_website/pseudoCrossSolver/` (solver engines, prune-table and
 move-table construction, worker/helper glue), and the upstream engine
-documentation `cube_tree_website/or18_solver_docs.html`.
+documentation `cube_tree_website/docs/or18_solver_docs.html`.
 
 **Modifications** (GPL-3.0 §5a): files changed from the upstream copy are
 listed here with the date of the change.
@@ -38,7 +38,7 @@ listed here with the date of the change.
 ## Trangium's MCC (Movecount Coefficient) — MIT
 
 Source: https://github.com/trangium/trangium.github.io. The `algSpeed`
-hand-movement model in `cube_tree_website/script.js` (and its Python port
+hand-movement model in `cube_tree_website/js/script.js` (and its Python port
 `archived_attempts/try_4/alg_speed.py`) is derived from it.
 
 ```

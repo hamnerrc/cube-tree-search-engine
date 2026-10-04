@@ -1043,7 +1043,7 @@ if (typeof document !== 'undefined') {
 
         scrambleController.init(criteria.scrambles);
 
-        const response = await fetch('f2l_nodes_and_edges.json');
+        const response = await fetch('data/f2l_nodes_and_edges.json');
         if (!response.ok) throw new Error(`Failed to load graph data: HTTP ${response.status}`);
 
         const rawTree = await response.json();

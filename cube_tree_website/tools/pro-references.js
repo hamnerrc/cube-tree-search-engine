@@ -6,8 +6,8 @@
 
 const PRO_FS = require('fs');
 const PRO_PATH = require('path');
-const { applyAlgorithm, SOLVED_FACELETS, canonicalizeForEngine } = require('./facelet-cube.js');
-const { solvedFlags, pseudoSolvedFlags } = require('./facelet-flags.js');
+const { applyAlgorithm, SOLVED_FACELETS, canonicalizeForEngine } = require('../js/facelet-cube.js');
+const { solvedFlags, pseudoSolvedFlags } = require('../js/facelet-flags.js');
 
 const PRO_CENTER_COLORS = { W: 'white', Y: 'yellow', G: 'green', B: 'blue', R: 'red', O: 'orange' };
 
@@ -37,7 +37,7 @@ function parseProReferences(text) {
 }
 
 function loadProReferences() {
-  return parseProReferences(PRO_FS.readFileSync(PRO_PATH.join(__dirname, 'pro_references.txt'), 'utf8'));
+  return parseProReferences(PRO_FS.readFileSync(PRO_PATH.join(__dirname, '..', 'data', 'pro_references.txt'), 'utf8'));
 }
 
 /** Physical state after a facelet string: cross colour, cross, per-slot pairs/pieces. */
@@ -126,8 +126,8 @@ function segmentProSolve(solve) {
  * Returns the indices (into the canonical move list) of those moves.
  */
 function goalNoopMoves(solve, segIndex) {
-  const { MOVE_TABLE, composePerm, IDENTITY_PERM } = require('./facelet-cube.js');
-  const { MASKS } = require('./facelet-flags.js');
+  const { MOVE_TABLE, composePerm, IDENTITY_PERM } = require('../js/facelet-cube.js');
+  const { MASKS } = require('../js/facelet-flags.js');
   const segs = segmentProSolve(solve);
   const prior = segs.slice(0, segIndex).map(g => g.alg).join(' ');
   const seg = segs[segIndex];

@@ -26,11 +26,12 @@
 const path = require('path');
 const fs = require('fs');
 const root = path.join(__dirname, '..');
-Object.assign(global, require(path.join(root, 'script.js')));
-Object.assign(global, require(path.join(root, 'facelet-cube.js')));
-Object.assign(global, require(path.join(root, 'facelet-flags.js')));
-Object.assign(global, require(path.join(root, 'cross-optimization.js')));
-const { SolveSession, searchCurrentNode, replayFacelets, COLOR_ROTATIONS } = require(path.join(root, 'solver-bridge.js'));
+const jsRoot = path.join(root, 'js');
+Object.assign(global, require(path.join(jsRoot, 'script.js')));
+Object.assign(global, require(path.join(jsRoot, 'facelet-cube.js')));
+Object.assign(global, require(path.join(jsRoot, 'facelet-flags.js')));
+Object.assign(global, require(path.join(jsRoot, 'cross-optimization.js')));
+const { SolveSession, searchCurrentNode, replayFacelets, COLOR_ROTATIONS } = require(path.join(jsRoot, 'solver-bridge.js'));
 const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
 const PseudoSolverHelperNode = require(path.join(root, 'pseudoCrossSolver', 'solver-helper-node.js'));
 
@@ -60,7 +61,7 @@ function randomScramble(n) {
 }
 
 (async () => {
-  const tree = JSON.parse(fs.readFileSync(path.join(root, 'f2l_nodes_and_edges.json'), 'utf8'));
+  const tree = JSON.parse(fs.readFileSync(path.join(root, 'data', 'f2l_nodes_and_edges.json'), 'utf8'));
   const pruned = pruneGraph(tree, { advanced: ['xcross', 'multislotting', ...advanced], colors });
   const cross = new CrossSolverHelperNode(); await cross.init();
   let pseudo = null;

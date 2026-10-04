@@ -48,7 +48,7 @@ def main():
         c.rotate(to_magiccube(tok))
         cases.append({"moves": [tok], "facelets": c.get_kociemba_facelet_colors()})
 
-    out_path = Path(__file__).resolve().parent / "test" / "facelet-fixture.json"
+    out_path = Path(__file__).resolve().parent.parent / "test" / "facelet-fixture.json"
     with open(out_path, "w") as f:
         json.dump(cases, f)
     print(f"Wrote {len(cases)} cases to {out_path}")

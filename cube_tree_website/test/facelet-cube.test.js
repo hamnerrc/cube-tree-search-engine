@@ -9,7 +9,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { applyAlgorithm, SOLVED_FACELETS, isMoveToken } = require('../facelet-cube.js');
+const { applyAlgorithm, SOLVED_FACELETS, isMoveToken } = require('../js/facelet-cube.js');
 
 let passCount = 0;
 function check(name, condition) {
@@ -87,7 +87,7 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
 // canonicalizeForEngine (§4.19): state(prefix, alg) == state(rotation, moves),
 // with `moves` face turns only, for random mixed-notation sequences.
 {
-    const { canonicalizeForEngine } = require('../facelet-cube.js');
+    const { canonicalizeForEngine } = require('../js/facelet-cube.js');
     const V = [...'UDRLFBxyzrludfbMES'].flatMap(f => [f, f + "'", f + '2']);
     let seed = 3;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
@@ -105,14 +105,14 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
 }
 
 {
-    const { inverseRotation } = require('../facelet-cube.js');
+    const { inverseRotation } = require('../js/facelet-cube.js');
     const rots = ['', 'y', "y'", 'y2', 'x', 'z2 y', "x' y2", "z y'"];
     check('inverseRotation undoes every tested rotation', rots.every(r =>
         applyAlgorithm(SOLVED_FACELETS, [r, inverseRotation(r)].filter(Boolean).join(' ')) === SOLVED_FACELETS));
 }
 
 {
-    const { rotationSpellings, commuteNormalize, netRotation, inverseRotation, relabelAlgForRotation } = require('../facelet-cube.js');
+    const { rotationSpellings, commuteNormalize, netRotation, inverseRotation, relabelAlgForRotation } = require('../js/facelet-cube.js');
     const start = applyAlgorithm(SOLVED_FACELETS, "R U F' D2 B L");
     const alg = "U R' U' R U' B U B'";
     const sp = rotationSpellings(alg);
@@ -129,7 +129,7 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
 }
 
 {
-    const { inspectionWideVariants, rotationName } = require('../facelet-cube.js');
+    const { inspectionWideVariants, rotationName } = require('../js/facelet-cube.js');
     const start = applyAlgorithm(SOLVED_FACELETS, "R U F' D2 B L U2");
     const V = [...'UDRLFB'].flatMap(f => [f, f + "'", f + '2']);
     let seed = 3, n = 0, bad = 0;

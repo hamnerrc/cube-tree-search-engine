@@ -10,8 +10,8 @@
  */
 const path = require('path');
 const PseudoSolverHelperNode = require(path.join(__dirname, '..', 'solver-helper-node.js'));
-const { applyAlgorithm, SOLVED_FACELETS } = require(path.join(__dirname, '..', '..', 'facelet-cube.js'));
-const { pseudoSolvedFlags, solvedFlags } = require(path.join(__dirname, '..', '..', 'facelet-flags.js'));
+const { applyAlgorithm, SOLVED_FACELETS } = require(path.join(__dirname, '..', '..', 'js', 'facelet-cube.js'));
+const { pseudoSolvedFlags, solvedFlags } = require(path.join(__dirname, '..', '..', 'js', 'facelet-flags.js'));
 
 const SCRAMBLE = "F2 D R2 U' R2 D' R2 U R2 F2"; // cross:false, corners BR+FR false, edges all true
 console.log('before fix:', solvedFlags(applyAlgorithm(SOLVED_FACELETS, SCRAMBLE)), pseudoSolvedFlags(applyAlgorithm(SOLVED_FACELETS, SCRAMBLE)).cornerAt);

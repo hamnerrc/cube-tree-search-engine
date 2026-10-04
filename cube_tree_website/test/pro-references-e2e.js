@@ -21,9 +21,10 @@
 'use strict';
 const path = require('path');
 const root = path.join(__dirname, '..');
-const { loadProReferences, segmentProSolve } = require(path.join(root, 'pro-references.js'));
-const { canonicalizeForEngine, applyAlgorithm, SOLVED_FACELETS, commuteNormalize, rotationSpellings } = require(path.join(root, 'facelet-cube.js'));
-const { searchLimitFor, SLOT_INDICES, POSTALG_BOUNDARY, NOOP_MOVES } = require(path.join(root, 'solver-bridge.js'));
+const jsRoot = path.join(root, 'js');
+const { loadProReferences, segmentProSolve } = require(path.join(root, 'tools', 'pro-references.js'));
+const { canonicalizeForEngine, applyAlgorithm, SOLVED_FACELETS, commuteNormalize, rotationSpellings } = require(path.join(jsRoot, 'facelet-cube.js'));
+const { searchLimitFor, SLOT_INDICES, POSTALG_BOUNDARY, NOOP_MOVES } = require(path.join(jsRoot, 'solver-bridge.js'));
 const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
 
 const args = process.argv.slice(2);

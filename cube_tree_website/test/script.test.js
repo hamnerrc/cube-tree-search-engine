@@ -23,7 +23,7 @@ const {
   calculateSolvedPieces,
   scoreAlgorithms,
   algSpeed,
-} = require(path.join(__dirname, '..', 'script.js'));
+} = require(path.join(__dirname, '..', 'js', 'script.js'));
 
 let failures = 0;
 
@@ -41,7 +41,7 @@ function test(name, fn) {
 // DOMContentLoaded browser path), so pull it out of the file source
 // directly for testing rather than duplicating its logic here.
 const fs = require('fs');
-const scriptSrc = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+const scriptSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'script.js'), 'utf8');
 const pruneGraphMatch = scriptSrc.match(/function pruneGraph\([\s\S]*?\n}\n/);
 assert(pruneGraphMatch, 'could not locate pruneGraph source to extract for testing');
 // eslint-disable-next-line no-eval

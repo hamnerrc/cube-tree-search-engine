@@ -14,11 +14,11 @@ const path = require('path');
 // solver-bridge.js expects algSpeed/calculateSolvedPieces/altAlgs/
 // isPseudoState/applyAlgorithm/SOLVED_FACELETS/solvedFlags as bare globals
 // (shared <script> scope in the browser).
-const scriptExports = require(path.join(__dirname, '..', 'script.js'));
+const scriptExports = require(path.join(__dirname, '..', 'js', 'script.js'));
 Object.assign(global, scriptExports);
-Object.assign(global, require(path.join(__dirname, '..', 'facelet-cube.js')));
-Object.assign(global, require(path.join(__dirname, '..', 'facelet-flags.js')));
-Object.assign(global, require(path.join(__dirname, '..', 'cross-optimization.js')));
+Object.assign(global, require(path.join(__dirname, '..', 'js', 'facelet-cube.js')));
+Object.assign(global, require(path.join(__dirname, '..', 'js', 'facelet-flags.js')));
+Object.assign(global, require(path.join(__dirname, '..', 'js', 'cross-optimization.js')));
 
 const {
   SolveSession,
@@ -33,7 +33,7 @@ const {
   relabelSlotsForRotation,
   alignPseudoAlg,
   rootTargetByLabels,
-} = require(path.join(__dirname, '..', 'solver-bridge.js'));
+} = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
 
 let failures = 0;
 function test(name, fn) {

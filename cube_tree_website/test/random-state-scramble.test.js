@@ -22,7 +22,7 @@
 const assert = require('assert');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const root = path.join(__dirname, '..');
+const root = path.join(__dirname, '..', 'js');
 const F = require(path.join(root, 'facelet-cube.js'));
 const { RandomStateScramble: R, generateRandomStateScramble } = require(path.join(root, 'random-state-scramble.js'));
 
