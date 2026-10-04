@@ -341,6 +341,10 @@ re-deriving rotation algebra by hand.
   note.
 - The repo is GPL-3.0 (§6). Any change to vendored engine code must be
   listed in THIRD_PARTY_NOTICES.md.
+- After rebuilding an engine (`crossSolver/compile.sh`,
+  `pseudoCrossSolver/compile.sh`; emsdk at `~/emsdk`), bump `ENGINE_VERSION`
+  in solver-ui.js or browsers keep the cached old binary (§4.27), and check
+  the dev server log shows the new `.wasm` being fetched.
 
 ---
 
@@ -1585,6 +1589,21 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.27 FIXED (2026-10-04, ninth pass): browsers could keep running cached old engines
+
+Found while browser-verifying the rebuilt engines: the server log showed no
+requests at all for the workers, `solver.js`/`pseudo.js` or the `.wasm` files
+-- Chrome served cached copies, so the page could silently run the old
+engines (no `setNoopMoves`; the bridge's `typeof` guard then skips it). The
+`?v=` cache-buster only covered the page scripts. Fix: `solver-ui.js` creates
+both workers from explicit `…?v=${ENGINE_VERSION}` URLs and each worker
+forwards its query string to its loader script and `.wasm` (vendored-file
+change recorded in THIRD_PARTY_NOTICES.md). **Bump `ENGINE_VERSION` whenever
+an engine binary or worker changes.** Verified (headless Chrome): all six
+engine files fetched with the version (HTTP 200); 14,862 root results with
+pro moves + pseudo (vs 11,356 when the stale engines ran), commit fine, no
+console errors.
 
 ### 4.26 (2026-10-04, ninth pass): pro move set on by default; reference membership 22/24
 

@@ -31,6 +31,9 @@ listed here with the date of the change.
   by their inputs (`g_prune_cache`). Rebuilt `pseudo.js` / `pseudo.wasm` with
   the new `pseudoCrossSolver/compile.sh`. `worker3.js`, `solver-helper.js`,
   `solver-helper-node.js`: pass `noopMoves` through.
+- **2026-10-04** `crossSolver/worker-persistent.js`, `pseudoCrossSolver/worker3.js`:
+  forward the worker's query string (engine version) to `solver.js` /
+  `pseudo.js` and their `.wasm` files (cache busting).
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

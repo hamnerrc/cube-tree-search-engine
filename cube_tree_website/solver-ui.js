@@ -9,6 +9,12 @@
  */
 'use strict';
 
+// Bump whenever crossSolver/ or pseudoCrossSolver/ binaries or workers change:
+// the workers forward this query string to solver.js/pseudo.js and to the
+// .wasm files, so a browser can never keep running a cached older engine
+// (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
+const ENGINE_VERSION = '20261004-noop1';
+
 (function () {
   let helper = null;
   let pseudoHelper = null;
@@ -35,7 +41,7 @@
 
   async function ensureHelper() {
     if (!helper) {
-      helper = new CrossSolverHelper();
+      helper = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}`);
       await helper.init();
     }
     return helper;
@@ -50,7 +56,7 @@
     if (!needed || typeof PseudoSolverHelper === 'undefined') return null;
     if (!pseudoHelper) {
       try {
-        const h = new PseudoSolverHelper();
+        const h = new PseudoSolverHelper(`pseudoCrossSolver/worker3.js?v=${ENGINE_VERSION}`);
         await h.init();
         pseudoHelper = h;
       } catch (err) {

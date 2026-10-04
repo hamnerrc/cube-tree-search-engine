@@ -83,12 +83,16 @@ globalThis.postMessage = function(message) {
 const scriptPath = self.location.href;
 const baseURL = scriptPath.substring(0, scriptPath.lastIndexOf('/') + 1);
 
-importScripts(baseURL + 'solver.js');
+// cube-tree modification: forward this worker's own query string (engine
+// version) to solver.js and solver.wasm so cached old binaries are never used.
+const engineQuery = self.location.search || '';
+
+importScripts(baseURL + 'solver.js' + engineQuery);
 
 createModule({
   locateFile: function(path) {
     if (path.endsWith('.wasm') || path.endsWith('.wasm.map')) {
-      return baseURL + path;
+      return baseURL + path + engineQuery;
     }
     return path;
   }
