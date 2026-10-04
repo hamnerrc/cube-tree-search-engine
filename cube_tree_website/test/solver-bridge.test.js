@@ -31,6 +31,7 @@ const {
   COLOR_ROTATIONS,
   checkCandidateAgainstRealCubeState,
   relabelSlotsForRotation,
+  alignPseudoAlg,
 } = require(path.join(__dirname, '..', 'solver-bridge.js'));
 
 let failures = 0;
@@ -284,6 +285,69 @@ test('relabelSlotsForRotation: four y-rotations is the identity', () => {
   let slots = ['FR', 'FL', 'BL', 'BR'];
   for (let i = 0; i < 4; i++) slots = relabelSlotsForRotation(slots, 'y');
   assert.deepStrictEqual(slots, ['FR', 'FL', 'BL', 'BR']);
+});
+
+// ---------------------------------------------------------------------
+// Pseudo (mismatched) claims + D-alignment (PROJECT_STATUS.md §4.14)
+//
+// Fixture below is a REAL pseudoCrossSolver result (not hand-built): scramble
+// + rotation + the solver's own text, after alignment. Physically it leaves
+// cross solved, corner BL home and edge FR home (verified with
+// facelet-cube.js/facelet-flags.js) with no complete pair anywhere -- the
+// shape of a genuine pseudo claim {corners:[BL], edges:[FR]}.
+// ---------------------------------------------------------------------
+
+const PSEUDO_SCRAMBLE = "R F2 L F' D' B2 D' L2 R' D2 U2 B L' R D' U R' D2 F R";
+const PSEUDO_ROT = "z2 y'";
+const PSEUDO_ALG = "R' D R U2 L2";
+
+test('checkCandidateAgainstRealCubeState: a genuine pseudo claim (corner BL + edge FR) passes', () => {
+  const r = checkCandidateAgainstRealCubeState(PSEUDO_SCRAMBLE, PSEUDO_ROT, '', PSEUDO_ALG, ['BL'], ['FR']);
+  assert.deepStrictEqual(r, { ok: true });
+});
+
+test('checkCandidateAgainstRealCubeState: the same result fails as a MATCHED claim of either slot', () => {
+  assert.strictEqual(checkCandidateAgainstRealCubeState(PSEUDO_SCRAMBLE, PSEUDO_ROT, '', PSEUDO_ALG, ['BL']).ok, false);
+  assert.strictEqual(checkCandidateAgainstRealCubeState(PSEUDO_SCRAMBLE, PSEUDO_ROT, '', PSEUDO_ALG, ['FR']).ok, false);
+});
+
+test('checkCandidateAgainstRealCubeState: a pseudo claim naming the wrong edge slot is rejected', () => {
+  const r = checkCandidateAgainstRealCubeState(PSEUDO_SCRAMBLE, PSEUDO_ROT, '', PSEUDO_ALG, ['BL'], ['BR']);
+  assert.strictEqual(r.ok, false);
+  assert.match(r.reason, /BR.*edge/);
+});
+
+test('checkCandidateAgainstRealCubeState: omitting claimedEdges means a matched claim (unchanged behavior)', () => {
+  const a = checkCandidateAgainstRealCubeState("R U R' U'", '', '', "U R U' R'", ['BL', 'BR', 'FL', 'FR']);
+  const b = checkCandidateAgainstRealCubeState("R U R' U'", '', '', "U R U' R'", ['BL', 'BR', 'FL', 'FR'], ['BL', 'BR', 'FL', 'FR']);
+  assert.deepStrictEqual(a, b);
+});
+
+test('alignPseudoAlg: appends the one D turn that brings cross home', () => {
+  // Real pseudo result (see probe in PROJECT_STATUS §4.14): solved only up to a D turn.
+  const sc = "F2 D R2 U' R2 D' R2 U R2 F2";
+  assert.strictEqual(alignPseudoAlg(sc, '', '', "F2 D' F2"), "F2 D' F2 D");
+});
+
+test('alignPseudoAlg: an already-aligned result is returned unchanged', () => {
+  const sc = "F2 D R2 U' R2 D' R2 U R2 F2";
+  assert.strictEqual(alignPseudoAlg(sc, '', '', "R' F2 R' U' R2"), "R' F2 R' U' R2");
+});
+
+test('alignPseudoAlg: merges into a trailing D-family move instead of stacking D D', () => {
+  // scramble D then D2 is net D'; one D-family move (D') is enough, not "D2 D".
+  assert.strictEqual(alignPseudoAlg('D', '', '', 'D2'), "D'");
+  // scramble R undone by R'; the trailing D2 must collapse away entirely.
+  assert.strictEqual(alignPseudoAlg('R', '', '', "R' D2"), "R'");
+});
+
+test('alignPseudoAlg: returns "" when merging cancels the algorithm entirely', () => {
+  // U never touches cross, so the lone D is pure misalignment and cancels to nothing.
+  assert.strictEqual(alignPseudoAlg('U', '', '', 'D'), '');
+});
+
+test('alignPseudoAlg: returns null when no D turn can align cross', () => {
+  assert.strictEqual(alignPseudoAlg('R', '', '', 'U'), null);
 });
 
 // ---------------------------------------------------------------------

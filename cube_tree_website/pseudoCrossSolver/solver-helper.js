@@ -1,9 +1,7 @@
 /**
- * NOT YET WIRED UP / NOT YET TRUSTED (2026-10-04): see the header comment in
- * ../solver-helper-node.js (the Node counterpart to this file) -- the
- * underlying pseudo.cpp search's corner (`pslot`) targeting was found
- * unreliable by direct empirical probing and this is not safe to dispatch
- * to from solver-bridge.js yet.
+ * NOTE (2026-10-04): results are solved only up to one free trailing D turn;
+ * see the header of ../solver-helper-node.js and alignPseudoAlg in
+ * solver-bridge.js (PROJECT_STATUS.md §4.14).
  *
  * pseudoCrossSolver Web Helper - Promise-based API for Web Workers, mirroring
  * crossSolver/solver-helper.js's shape (and pseudoCrossSolver/solver-helper-

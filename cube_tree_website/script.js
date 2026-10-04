@@ -997,7 +997,8 @@ if (typeof module !== 'undefined' && module.exports) {
         cleanScramble,
         isPseudoState,
         calculateSolvedPieces,
-        scoreAlgorithms
+        scoreAlgorithms,
+        pruneGraph
     };
 }
 

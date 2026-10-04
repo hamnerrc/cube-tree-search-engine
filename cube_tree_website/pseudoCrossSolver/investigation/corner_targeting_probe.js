@@ -1,17 +1,10 @@
 /**
- * Diagnostic probe (NOT a pass/fail test) backing the "pseudo.cpp's
- * corner (pslot) targeting looks unreliable" finding in PROJECT_STATUS.md.
- * Run and eyeball the output; see that doc's pseudo-dispatch-investigation
- * section for how to read it.
- *
- * Starting from a scramble where corners BR and FR are wrong (verified
- * below) but all edges and -- deliberately -- cross too are disturbed, this
- * asks pseudo xcross_search for "edge FR + corner X" across all four
- * possible X and checks, by real facelet replay (not the solver's own
- * accounting), which corner slot (if any) each returned solution actually
- * places correctly. If `pslot` targeting worked, requesting corner=BR
- * should reliably yield cornerAt.BR=true, requesting corner=FL should
- * yield cornerAt.FL=true, etc. It doesn't: see PROJECT_STATUS.md.
+ * Diagnostic probe. HISTORICAL: this is the probe that first (wrongly)
+ * suggested pseudo.cpp's corner (pslot) targeting was unreliable. The "failures"
+ * it prints are the free trailing D turn: pseudo.cpp only guarantees cross +
+ * targets solved UP TO one D/D2/D'. Re-check any hit with `alignPseudoAlg`
+ * (solver-bridge.js) applied and they all become exact -- see
+ * PROJECT_STATUS.md §4.14. Kept as a repro of the symptom.
  *
  * Run: node pseudoCrossSolver/investigation/corner_targeting_probe.js
  */

@@ -17,7 +17,7 @@
 // Kept as a local copy rather than requiring facelet-cube.js: that file is
 // loaded via a plain <script> tag in the browser (no module system there),
 // so this avoids a require() that would throw outside Node.
-const FACE_ORDER = 'URFDLB';
+const FLAGS_FACE_ORDER = 'URFDLB';
 
 // Center facelet index of each face, in facelet string order.
 const CENTERS = { U: 4, R: 13, F: 22, D: 31, L: 40, B: 49 };
@@ -42,7 +42,7 @@ for (const [name, mask] of Object.entries(MASKS)) {
 }
 
 function faceOf(position) {
-    return FACE_ORDER[Math.floor(position / 9)];
+    return FLAGS_FACE_ORDER[Math.floor(position / 9)];
 }
 
 function isSlotSolved(facelets, maskName, maskTable = MASKS) {

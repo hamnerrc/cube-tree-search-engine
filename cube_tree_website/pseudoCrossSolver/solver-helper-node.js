@@ -1,18 +1,10 @@
 /**
- * NOT YET WIRED UP / NOT YET TRUSTED (2026-10-04): this is a faithful
- * Promise wrapper around pseudo.cpp's `solve()` -- it passes arguments
- * through correctly -- but empirical probing (see PROJECT_STATUS.md's
- * pseudo-dispatch-investigation writeup) found the underlying C++ search's
- * `pslot` (corner) targeting behaving inconsistently: asking for a specific
- * corner slot to be solved frequently returns "solutions" that do NOT
- * actually place that corner there (checked by real facelet replay +
- * facelet-flags.js's new per-piece masks, not just trusting the solver's
- * own accounting). `slot` (edge) targeting looked reliable in every probe.
- * Root cause not yet identified (candidates: an index mismatch in
- * `corner_index[]`, an AUF/rotation bookkeeping gap, or something else) --
- * do NOT wire this into solver-bridge.js's dispatch until that's resolved
- * and re-verified the same way (real scramble, real solver, real facelet
- * replay checking piece identity, not solver-reported success).
+ * NOTE (2026-10-04): the engine's corner/edge targeting was once suspected
+ * unreliable; that was a misreading. pseudo.cpp guarantees only "cross + the
+ * targeted corners/edges solved UP TO ONE FREE TRAILING D TURN" (a D/D2/D'
+ * brings all of them home at once). Callers must align that D -- see
+ * alignPseudoAlg in solver-bridge.js and PROJECT_STATUS.md §4.14. Verified
+ * 96/96 across 6 colors with real facelet replay.
  *
  * pseudoCrossSolver Node.js Helper - Promise-based API, mirroring
  * crossSolver/solver-helper-node.js's shape so solver-bridge.js can dispatch

@@ -58,7 +58,10 @@
  *   committed label is filtered out before searching (see the `!isRoot`
  *   block below) — it is not a safe transition from the session's actual
  *   frame.
- * - Pseudo (mismatched) edges are skipped for now — not yet wired up.
+ * - Pseudo (mismatched) edges are dispatched to pseudoCrossSolver when a
+ *   pseudo helper is supplied (and skipped otherwise, or for >3 pairs). That
+ *   engine only guarantees "solved up to one free trailing D turn", so its
+ *   results go through alignPseudoAlg; see PROJECT_STATUS.md §4.14.
  * - Luck filtering (README "Luck filtering") IS implemented here, as of
  *   2026-10-04 — see PROJECT_STATUS.md §4.3/§4.9/§4.12. A solver-probe
  *   approach was attempted first and reverted (§4.9): the "0 onProgress
@@ -181,12 +184,8 @@ function composeRotations(a, b) {
 const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
 
 /**
- * Luck filtering (README "Luck filtering"): replays [scramble, rotation,
- * priorPath, coreAlg] as literal moves on a solved cube via facelet-cube.js
- * and checks, via facelet-flags.js, whether the result solves EXACTLY
- * `claimedCorners` (plus cross, always claimed) — no more, no less. Returns
- * { ok: true } or { ok: false, reason }. See this file's header comment for
- * why this exact replay order is correct and where it's verified.
+ * Replays [scramble, rotation, priorPath, coreAlg] as literal moves on a
+ * solved cube and returns the resulting facelet string.
  *
  * `priorPath` can contain wide-move tokens if an earlier step was a
  * committed Cross-optimisation result (README "Wide moves and Cross
@@ -197,29 +196,91 @@ const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
  * being checked, since the SAME priorPath text is reused by every later
  * step's own luck check once committed.
  */
-function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners) {
+function replayFacelets(scramble, rotation, priorPath, coreAlg) {
   const rawTokens = [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' ').split(/\s+/);
   const sequence = (typeof expandWideMoves === 'function' ? expandWideMoves(rawTokens) : rawTokens).join(' ');
-  const facelets = applyAlgorithm(SOLVED_FACELETS, sequence);
+  return applyAlgorithm(SOLVED_FACELETS, sequence);
+}
+
+/**
+ * Luck filtering (README "Luck filtering"): replays the candidate for real
+ * (see replayFacelets) and checks, via facelet-flags.js, that the result
+ * solves EXACTLY what the candidate's DAG edge claims -- cross, plus every
+ * claimed corner/edge, and no additional complete pair. Returns
+ * { ok: true } or { ok: false, reason }. See this file's header comment for
+ * why this exact replay order is correct and where it's verified.
+ *
+ * `claimedEdges` defaults to `claimedCorners` (a matched claim: a slot is
+ * claimed iff both its corner and its edge are). Passing a DIFFERENT list
+ * makes this a pseudo claim: each corner/edge in the claim is checked as an
+ * independent piece (facelet-flags.js's pseudoSolvedFlags) -- the corner at
+ * one home-slot and the edge at another can each be genuinely solved
+ * without either having its natural partner. A lone extra solved piece
+ * with no partner is tolerated either way (README: it "may appear
+ * transiently as a side effect"); only an extra COMPLETE pair is luck.
+ */
+function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners, claimedEdges) {
+  const facelets = replayFacelets(scramble, rotation, priorPath, coreAlg);
   const actual = solvedFlags(facelets);
-  const claimed = new Set(claimedCorners || []);
+  const corners = new Set(claimedCorners || []);
+  const edges = new Set(claimedEdges === undefined ? (claimedCorners || []) : claimedEdges);
 
   if (!actual.cross) {
     return { ok: false, reason: 'cross claimed solved but is not actually solved' };
   }
+  const piece = pseudoSolvedFlags(facelets);
   for (const slot of F2L_SLOTS) {
-    const actuallySolved = actual[slot];
-    const claimsSolved = claimed.has(slot);
-    if (actuallySolved !== claimsSolved) {
+    const claimsPair = corners.has(slot) && edges.has(slot);
+    if (actual[slot] !== claimsPair) {
       return {
         ok: false,
-        reason: actuallySolved
+        reason: actual[slot]
           ? `slot ${slot} solved by luck (not claimed by this edge)`
           : `slot ${slot} claimed solved but is not actually solved`,
       };
     }
+    if (corners.has(slot) && !piece.cornerAt[slot]) {
+      return { ok: false, reason: `slot ${slot} claimed solved but is not actually solved (corner)` };
+    }
+    if (edges.has(slot) && !piece.edgeAt[slot]) {
+      return { ok: false, reason: `slot ${slot} claimed solved but is not actually solved (edge)` };
+    }
   }
   return { ok: true };
+}
+
+/**
+ * Pseudo-solver results are only "solved up to a D-layer offset": the
+ * engine (pseudoCrossSolver) considers cross + the targeted corners/edges
+ * solved relative to EACH OTHER, which physically means one final free D
+ * turn (D, D2 or D') -- or none -- brings every one of them home at once.
+ * Established empirically (PROJECT_STATUS.md §4.14: 96/96 solutions across
+ * random scrambles and all six cross colors); an earlier investigation that
+ * ignored this offset wrongly concluded the solver was unreliable.
+ *
+ * Returns `coreAlg` with exactly that aligning D turn merged onto its end (a
+ * trailing D-family move absorbs it, possibly cancelling), or null if no D
+ * turn aligns the cross -- the real physical state is then not "solved up
+ * to D" at all. Returns '' if the merge cancels the algorithm away entirely
+ * (nothing left to do -- not a real step). The committed text is deliberately made physically exact
+ * (not left offset) so every later step -- matched or pseudo, any solver --
+ * can treat the committed path as an ordinary, correctly-aligned prefix.
+ */
+const D_QUARTERS = { D: 1, 'D2': 2, "D'": 3 };
+const D_TOKEN = ['', 'D', 'D2', "D'"];
+
+function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
+  const base = coreAlg.trim().split(/\s+/).filter(Boolean);
+  const last = base[base.length - 1];
+  const lastQuarters = D_QUARTERS[last] || 0;
+  const stem = lastQuarters ? base.slice(0, -1) : base;
+  for (let k = 0; k < 4; k++) {
+    const total = ((lastQuarters + k) % 4);
+    const tokens = total ? [...stem, D_TOKEN[total]] : stem;
+    const alg = tokens.join(' ');
+    if (solvedFlags(replayFacelets(scramble, rotation, priorPath, alg)).cross) return alg;
+  }
+  return null;
 }
 
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
@@ -234,6 +295,14 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg) 
     case 4: return helper.solveXxxxcross(scramble, opts);
     default: throw new Error(`Unsupported pair count: ${slots.length}`);
   }
+}
+
+/** Pseudo-engine counterpart of solverCallFor: independent edge and corner home-slot lists. */
+function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg) {
+  const toLetters = list => list.slice().sort();
+  return pseudoHelper.solvePseudo(scramble, toLetters(edges), toLetters(corners), {
+    maxSolutions: 20, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '',
+  });
 }
 
 class SolveSession {
@@ -280,8 +349,10 @@ class SolveSession {
  * Search every outgoing edge of session's current node, dispatch to the
  * appropriate solver, and return a TPP-ranked array of candidate results.
  * `onStatus(message)` is called with human-readable progress updates.
+ * `pseudoHelper` (optional) is a pseudoCrossSolver helper; without one,
+ * pseudo (mismatched) targets are skipped.
  */
-async function searchCurrentNode(session, helper, onStatus) {
+async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   const isRoot = session.isAtRoot;
   let edges = session.outgoingEdges();
 
@@ -355,13 +426,15 @@ async function searchCurrentNode(session, helper, onStatus) {
 
   for (const edge of edges) {
     const targetNode = session.nodeMap.get(edge.target);
-    if (typeof isPseudoState === 'function' && isPseudoState(targetNode.state)) continue; // deferred
+    const isPseudo = typeof isPseudoState === 'function' && isPseudoState(targetNode.state);
+    if (isPseudo && (!pseudoHelper || (targetNode.state.corners || []).length > 3)) continue;
 
     const newCorners = (edge.solved_step && edge.solved_step.corners) || [];
     const newEdges = (edge.solved_step && edge.solved_step.edges) || [];
     const pairCount = newCorners.length;
 
     const allCorners = targetNode.state.corners || [];
+    const allEdges = targetNode.state.edges || [];
     const maxLength = searchLimitFor(pairCount, isRoot, allCorners.length);
     if (maxLength === undefined) continue;
 
@@ -379,11 +452,13 @@ async function searchCurrentNode(session, helper, onStatus) {
       const scramble = session.scramble;
       const postAlgForCall = isRoot ? '' : session.scoredPath;
 
-      if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot)}${color ? ' (' + color + ')' : ''}...`);
+      if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
 
       let raw;
       try {
-        raw = await solverCallFor(helper, allCorners, scramble, baseRotation, maxLength, postAlgForCall);
+        raw = isPseudo
+          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, baseRotation, maxLength, postAlgForCall)
+          : await solverCallFor(helper, allCorners, scramble, baseRotation, maxLength, postAlgForCall);
       } catch (err) {
         console.error('Solver error', err);
         continue;
@@ -477,10 +552,22 @@ async function searchCurrentNode(session, helper, onStatus) {
         const variants = isRoot && typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
 
         for (const variant of variants) {
-          const { token: yToken, rest: finalCoreAlg } = stripLeadingRotation(variant);
+          const { token: yToken, rest: variantAlg } = stripLeadingRotation(variant);
           const fullRotation = isRoot ? composeRotations(baseRotation, yToken) : session.rotation;
 
-          if (!finalCoreAlg) continue; // shouldn't happen, but guard
+          if (!variantAlg) continue; // shouldn't happen, but guard
+
+          // A pseudo result is only solved up to a free D-layer offset; make
+          // it physically exact (see alignPseudoAlg). A matched result never
+          // needs this.
+          const finalCoreAlg = isPseudo
+            ? alignPseudoAlg(session.scramble, fullRotation, session.scoredPath, variantAlg)
+            : variantAlg;
+          if (finalCoreAlg === null) {
+            console.warn('Discarding pseudo candidate: cross is not solved up to a D turn', { coreAlg: variantAlg, rotation: fullRotation });
+            continue;
+          }
+          if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
 
           // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
           // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
@@ -497,6 +584,7 @@ async function searchCurrentNode(session, helper, onStatus) {
           // applied there) and §4.12's superset filter already makes
           // `allCorners` trustworthy, so it's used unchanged.
           const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
+          const trueClaimedEdges = isRoot ? relabelSlotsForRotation(allEdges, yToken) : allEdges;
 
           // Luck filtering (README "Luck filtering") -- discard any
           // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
@@ -505,7 +593,7 @@ async function searchCurrentNode(session, helper, onStatus) {
           // PROJECT_STATUS.md §4.3/§4.9 for why a real cube-state check, not
           // a solver probe, is needed.
           const luckCheck = checkCandidateAgainstRealCubeState(
-            session.scramble, fullRotation, session.scoredPath, finalCoreAlg, trueClaimedCorners
+            session.scramble, fullRotation, session.scoredPath, finalCoreAlg, trueClaimedCorners, trueClaimedEdges
           );
           if (!luckCheck.ok) {
             if (luckCheck.reason.includes('claimed solved but is not actually solved')) {
@@ -537,7 +625,7 @@ async function searchCurrentNode(session, helper, onStatus) {
 
           candidates.push({
             color: isRoot ? color : (session.committedRows[0] ? session.committedRows[0].color : ''),
-            type: edgeTypeLabel(pairCount, isRoot),
+            type: edgeTypeLabel(pairCount, isRoot, isPseudo),
             rotation: fullRotation,
             edges: displayEdges,
             corners: displayCorners,
@@ -550,19 +638,29 @@ async function searchCurrentNode(session, helper, onStatus) {
     }
   }
 
-  candidates.sort((a, b) => a.tpp - b.tpp);
-  return candidates;
+  // D-alignment (pseudo) can collapse two distinct raw solver results into
+  // the same final algorithm.
+  const seenCandidates = new Set();
+  const unique = candidates.filter(c => {
+    const key = `${c.targetNodeId}|${c.rotation}|${c.coreAlg}`;
+    if (seenCandidates.has(key)) return false;
+    seenCandidates.add(key);
+    return true;
+  });
+
+  unique.sort((a, b) => a.tpp - b.tpp);
+  return unique;
 }
 
-function edgeTypeLabel(pairCount, isRoot) {
-  if (isRoot) {
-    return ['Cross', 'XCross', 'XXCross', 'XXXCross'][pairCount] || `${pairCount}-pair`;
-  }
-  return pairCount === 1 ? 'Single pair' : 'Multislot';
+function edgeTypeLabel(pairCount, isRoot, isPseudo) {
+  const base = isRoot
+    ? (['Cross', 'XCross', 'XXCross', 'XXXCross'][pairCount] || `${pairCount}-pair`)
+    : (pairCount === 1 ? 'Single pair' : 'Multislot');
+  return isPseudo ? `${base} (pseudo)` : base;
 }
 
-function edgeLabel(pairCount, isRoot) {
-  return edgeTypeLabel(pairCount, isRoot);
+function edgeLabel(pairCount, isRoot, isPseudo) {
+  return edgeTypeLabel(pairCount, isRoot, isPseudo);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -570,6 +668,6 @@ if (typeof module !== 'undefined' && module.exports) {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
     DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
-    relabelSlotsForRotation, CORNER_CYCLE,
+    relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets,
   };
 }

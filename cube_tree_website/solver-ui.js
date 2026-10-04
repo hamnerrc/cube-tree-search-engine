@@ -11,6 +11,7 @@
 
 (function () {
   let helper = null;
+  let pseudoHelper = null;
   let prunedTree = null;
   let criteria = null;
   const sessions = new Map(); // scrambleIndex -> SolveSession
@@ -38,6 +39,26 @@
       await helper.init();
     }
     return helper;
+  }
+
+  // The pseudo engine is only needed when the pruned tree actually contains
+  // pseudo (mismatched) nodes, i.e. the "full pseudo" option is on. A load
+  // failure degrades to matched-only search rather than breaking the page.
+  async function ensurePseudoHelper() {
+    const needed = prunedTree && typeof isPseudoState === 'function'
+      && prunedTree.nodes.some(n => isPseudoState(n.state));
+    if (!needed || typeof PseudoSolverHelper === 'undefined') return null;
+    if (!pseudoHelper) {
+      try {
+        const h = new PseudoSolverHelper();
+        await h.init();
+        pseudoHelper = h;
+      } catch (err) {
+        console.error('Failed to load pseudo solver; pseudo results disabled', err);
+        return null;
+      }
+    }
+    return pseudoHelper;
   }
 
   function getOrCreateSession(index) {
@@ -107,9 +128,12 @@
     }
     if (myToken !== searchToken) return;
 
+    const ph = await ensurePseudoHelper();
+    if (myToken !== searchToken) return;
+
     const results = await searchCurrentNode(session, h, (msg) => {
       if (myToken === searchToken) setStatus(msg);
-    });
+    }, ph);
     if (myToken !== searchToken) return;
 
     renderResults(results);

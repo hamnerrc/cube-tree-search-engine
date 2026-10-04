@@ -17,7 +17,7 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**Current state:** the core interactive solver loop works end-to-end and is
+**Current state:** the core interactive solver loop works end-to-end (pseudo F2L included as of the sixth pass below; slow) and is
 verified — both in a Node harness driving the real WASM solver and physically
 checked with a real cube simulator (`magiccube`) — for matched (non-pseudo)
 Cross/XCross/XXCross/XXXCross plus later single-pair/multislot steps. **Luck
@@ -127,88 +127,38 @@ from §0's original spec-alignment review.** Full writeup in §4.13. Summary:
    single top-ranked Cross candidate in 3 of 4, and a full 5-step solve
    chain reached independently-verified completion.
 
-**2026-10-04 (fifth pass, same day): started wiring up pseudo dispatch (the
-last real "core loop" gap — §5 step 3's "Pseudo edges are skipped entirely"
-checklist item), built real infrastructure, but found a genuine,
-not-yet-understood reliability problem in the vendored `pseudoCrossSolver`
-itself partway through. Stopped short of wiring anything into
-`solver-bridge.js`'s dispatch — do not enable pseudo search until this is
-resolved.** Full writeup in new §4.14. Summary:
-9. **New, verified-correct infrastructure**: `facelet-flags.js` gained
-   `CORNER_MASKS`/`EDGE_MASKS`/`pseudoSolvedFlags()` — per-piece (not
-   per-pair) facelet masks that check "is THIS specific corner (or edge)
-   piece home," independent of its partner. Necessary because a genuine
-   pseudo result places a corner and an edge at *independently* chosen
-   slots (confirmed real in the actual generated DAG — e.g. a node with
-   `corners:["FR"], edges:["FL"]` — not just a theoretical case), so the
-   existing combined per-pair masks can't validate it. Derived from the
-   existing masks by a geometric fact (Kociemba corner-sticker positions
-   `{0,2,6,8}` vs edge-sticker positions `{1,3,5,7}` within each face's 9
-   facelets) and cross-verified against 2000 magiccube-ground-truth
-   (scramble, slot) combinations, not hand-trusted — see
-   [pseudoCrossSolver/investigation/verify_pseudo_masks.py](cube_tree_website/pseudoCrossSolver/investigation/verify_pseudo_masks.py).
-10. **New Promise-based helpers** mirroring crossSolver's shape:
-    [pseudoCrossSolver/solver-helper-node.js](cube_tree_website/pseudoCrossSolver/solver-helper-node.js)
-    (Node) and
-    [pseudoCrossSolver/solver-helper.js](cube_tree_website/pseudoCrossSolver/solver-helper.js)
-    (browser, wraps the existing vendored `worker3.js` unmodified). These
-    faithfully pass arguments through to `pseudo.cpp`'s `solve()` — confirmed
-    by reading `controller()`/`F2L_option_array()` directly: `slot`=edges,
-    `pslot`=corners, letter→index mapping `BL=0,BR=1,FR=2,FL=3` (same
-    convention as crossSolver, independently confirmed by direct source
-    read, not assumed from the naming similarity). **Explicitly marked
-    "NOT YET TRUSTED" in both files' header comments** — see next finding.
-11. **CRITICAL, unresolved finding: `pseudo.cpp`'s `xcross_search` (used for
-    all pseudo pair counts 1-3) does not reliably honor its own `pslot`
-    (corner) target, and does not preserve cross or any already-solved F2L
-    pair while searching.** Established two separate ways:
-    - *Cross/other-pairs not preserved*: starting from a cube where cross
-      and all four pairs are genuinely solved except one pair (via the
-      textbook `R U R' U'` commutator trigger, same technique as
-      `crossSolver/test/slot-mapping.test.js`), asking for that one pair
-      back and requesting `maxSolutions: 20` returns up to 20 "solutions"
-      — the FIRST (shortest) is always clean, but `cross`/other pairs are
-      silently broken in roughly half the remaining, longer ones, with no
-      error. This is a real, structural difference from crossSolver's
-      matched `PersistentXcrossSolver`, which *does* guarantee cross stays
-      solved for every returned solution (that guarantee is load-bearing
-      for solver-bridge.js's entire non-root dispatch design — see this
-      file's header comment on §4.7).
-    - *Corner targeting itself is unreliable, not just "doesn't protect
-      other pieces"*: starting from a cube with corners BR and FR both
-      wrong (everything else, edges included, correct) and asking for
-      "edge FR (already correct) + corner X" for each of the four possible
-      X, by real facelet replay (not the solver's own success signal) only
-      a fraction of returned solutions for X=FR actually place corner FR
-      correctly, and asking for X=BR or X=BL returns **zero** solutions
-      (out of 5 each) that correctly place that corner — see
-      [pseudoCrossSolver/investigation/corner_targeting_probe.js](cube_tree_website/pseudoCrossSolver/investigation/corner_targeting_probe.js)
-      for the exact repro and raw output. Edge (`slot`) targeting looked
-      reliable in every probe run.
-    - Root cause **not identified**. Candidates considered but not
-      confirmed: an index mismatch between `F2L_option_array`'s bit
-      position and the internal `corner_index[]` table `start_search` uses
-      to seed `index2`; an AUF/rotation bookkeeping gap (a free leading or
-      trailing `U` that rotates which physical corner ends up where without
-      being reflected in the returned algorithm text); or something else
-      in `xcross_search`'s depth-limited-search termination logic
-      (`prune1_tmp == 0 && index3_tmp == edge_solved1`) that doesn't mean
-      what it was assumed to mean. This needs real C++-level investigation
-      (instrumenting pseudo.cpp directly, or at minimum many more targeted
-      probes) before any dispatch wiring is attempted — per this project's
-      standing "verify empirically" rule, a hand-derived fix attempt here
-      would almost certainly repeat the mistake that rule exists to avoid.
-    - **Practical consequence**: `solver-bridge.js`'s `isPseudoState(...)
-      continue` skip (§5 step 3's open checklist item) is intentionally
-      left as-is. Wiring pseudo dispatch through anyway and relying
-      entirely on luck-filtering-style post-hoc rejection (discard any
-      candidate that doesn't exactly match its claim) was considered and
-      is *not* unreasonable in principle — the existing luck-filter
-      architecture could be extended to use `pseudoSolvedFlags` for this —
-      but was not done this pass, since corner targeting failing at the
-      rate observed (0/5 for two of four slots tested) would make pseudo
-      results either empty or misleadingly sparse for the user, not just
-      slightly noisy, until the root cause is actually understood.
+**2026-10-04 (sixth pass, same day): pseudo F2L dispatch is now wired up and
+verified. The "unreliable pseudoCrossSolver" finding recorded earlier today
+was a misreading and is retracted** — full writeup in §4.14. Summary:
+9. **Root cause:** `pseudo.cpp` guarantees cross + targeted corners/edges
+   solved only *up to one free trailing D turn* (D/D2/D' brings them all home
+   at once). The earlier probes replayed results without it, so cross and the
+   corner looked broken. With the right D, 96/96 results across 6 colors were
+   exact under real facelet replay.
+10. **Wired up:** `alignPseudoAlg` (merges the aligning D into the committed
+    alg, "Design A": the committed path stays physically exact, at the cost of
+    that D counting toward TPP), `pseudoCallFor`, pseudo dispatch in
+    `searchCurrentNode` (needs a pseudo helper; max 3 pairs), a generalised
+    luck check (`claimedEdges`, per-piece `cornerAt`/`edgeAt`), post-alignment
+    dedupe, `ensurePseudoHelper()` in `solver-ui.js` (lazy), the helper script
+    tag in `solver.html`, and a "(pseudo)" type label.
+11. **Verified** with new unit tests (real pseudo fixture) and the new slow
+    real-WASM harness `test/solver-bridge-e2e.js` (full sessions, independent
+    replay; see §4.14). **Known gap: speed** -- pseudo tables are rebuilt on
+    every call, 15-80 s per root step in Node; pseudo stays off by default.
+12. **Browser-only bug found while verifying in the browser, present since luck
+    filtering landed:** `facelet-cube.js` and `facelet-flags.js` both declared a
+    top-level `const FACE_ORDER`; plain `<script>` tags share one global scope,
+    so `facelet-flags.js` failed to load and every search died with
+    `solvedFlags is not defined`. Node tests can't see this (per-file module
+    scope). Fixed (renamed to `FLAGS_FACE_ORDER`) and guarded by the new
+    `test/browser-globals.test.js` (static duplicate-top-level-declaration check
+    over each page's script list). Lesson: browser-verify after any change to
+    the script set, the Node harness is not sufficient.
+13. Earlier same-day infrastructure still stands: `facelet-flags.js`
+    `CORNER_MASKS`/`EDGE_MASKS`/`pseudoSolvedFlags()` (per-piece masks,
+    verified against 2000 magiccube cases) and the Promise helpers
+    `pseudoCrossSolver/solver-helper(-node).js`.
 
 **2026-10-04 (first pass): the developer note below ("later steps don't generate valid
 solutions, and all searches create many duplicate solutions") was
@@ -243,7 +193,7 @@ the wrong slot name even though the underlying DAG bookkeeping (and thus the
 actual solve) stays correct. Lower priority than the two fixes above since it
 doesn't produce an invalid solve — just a potentially-mislabeled display.
 
-Full test suite (7 suites) passes; run them before and after any change:
+Full test suite (8 fast suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
@@ -251,8 +201,11 @@ node cube_tree_website/test/script.test.js
 node cube_tree_website/test/solver-bridge.test.js
 node cube_tree_website/test/facelet-cube.test.js
 node cube_tree_website/test/cross-optimization.test.js
+node cube_tree_website/test/browser-globals.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
+# very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
+node cube_tree_website/test/solver-bridge-e2e.js --pseudo --scrambles 2 --seed 1
 ```
 
 A good smoke test after touching `solver-bridge.js`: scramble
@@ -288,6 +241,11 @@ DAG + real solver + `facelet-cube.js`/`facelet-flags.js` — never by
 re-deriving rotation algebra by hand.
 
 **Traps already discovered the hard way — don't rediscover these:**
+
+- `pseudoCrossSolver` results are solved only *up to one free trailing D turn*
+  (§4.14). Never replay or commit a raw pseudo result; run it through
+  `alignPseudoAlg` first. Do not conclude the solver is "unreliable" from a
+  replay that skipped this.
 - A whole-cube rotation must go through the solver's `rotation` *option* on
   every call. Embedding it as a literal move in the `scramble` string
   silently corrupts parsing (§4.7 area / `solver-bridge.js` header comment).
@@ -1418,158 +1376,83 @@ genuinely solved.
 
 ---
 
-### 4.14 INVESTIGATED, NOT FIXED (2026-10-04): pseudo dispatch attempt found `pseudoCrossSolver` itself unreliable
+### 4.14 FIXED (2026-10-04): pseudo dispatch wired up; the "unreliable solver" finding was a misreading (free trailing D turn)
 
-Attempting to close the last real "core loop" gap (§5 step 3: "Pseudo edges
-are skipped entirely"). This section records what was learned and built so
-the next attempt doesn't repeat the investigation from zero, per
-[[verify_rotation_bugs_empirically]] and [[magiccube_for_verification]].
-**Nothing was wired into `solver-bridge.js`'s dispatch this pass** — the
-`isPseudoState(...) continue` skip is still there, deliberately.
+An earlier pass this day attempted pseudo dispatch, saw `pseudoCrossSolver`
+return "solutions" that failed real facelet replay (cross broken, targeted
+corner not home, 0/5 hit rate on some slots), and recorded the engine as
+unreliable. **That was wrong.** Root cause, found in the follow-up pass:
 
-**What a "pseudo" DAG node actually represents (confirmed by reading
-`tree_gen.py` and real generated data, not assumed from the README alone):**
-a slot-label set mismatch between `state.corners` and `state.edges` — i.e.
-one piece (corner or edge) is correctly home at some slot while its partner
-isn't. Checking the real generated
-[f2l_nodes_and_edges.json](cube_tree_website/f2l_nodes_and_edges.json): 180
-of 238 nodes are pseudo by this definition, every one has
-`corners.length === edges.length` with the symmetric difference always
-exactly size 2 (exactly one mismatched corner-only slot and one mismatched
-edge-only slot, never more), and — important, and not obvious from the
-README's framing alone — **this includes genuine distance-1 (root) edges**,
-e.g. root node `N0 -> N19` has `solved_step: {corners:["FL","FR"],
-edges:["BL","FR"]}`, meaning the very first step of a solve can legitimately
-place corner FL and edge BL (two different, unrelated slots) in one
-algorithm alongside a genuinely matched FR pair. So pseudo dispatch has to
-handle both root (needing the same `altAlgs`/`relabelSlotsForRotation`
-rotation-variant treatment as matched root edges, just applied to the
-corner-claim and edge-claim slot lists independently) and non-root.
+**`pseudo.cpp`'s guarantee is "cross + the targeted corners/edges are solved
+UP TO ONE FREE TRAILING D TURN."** A final `D`, `D2` or `D'` brings cross,
+the targeted corner(s) and the targeted edge(s) home *simultaneously* (the
+D layer is rotationally free in the search's goal test). The earlier probes
+replayed the raw result without that final D, so cross and the pieces looked
+broken. With the right D appended, results were exact: 24/24, then 96/96
+across 6 colors, checked by real facelet replay (not by the solver's own
+success signal). Nothing is wrong with corner targeting.
 
-**`pseudo.cpp`'s actual exposed API** (`solve()`/`controller()`, read
-directly, not inferred): takes `slot` (space-separated edge home-slots) and
-`pslot` (space-separated corner home-slots) as two *independent* goal sets
-— confirmed by reading `F2L_option_array()` (letter→bit-index:
-`BL=0,BR=1,FR=2,FL=3`, same as crossSolver) and `controller()`'s dispatch to
-`xcross_search`/`xxcross_search`/`xxxcross_search` for 1/2/3 pairs. This is
-exactly the right shape for genuine pseudo pairing (edge slot need not equal
-corner slot). `postAlg` behaves identically to crossSolver's (prefixed
-verbatim onto the returned solution, confirmed by direct test) — good news,
-since it means the existing non-root incremental-dispatch convention
-(`session.scoredPath` via `postAlg`, never pasted into `scramble`, per this
-file's §4.7/§4.10 findings) would carry over unchanged.
+**What a pseudo DAG node is** (from `tree_gen.py` + real generated data):
+a mismatch between `state.corners` and `state.edges`, e.g. corners `[BL]`,
+edges `[FR]`. 180 of 238 nodes; symmetric difference always exactly one
+corner-only slot and one edge-only slot. This includes root (distance-1)
+edges, so pseudo needs the same `altAlgs`/`relabelSlotsForRotation` variant
+treatment as matched root edges, applied to the corner and edge claim lists
+independently. `pseudo.cpp`'s `solve(scramble, rotation, slot, pslot, ...)`
+takes the edge home-slots and corner home-slots as two independent sets
+(BL=0,BR=1,FR=2,FL=3), 1-3 pairs, and `postAlg` behaves as in crossSolver.
 
-**New infrastructure built and verified standalone (kept, reusable):**
+**Implementation (all in `solver-bridge.js` unless noted):**
+1. `alignPseudoAlg(scramble, rotation, priorPath, coreAlg)`: replays the
+   result, strips a trailing D-family token, tries the 4 possible trailing D
+   totals, and returns the first alg whose replay has cross solved (`''` if
+   the D merge cancels the whole alg; `null` if nothing aligns, which the
+   caller logs and discards). **Design A:** the aligning D is merged into
+   the committed alg so the committed path is physically exact for every
+   later step. The cost: that D counts toward the path's TPP (a small,
+   honest penalty; the alternative of leaving the offset un-applied would
+   make later steps start from a state that is not the claimed one).
+2. `pseudoCallFor(...)`: calls `pseudoHelper.solvePseudo` with independent
+   edge/corner slot lists, `MOVE_RESTRICT`, `postAlg` and the cumulative
+   rotation passed through the solver's `rotation` option (never in the
+   scramble string, per the standing traps).
+3. `searchCurrentNode(session, helper, onStatus, pseudoHelper)`: pseudo
+   targets are dispatched when a pseudo helper is passed and the target has
+   at most 3 corners; otherwise skipped as before. Candidates are labeled
+   `... (pseudo)` via `edgeTypeLabel(pairCount, isRoot, isPseudo)`, and are
+   deduped by (targetNodeId, rotation, coreAlg) after alignment because two
+   distinct raw results can collapse to the same aligned alg.
+4. **Luck filtering generalised** (`checkCandidateAgainstRealCubeState` gained
+   an optional `claimedEdges` arg; omitted means "matched", unchanged
+   behavior): per-piece `cornerAt`/`edgeAt` from `pseudoSolvedFlags` must
+   match the claims; a slot counts as a complete pair only if both its
+   corner and edge are home; any pair solved beyond the claim is luck and
+   discarded, while a lone extra corner or edge piece is tolerated.
+5. `solver-ui.js`: `ensurePseudoHelper()` lazily builds a
+   `PseudoSolverHelper` (wrapping the unmodified `worker3.js`) only when the
+   pruned tree has pseudo nodes; failure falls back to null (pseudo skipped).
+   `solver.html` loads `pseudoCrossSolver/solver-helper.js`.
+6. `script.js` exports `pruneGraph` (needed by the e2e harness).
 
-1. **`facelet-flags.js`: `CORNER_MASKS`/`EDGE_MASKS`/`pseudoSolvedFlags()`.**
-   The existing `solvedFlags()` only answers "is the *pair* at slot X
-   solved," which can't validate a pseudo claim (corner and edge home-slots
-   differ). Split each existing combined mask by a geometric fact about the
-   Kociemba facelet convention already in use elsewhere in this file (via
-   `CENTERS`): within each face's 9 facelets, positions `{0,2,6,8}` are that
-   face's corner stickers and `{1,3,5,7}` are its edge stickers (a corner
-   piece has 3 stickers across 3 faces, all at corner positions; an F2L edge
-   has exactly 2, both at edge positions, since F2L edges live in the middle
-   layer and never touch U/D). Not hand-trusted: cross-verified against 500
-   random scrambles (2000 (scramble, slot) combinations) of real
-   `magiccube` ground truth (`get_piece_color`-by-identity, the same method
-   [[magiccube_for_verification]] documents, not just "does a slot look
-   right") — see
-   [pseudoCrossSolver/investigation/verify_pseudo_masks.py](cube_tree_website/pseudoCrossSolver/investigation/verify_pseudo_masks.py).
-   Zero mismatches, including the sanity check that corner-only AND
-   edge-only reconstitutes the pre-existing combined-mask result exactly.
-2. **`pseudoCrossSolver/solver-helper-node.js`** and
-   **`pseudoCrossSolver/solver-helper.js`** — Promise-based wrappers
-   matching crossSolver's `solver-helper-node.js`/`solver-helper.js` shape
-   (`solvePseudo(scramble, edgeSlots, cornerSlots, options)`), so
-   `solver-bridge.js` could eventually dispatch to either engine uniformly.
-   The Node version reuses the exact `globalThis.Module` pre-config pattern
-   already proven against this binary in `cross_xcross.js`/`backend_test.js`
-   (§3); the browser version wraps the existing vendored `worker3.js`
-   unmodified (its EM_JS-bound `postMessage` calls are literally the
-   worker's native `self.postMessage`, so no `{type,data}` envelope is
-   needed, unlike crossSolver's `worker-persistent.js`). Both are marked
-   **"NOT YET TRUSTED"** in their header comments pending finding #4 below.
-3. A smoke call (`solvePseudo(scramble, ['FR'], ['BL'], {...})` against a
-   real scramble) returns plausible-looking algorithms with no crash,
-   confirming the plumbing itself works mechanically.
+**Verification:**
+- Unit tests in `test/solver-bridge.test.js` use a real pseudo fixture
+  (scramble `R F2 L F' D' B2 D' L2 R' D2 U2 B L' R D' U R' D2 F R`, rotation
+  `z2 y'`, alg `R' D R U2 L2`: cross + corner BL + edge FR, no pair), plus
+  alignment and merge cases and the label.
+- `test/solver-bridge-e2e.js` (slow, real WASM, not part of the fast suite):
+  drives full `SolveSession`s on random scrambles and independently replays
+  each committed path, failing on any "claimed solved but not actually
+  solved" warning or a completed session that is not a physically solved
+  Cross+F2L. Flags: `--pseudo`, `--advanced`, `--scrambles`, `--seed`,
+  `--pick top|random`, `--colors`, `--maxsteps`. A run with pseudo produced
+  fully verified solves (e.g. 4 steps, 2 of them pseudo, 0 warnings).
 
-**The blocking finding: `xcross_search`'s own search contract doesn't match
-what matched dispatch (and therefore solver-bridge.js's whole architecture)
-assumes.** Two distinct problems, established by real facelet replay
-(`facelet-cube.js` + `pseudoSolvedFlags`), not by trusting the solver's own
-"Search finished." signal:
-
-- **Cross and other already-solved pairs aren't preserved.** Using the
-  textbook `R U R' U'` commutator (disturbs the FR pair only, from an
-  otherwise fully-solved cube — the same technique
-  `crossSolver/test/slot-mapping.test.js` uses), asking
-  `solvePseudo(trigger, ['FR'], ['FR'], {maxSolutions: 20, maxLength: 8})`
-  returns 20 "solutions." The shortest (first) is always clean (cross +
-  all 4 pairs genuinely restored), but roughly half the remaining 19 break
-  cross and/or an unrelated pair, with no error signal — e.g. `R' D2 B2 L'
-  B2` and `F2 L' F2 D2 R'` both leave cross completely unsolved despite
-  being offered as valid "FR pair" solutions. crossSolver's matched
-  `PersistentXcrossSolver` has no such problem (its whole design, and
-  §4.7's "later step must include every already-solved slot in its own
-  goal" finding, depend on cross genuinely being part of its search goal
-  for every returned solution, not just the shortest one).
-- **Corner (`pslot`) targeting is unreliable even in isolation, not just
-  "doesn't protect other pieces."** Built a scramble (`F2 D R2 U' R2 D'
-  R2 U R2 F2`) with corners BR and FR specifically wrong and everything
-  else (edges included) correct — confirmed by `pseudoSolvedFlags` before
-  the probe, not assumed. Asked for `slot=['FR']` (the edge, already
-  correct — a trivial/no-op half of the goal) paired with each of the four
-  possible `pslot` corners in turn:
-  - `pslot=FR` (the actually-wrong one): 3 of 5 returned solutions
-    correctly place corner FR; 2 of 5 don't, despite the solver reporting
-    them as valid results.
-  - `pslot=BR` and `pslot=BL` (also genuinely achievable corner targets):
-    **0 of 5** returned solutions place that corner correctly, for either.
-  - `pslot=FL` (already correct, like the edge): similarly inconsistent.
-  See
-  [pseudoCrossSolver/investigation/corner_targeting_probe.js](cube_tree_website/pseudoCrossSolver/investigation/corner_targeting_probe.js)
-  for the exact scramble, calls, and raw per-solution replay results.
-  Edge (`slot`) targeting looked consistently reliable across every probe
-  run in this investigation — the problem appears specific to the corner
-  half of the API.
-
-**Root cause: not identified.** Candidates considered, none confirmed:
-an index mismatch between `F2L_option_array`'s bit-position encoding and
-whatever `corner_index[]` (referenced in `start_search`, not fully read)
-actually maps it to; a missing/extra AUF (`U`/`U'` setup) that's absorbed
-into the search without being reflected correctly in which physical corner
-ends up where; or a misunderstanding of what `xcross_search`'s termination
-condition (`prune1_tmp == 0 && index3_tmp == edge_solved1`, from
-`depth_limited_search`) actually guarantees. Resolving this needs either
-deeper C++-level instrumentation of `pseudo.cpp` or substantially more
-black-box probing than this pass had time for — and per
-[[verify_rotation_bugs_empirically]], should **not** be attempted by
-re-deriving the intended semantics from the C++ source and trusting that
-derivation; it needs the same real-solver + real-facelet-replay empirical
-method already used to find the problem.
-
-**Why not just extend luck-filtering to paper over this?** The existing
-luck-filter architecture (`checkCandidateAgainstRealCubeState`) already
-discards any candidate that doesn't exactly match its claim, and could be
-mechanically extended to pseudo via `pseudoSolvedFlags` (check
-`cornerAt`/`edgeAt` against the target's `corners`/`edges` arrays
-independently, instead of the combined `solvedFlags`). This was considered
-and is architecturally sound for the "doesn't preserve unrelated pieces"
-problem — exactly the scenario luck-filtering already exists to catch. It
-was **not** done this pass because of the corner-targeting finding
-specifically: a 0/5 hit rate for two of four tested corner slots would mean
-most pseudo-enabled searches return few or zero surviving candidates after
-filtering, for reasons a user (and a future maintainer reading a thin
-result list) would have no way to diagnose. Shipping it with the root cause
-unidentified risks the "silently worse than it looks" failure mode this
-project has explicitly tried to avoid elsewhere (e.g. §4.9's reverted
-solver-probe luck-filtering attempt). Once the corner-targeting
-unreliability is understood and fixed (or confirmed to be an unfixable
-upstream limitation, in which case `pseudo F2L`'s roadmap scope may need
-revisiting), wiring dispatch into `solver-bridge.js` using the
-already-built helpers + luck-filter extension above should be
-comparatively quick.
+**Known gap, performance:** `pseudo.cpp` rebuilds its prune tables on every
+call (no persistent-table variant; porting it needs `emcc`, not available
+here). A pseudo root step takes roughly 15-80 s in Node (an XCross pseudo
+search with ~1700 pseudo candidates measured at ~79 s). Pseudo is off by
+default in the UI; making it practical needs persistent tables or a
+per-step candidate cap, see §5.
 
 ---
 
@@ -1691,8 +1574,9 @@ be done in parallel.
      see §4.12's final section** (`relabelSlotsForRotation`, derived
      empirically, not hand-derived). This checklist item was stale (still
      listed unfixed after the fix landed); corrected here.
-   - [ ] **Pseudo edges are skipped entirely** (`isPseudoState` check just
-     `continue`s past them) — `pseudoCrossSolver` dispatch isn't wired up
+   - [x] **Pseudo edges dispatched (2026-10-04, see §4.14).** The text below
+     is the superseded pre-fix note, kept for history: (`isPseudoState` check just
+     `continue`d past them) — `pseudoCrossSolver` dispatch isn't wired up
      yet. Not a regression: with the UI's current default checkboxes
      (pseudo off), this matches intended behavior already; it becomes a
      real gap only once "pseudo F2L" is checked. **Investigated
@@ -1749,7 +1633,9 @@ be done in parallel.
 
 4. **Give `pseudoCrossSolver` the same persistent-table treatment as
    `crossSolver`**
-   - [ ] Port the `Persistent*Solver` struct pattern documented in
+   - [ ] **Now the main practical blocker for pseudo F2L** (pseudo root steps
+     take 15-80 s in Node, §4.14); a cheaper stopgap is capping candidates per
+     step. Port the `Persistent*Solver` struct pattern documented in
      `crossSolver/IMPLEMENTATION_NOTES.md` §"Adding a New Solver" to
      `pseudo.cpp`, so pseudo-pair searches don't rebuild their BFS table on
      every call once multiple scrambles are searched per session. (Blocked
