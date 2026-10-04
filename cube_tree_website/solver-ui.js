@@ -105,6 +105,34 @@
     if (tbody) tbody.innerHTML = '<tr><td colspan="7">Cross + F2L solved.</td></tr>';
   }
 
+  // One search per (session, committed path): navigating away from a scramble
+  // mid-search no longer throws the work away, and coming back to an
+  // already-searched node (or one still searching) reuses it instead of
+  // starting again. The path only grows by commits, so node + path text
+  // identifies the step.
+  //
+  // Searches are also serialised: the solver helpers reject a second call
+  // while one is running ("Another solve is in progress"), which used to make
+  // every solver call of a search started mid-way through another one fail,
+  // leaving that scramble with "No results" (found 2026-10-04, §4.18).
+  let searchQueue = Promise.resolve();
+  function resultsFor(session, h, ph) {
+    const key = session.currentNodeId + '|' + session.scoredPath;
+    if (!session.resultsCache || session.resultsCache.key !== key) {
+      const onStatus = (msg) => {
+        if (sessions.get(activeIndex) === session) setStatus(msg);
+      };
+      onStatus('Waiting for the previous search to finish...');
+      const promise = searchQueue.then(() => searchCurrentNode(session, h, onStatus, ph));
+      searchQueue = promise.catch(() => {});
+      session.resultsCache = { key, promise };
+      promise.catch(() => {
+        if (session.resultsCache && session.resultsCache.promise === promise) session.resultsCache = null;
+      });
+    }
+    return session.resultsCache.promise;
+  }
+
   async function runSearch() {
     if (!prunedTree) return;
     const session = getOrCreateSession(activeIndex);
@@ -131,9 +159,13 @@
     const ph = await ensurePseudoHelper();
     if (myToken !== searchToken) return;
 
-    const results = await searchCurrentNode(session, h, (msg) => {
-      if (myToken === searchToken) setStatus(msg);
-    }, ph);
+    let results;
+    try {
+      results = await resultsFor(session, h, ph);
+    } catch (err) {
+      if (myToken === searchToken) setStatus('Search failed: ' + err.message);
+      return;
+    }
     if (myToken !== searchToken) return;
 
     renderResults(results);

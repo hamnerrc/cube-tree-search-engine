@@ -183,7 +183,12 @@ Full writeups in §4.15-§4.17. Summary:
 16. **Random-state scrambles (§4.17):** new `random-state-scramble.js`
     (two-phase solver, cubie model derived from `facelet-cube.js`), used by
     "Generate Scrambles"; cross-checked against Python `kociemba`.
-17. Headless-Chrome verification over CDP works here without any browser
+17. **Results cache + a pre-existing concurrency bug (§4.18):** switching
+    scrambles mid-search made the new scramble's search fail outright
+    ("Another solve is in progress" per solver call → "No results"). Searches
+    are now queued, and each session caches its current step's results, so
+    navigating back is instant.
+18. Headless-Chrome verification over CDP works here without any browser
     extension (`/Applications/Google Chrome.app`, `--headless=new
     --remote-debugging-port`, Node's global WebSocket); see §4.16.
 
@@ -259,9 +264,7 @@ where the optimised variant wins outright.
    (not installed; installing a toolchain is the user's call), or a
    stopgap such as a per-step pseudo candidate cap. Full pseudo makes this
    worse: a root step is ~20-30 s per colour in Node.
-2. A per-(session, node) results cache so scramble navigation doesn't
-   re-search (§5 step 3, multiple scrambles).
-3. Limited look-ahead (README; explicitly optional).
+2. Limited look-ahead (README; explicitly optional).
 
 Everything else from the original §0 spec-alignment review is now
 implemented and verified: luck filtering (§4.3/§4.12), the §4.11/§4.12
@@ -1576,6 +1579,22 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.18 FIXED (2026-10-04): mid-search scramble navigation broke the next search; results cache added
+
+`CrossSolverHelper` rejects a call while another is running ("Another solve
+is in progress"). `solver-ui.js` discarded a stale search's *results* on
+navigation but never stopped the search itself, so the newly shown
+scramble's search ran concurrently and every one of its solver calls threw
+(caught and skipped by `searchCurrentNode`), leaving "No results". Found by
+a headless-Chrome scenario (search scramble 1, switch to 2 after 1 s):
+0 rows and 10 console errors before; 796 rows, no errors after.
+
+Fix (`solver-ui.js`): searches go through one promise queue, and each
+session caches its current step's search promise keyed by node + committed
+path (`resultsFor`). Returning to a scramble reuses the finished or in-flight
+search (measured ~150-200 ms to render vs. a full re-search), which also
+closes the §5 step 3 "no per-(session, node) results cache" note.
+
 ### 4.17 DONE (2026-10-04): random-state scrambles
 
 README: "The eventual goal is proper random-state WCA-legal scrambles."
@@ -1741,7 +1760,8 @@ be done in parallel.
      even back to an already-searched node — there's no per-(session,
      node) results cache, so switching back and forth re-searches every
      time (fast in practice since the underlying solver's prune tables
-     stay warm, but still redundant work worth caching later).
+     stay warm, but still redundant work worth caching later). **Done
+     (2026-10-04), see §4.18**, which also fixes navigation mid-search.
    - [ ] **Performance**: see §4.8's "finishing the last pair" cold-start
      cost (up to the better part of a minute, observed once over 8 minutes
      without finishing). No progress/latency mitigation beyond a generic
