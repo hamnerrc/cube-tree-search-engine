@@ -126,16 +126,27 @@ def generate_pair_transitions(current_state, rot, rotations_to_check, pair_sizes
                         rotated, corners, edge_perm, solve_cross=True
                     )
 
-                    if has_mismatch and not is_pure_mismatch_repair(
-                        rotated, next_state
-                    ):
+                    # Every node keeps at most one mismatched slot. For a
+                    # matched source with pair_size 1 this always holds, and a
+                    # pure repair always lowers the count, so applying it
+                    # unconditionally only bites on full-pseudo transitions.
+                    if not is_valid_pair_state(next_state):
                         continue
 
-                    if pair_size >= 2 and not is_valid_pair_state(next_state):
-                        continue
+                    # Superset DAG: transitions out of a mismatched node that
+                    # are not a pure repair of that mismatch exist only for
+                    # full pseudo. script.js's pruneGraph drops them when the
+                    # "simplified pseudo" checkbox is on (README "Pseudo pairs").
+                    # Judged in the source node's own (unrotated) labels, which
+                    # is how solver-bridge.js reads an edge; the two only differ
+                    # on y/y' edges that drop a committed label, and the bridge
+                    # discards those anyway (PROJECT_STATUS.md §4.12).
+                    full_pseudo_only = has_mismatch and not is_pure_mismatch_repair(
+                        current_state, next_state
+                    )
 
                     next_key = register_cube_state(next_state)
-                    yield (rot, corners, edge_perm, next_key)
+                    yield (rot, corners, edge_perm, next_key, full_pseudo_only)
 
 
 def build_f2l_dag():
@@ -173,7 +184,7 @@ def build_f2l_dag():
 
 
 def prune_graph(start_key):
-    incoming = {tgt for edges in adjacency_list.values() for _, _, _, tgt in edges}
+    incoming = {t[3] for edges in adjacency_list.values() for t in edges}
     outgoing = set(adjacency_list.keys())
     active_keys = (incoming | outgoing) | {start_key}
 
@@ -200,7 +211,9 @@ def export_graph(start_key):
         nodes.append({"id": node_id, "state": solved})
 
         transitions_for_html = []
-        for rot, corners, edges_perm, target_key in adjacency_list.get(state_key, []):
+        for rot, corners, edges_perm, target_key, full_pseudo_only in sorted(
+            adjacency_list.get(state_key, []), key=repr
+        ):
             target_id = node_mapping[target_key]
             rotated = rotate_cube(state, rot)
             action = extract_action_slots(corners, edges_perm, rotated)
@@ -211,6 +224,7 @@ def export_graph(start_key):
                     "target": target_id,
                     "setup_rotation": rot,
                     "solved_step": action,
+                    "full_pseudo_only": full_pseudo_only,
                 }
             )
 

@@ -160,6 +160,33 @@ was a misreading and is retracted** — full writeup in §4.14. Summary:
     verified against 2000 magiccube cases) and the Promise helpers
     `pseudoCrossSolver/solver-helper(-node).js`.
 
+**2026-10-04 (seventh pass, same day): full vs. simplified pseudo, random-state
+scrambles, and a serious rotated-root frame bug found by browser verification.**
+Full writeups in §4.15-§4.17. Summary:
+14. **Full pseudo + "simplified pseudo" checkbox (§4.15).** `tree_gen.py` now
+    emits a superset DAG (same 238 nodes, 6425 edges) where each edge carries
+    `full_pseudo_only`; `pruneGraph` drops those when the new
+    `simplified_pseudo` checkbox (index.html) is on. Verified that the
+    simplified-filtered graph is exactly the old DAG as the bridge sees it,
+    and with real-WASM sessions in both modes (full mode: 6/6 sessions solved,
+    10 full-pseudo-only steps, 0 warnings).
+15. **Bug (§4.16), present since luck filtering/§4.11's relabel fix:** a
+    root candidate from a y/y2/y' `altAlgs` variant committed the
+    *unrotated* DAG node, so every later step read slot labels in the wrong
+    frame. On one scramble 26 of 501 later-step candidates physically broke
+    the committed pair while passing the luck check, and 46 showed the wrong
+    slot name. Earlier "verified" runs missed it because their checks only
+    compared candidates against their own (wrong-frame) claims. Fixed
+    (`rootTargetByLabels`); the e2e harness now checks node-vs-physical
+    state after every commit and every offered candidate (proven to fail on
+    the pre-fix code).
+16. **Random-state scrambles (§4.17):** new `random-state-scramble.js`
+    (two-phase solver, cubie model derived from `facelet-cube.js`), used by
+    "Generate Scrambles"; cross-checked against Python `kociemba`.
+17. Headless-Chrome verification over CDP works here without any browser
+    extension (`/Applications/Google Chrome.app`, `--headless=new
+    --remote-debugging-port`, Node's global WebSocket); see §4.16.
+
 **2026-10-04 (first pass): the developer note below ("later steps don't generate valid
 solutions, and all searches create many duplicate solutions") was
 investigated, root-caused, fixed, and verified — see §4.10 for the full
@@ -193,7 +220,7 @@ the wrong slot name even though the underlying DAG bookkeeping (and thus the
 actual solve) stays correct. Lower priority than the two fixes above since it
 doesn't produce an invalid solve — just a potentially-mislabeled display.
 
-Full test suite (8 fast suites) passes; run them before and after any change:
+Full test suite (9 fast suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
@@ -202,10 +229,13 @@ node cube_tree_website/test/solver-bridge.test.js
 node cube_tree_website/test/facelet-cube.test.js
 node cube_tree_website/test/cross-optimization.test.js
 node cube_tree_website/test/browser-globals.test.js
+node cube_tree_website/test/random-state-scramble.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 # very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
 node cube_tree_website/test/solver-bridge-e2e.js --pseudo --scrambles 2 --seed 1
+#   --pick full exercises full-pseudo-only transitions; --simplified tests that mode;
+#   use several --colors so y-variant root commits (§4.16) are covered
 ```
 
 A good smoke test after touching `solver-bridge.js`: scramble
@@ -224,12 +254,14 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**One remaining reasonable next task:**
-1. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
-   untouched. Given how many rotation-labeling traps have turned up in the
-   matched-pair path (§4.7/§4.10/§4.11/§4.12/§4.13), budget time for an
-   equivalent empirical pass once pseudo dispatch exists — nothing about it
-   has been verified against the real solver yet.
+**Reasonable next tasks (as of the seventh pass):**
+1. Pseudo performance (§5 step 4): persistent pseudo tables need `emcc`
+   (not installed; installing a toolchain is the user's call), or a
+   stopgap such as a per-step pseudo candidate cap. Full pseudo makes this
+   worse: a root step is ~20-30 s per colour in Node.
+2. A per-(session, node) results cache so scramble navigation doesn't
+   re-search (§5 step 3, multiple scrambles).
+3. Limited look-ahead (README; explicitly optional).
 
 Everything else from the original §0 spec-alignment review is now
 implemented and verified: luck filtering (§4.3/§4.12), the §4.11/§4.12
@@ -241,6 +273,12 @@ DAG + real solver + `facelet-cube.js`/`facelet-flags.js` — never by
 re-deriving rotation algebra by hand.
 
 **Traps already discovered the hard way — don't rediscover these:**
+
+- A root candidate's committed node must be the one labelled with what it
+  *physically* solves after its full rotation (including the altAlgs y
+  token), not the unrotated DAG target (§4.16). Any check that compares a
+  candidate only against its own claim cannot see a wrong-frame node; check
+  the session node against the physical cube.
 
 - `pseudoCrossSolver` results are solved only *up to one free trailing D turn*
   (§4.14). Never replay or commit a raw pseudo result; run it through
@@ -532,15 +570,15 @@ DAG+solver+scoring wiring *can* work, but:
 
 | Spec requirement | Current state |
 |---|---|
-| Abstract F2L DAG (unsolved → full Cross+F2L) | **Done, verified.** 238 nodes / 2393 edges, see §1.1. |
+| Abstract F2L DAG (unsolved → full Cross+F2L) | **Done, verified.** 238 nodes / 6425 edges (2393 without the full-pseudo-only edges added in §4.15), see §1.1. |
 | Multi-step click-to-commit interactive loop | **Working, verified in-browser** for matched (non-pseudo) Cross/XCross/XXCross/XXXCross + later single-pair/multislot. See §5 step 3. |
 | TPP ranking over the cumulative path | **Working, verified.** See §5 step 3. |
 | Luck filtering | **Done, verified.** A solver-probe approach was tried first and reverted as unreliable (§4.9); the real fix is a facelet-based real cube-state check (§4.12). |
-| Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today; pseudo dispatch not wired up at all yet.** See §4.1 and §5 step 3. |
+| Simplified pseudo vs. full pseudo as distinct modes | **Done (2026-10-04, seventh pass).** Superset DAG with a per-edge `full_pseudo_only` flag; "simplified pseudo" checkbox filters it in `pruneGraph`. See §4.15. |
 | Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
 | Cross optimisation (wide-move post-processing) | **Done, verified.** See §4.5/§4.13. One deliberate deviation from the README's literal notation (uses `d`/`d'`, not `u`/`u'`, for the D-layer wide move — see §4.13). |
 | Search limits matching the spec's table | **Working, verified** — see §4.6/§4.8 for the one place this needed to extend beyond the spec's literal numbers (later steps scale by total pairs, not a flat per-category number). |
-| WASM scramble search (matched + pseudo) | Matched: **integrated and verified end-to-end in the browser.** Pseudo: still solver-only, not wired into the website UI. |
+| WASM scramble search (matched + pseudo) | Matched: **integrated and verified end-to-end in the browser.** Pseudo: **wired in and verified** (§4.14), but slow (tables rebuilt per call). |
 
 **Bottom line:** the core interactive loop — the thing that was entirely
 missing before — now works end-to-end in the actual browser for the
@@ -643,7 +681,9 @@ These are the concrete technical gaps that will matter when the browser
 bridge (§5 step 3) is built. Each is a deviation discovered by inspecting
 the actual code against the spec, not a hypothetical.
 
-### 4.1 DAG only supports simplified pseudo (answers spec open question #1)
+### 4.1 FIXED (2026-10-04): DAG only supported simplified pseudo (answers spec open question #1) — see §4.15
+
+**Resolved via option (b) below — see §4.15.** Kept as the original finding.
 
 In `tree_gen.py`'s `generate_pair_transitions()`:
 
@@ -1460,6 +1500,102 @@ search with ~1700 pseudo candidates measured at ~79 s). Pseudo is off by
 default in the UI; making it practical needs persistent tables or a
 per-step candidate cap, see §5.
 
+### 4.15 DONE (2026-10-04): full pseudo vs. simplified pseudo
+
+Implements §4.1 option (b). `tree_gen.py` no longer drops non-repair
+transitions out of a mismatched node; it keeps them and flags each edge
+`full_pseudo_only = source has a mismatch and the edge is not a pure repair
+of it` (judged in the source node's own labels, which is how
+`solver-bridge.js` reads an edge). `is_valid_pair_state` (at most one
+mismatched slot) is now applied to every transition; that changes nothing
+for the old edges and bounds the new ones. Node set unchanged (238); edges
+2393 → 6425 (4296 flagged). Export is now sorted per node, so regenerating
+is deterministic (it used to depend on Python's string-hash seed).
+
+`pruneGraph` drops flagged edges when `simplified_pseudo` is checked (new
+checkbox on index.html, unchecked by default like every advanced option;
+it has no effect unless "pseudo F2L" is also on). No bridge change was
+needed: dispatch was already a function of the target's corner/edge sets.
+
+**Verification:**
+- `test_tree_gen.py`: the flag equals its definition on every edge, and the
+  simplified subgraph has no dead ends. `test/script.test.js`: pruneGraph
+  cases for both modes.
+- At the level the bridge actually searches (label-level edges after the
+  §4.12 superset filter, reachable from the root), the simplified-filtered
+  superset is *identical* to the pre-change DAG (263 transitions); full
+  pseudo has 539. The matched smoke test is unchanged (80/80/60/40/20).
+- Real WASM (`test/solver-bridge-e2e.js --pseudo --pick full`): full mode
+  6/6 sessions physically solved, 10 full-pseudo-only steps (mismatch →
+  different mismatch, mismatch + extra pairs), 0 warnings, 0 frame
+  failures; `--simplified`: 2/2, and at each mismatched node the only
+  offers were the 20-candidate direct repair, as specified.
+
+### 4.16 FIXED (2026-10-04): y-variant root commits put the session in the wrong DAG frame
+
+**Symptom (found by browser verification of §4.15):** after committing an
+XCross with rotation `z2 y` that physically filled BR, every next-step row
+said "BR" again. Facelet replay showed those candidates actually filled BL.
+
+**Root cause:** a root search runs once per colour with the colour's base
+rotation; `altAlgs` then derives y/y2/y' variants, and §4.11/§4.12
+correctly relabels each variant's *claim* for the luck check and the
+display. But the candidate's `targetNodeId` stayed the unrotated DAG
+target (labels `[BL]` while BR is physically solved). After commit, every
+later search ran in the physical (`session.rotation`) frame but read the
+node's labels as if they were physical: wrong display (set difference of
+wrong-frame labels) and, worse, wrong dispatch. A target like `{BL, FR}`
+asked the solver for BL+FR without protecting the real BR pair. The luck
+check passed because it compared each result against that same
+wrong-frame claim. On one scramble: 46/501 candidates mislabelled, **26/501
+physically broke the committed pair**.
+
+**Fix:** `rootTargetByLabels(session, trueClaimedCorners, trueClaimedEdges)`
+commits the root target whose labels equal the rotation-corrected claim
+(it always exists: the root's targets are closed under relabelling). After
+the fix the same scramble gives 0/516 and 0/516; step 2 offers 60 valid
+candidates instead of 46.
+
+**Why earlier verification missed it:** the smoke test commits the top
+result, which happened to be an identity variant; the e2e harness only
+checked luck warnings and the final state (later steps re-solve a broken
+pair, so completion still verified). New harness checks: after every commit
+the node's claimed corners/edges must be physically home, and every offered
+candidate must keep them home. Run against the pre-fix bridge it reports
+frame failures; with the fix: matched, all 6 colours, cross-opt, 8/8;
+XXXCross + multislotting, 6/6; full pseudo with y-variant roots, 3/3; all 0
+frame failures, 0 warnings.
+
+Also fixed: the cross-optimisation path logged *expected* luck discards via
+`console.warn`, which the e2e harness counts as bugs (seen as 23 "warnings"
+on a cross_opt run); it now warns only on a real "claimed but not solved".
+
+**Headless-browser verification (no extension needed):** a small CDP
+driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
+generated scrambles, checked boxes, navigated to solver.html, waited for
+results, clicked a row and read the table: no exceptions or console
+errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.17 DONE (2026-10-04): random-state scrambles
+
+README: "The eventual goal is proper random-state WCA-legal scrambles."
+New `random-state-scramble.js`: picks a uniformly random reachable cubie
+state (random permutations with matched parity, random orientations with a
+fixed-up last piece), solves it with a two-phase search, and returns the
+inverse (lengths ~20-22; rejects anything solvable in under 2 moves, per
+WCA 4b3). No move tables are hand-typed. Each face turn's cubie form is
+decoded from `facelet-cube.js` with the standard Kociemba facelet tables,
+and coordinate move tables are built by BFS over real cubie states. Tables
+take ~1-2 s once (first click), then ~30 ms per scramble. index.html loads
+`facelet-cube.js` + this file; `populateScrambles` uses it, falling back to
+the old random-move generator if absent.
+
+Verified (`test/random-state-scramble.test.js`): cubie model == facelet sim
+on 300 random sequences; 40 scrambles replay to exactly their random state;
+invariants plus a loose uniformity check; the Python `kociemba` package
+(independent solver) accepts and solves the scrambled states, confirmed by
+replay. Browser: generates and feeds solver.html fine.
+
 ---
 
 ## 5. Actionable Roadmap
@@ -1592,9 +1728,8 @@ be done in parallel.
      unreliable corner-targeting contract (root cause not yet identified),
      so dispatch was deliberately not wired in. Pick up from §4.14, not
      from scratch.
-   - [ ] **Simplified-pseudo checkbox** doesn't exist in the UI yet, and
-     per §4.1 the DAG itself doesn't yet support a "full pseudo" mode to
-     distinguish from.
+   - [x] **Simplified-pseudo checkbox** — **done (2026-10-04), see §4.15.**
+     The DAG is now a superset (full pseudo); the checkbox restricts it.
    - [x] **Cross optimisation** (§4.5) — **done (2026-10-04), see §4.13.**
    - [x] **Multiple scrambles — verified in-browser (2026-10-03).** Set up
      two scrambles, searched and committed a step on scramble 1, navigated
@@ -1695,7 +1830,8 @@ statement; this is the implementation-side follow-up.)
 Per the spec, these four are explicitly implementation-level decisions, not
 blocking ambiguities in the spec itself:
 
-1. **DAG nodes for simplified vs. full pseudo** — **answered**, see §4.1.
+1. **DAG nodes for simplified vs. full pseudo** — **answered** (§4.1) and
+   **implemented** (§4.15): same node set, superset edge set.
 2. **UI/control mechanism for depth-N look-ahead** — deferred; single-step
    search is the correct default for the §5 step 3 build, per spec.
 3. **Performance strategy for first-step wide-move generation** — **decided

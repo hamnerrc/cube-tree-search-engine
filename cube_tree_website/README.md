@@ -7,8 +7,8 @@ of a CFOP-style 3×3 solve. Given a scramble, it helps a human find the
 
 > **This document is the product specification.** It describes what
 > cube⑂tree is *supposed* to do. The current implementation does not yet
-> match it in full — in particular, the browser UI does not yet call a
-> solver at all. For what actually exists today, what has been verified,
+> match it in full (for example, pseudo searches are still slow). For what
+> actually exists today, what has been verified,
 > and the active development roadmap, see
 > [PROJECT_STATUS.md](../PROJECT_STATUS.md).
 
@@ -243,8 +243,9 @@ triggers a fresh search from the resulting node. Multiple scrambles are
 solved completely independently of one another, each with its own result
 table — results are never merged or compared across different scrambles.
 
-The scramble generator currently in use is a placeholder. The eventual goal
-is proper random-state WCA-legal scrambles.
+Generated scrambles are random-state (a uniformly random cube state, solved
+with a two-phase search and inverted), the same approach WCA scramble
+programs use.
 
 ## Out of scope (for now)
 

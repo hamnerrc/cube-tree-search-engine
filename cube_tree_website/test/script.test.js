@@ -154,6 +154,8 @@ function makeSyntheticTree() {
       { id: 'N2', state: { cross_solved: true, corners: ['FR'], edges: ['FR'] } },
       { id: 'N3', state: { cross_solved: true, corners: ['FR', 'FL'], edges: ['FR', 'FL'] } },
       { id: 'N4', state: { cross_solved: true, corners: ['FR'], edges: ['FL'] } }, // pseudo
+      { id: 'N5', state: { cross_solved: true, corners: ['FR', 'BL'], edges: ['FL', 'FR'] } }, // pseudo, different mismatch
+      { id: 'N6', state: { cross_solved: true, corners: ['FL', 'FR'], edges: ['FL', 'FR'] } }, // repair of N4
     ],
     edges: [
       { source: 'N0', target: 'N1', solved_step: { corners: [], edges: [] } },
@@ -162,6 +164,8 @@ function makeSyntheticTree() {
       { source: 'N0', target: 'N4', solved_step: { corners: ['FR'], edges: ['FL'] } },
       { source: 'N1', target: 'N2', solved_step: { corners: ['FR'], edges: ['FR'] } },
       { source: 'N1', target: 'N3', solved_step: { corners: ['FR', 'FL'], edges: ['FR', 'FL'] } },
+      { source: 'N4', target: 'N6', solved_step: { corners: ['FL'], edges: ['FR'] }, full_pseudo_only: false },
+      { source: 'N4', target: 'N5', solved_step: { corners: ['BL'], edges: ['FR'] }, full_pseudo_only: true },
     ],
   };
 }
@@ -187,8 +191,19 @@ test('pruneGraph: xcross+xxcross+multislotting allows 2-pair edges too, pseudo s
 
 test('pruneGraph: full_pseudo includes the mismatched-pair node and its root edge', () => {
   const pruned = pruneGraph(makeSyntheticTree(), { advanced: ['xcross', 'full_pseudo'] });
-  assert.deepStrictEqual(edgeKeys(pruned), ['N0->N1', 'N0->N2', 'N0->N4', 'N1->N2']);
+  assert.deepStrictEqual(edgeKeys(pruned), ['N0->N1', 'N0->N2', 'N0->N4', 'N1->N2', 'N4->N5', 'N4->N6']);
   assert.ok(pruned.nodes.some(n => n.id === 'N4'), 'pseudo node N4 should be present in validNodes');
+});
+
+test('pruneGraph: simplified_pseudo keeps only the direct repair out of a mismatched node', () => {
+  const pruned = pruneGraph(makeSyntheticTree(), { advanced: ['xcross', 'full_pseudo', 'simplified_pseudo'] });
+  assert.deepStrictEqual(edgeKeys(pruned), ['N0->N1', 'N0->N2', 'N0->N4', 'N1->N2', 'N4->N6']);
+});
+
+test('pruneGraph: simplified_pseudo without pseudo F2L changes nothing (no mismatched nodes survive)', () => {
+  const plain = pruneGraph(makeSyntheticTree(), { advanced: ['xcross'] });
+  const simplified = pruneGraph(makeSyntheticTree(), { advanced: ['xcross', 'simplified_pseudo'] });
+  assert.deepStrictEqual(edgeKeys(simplified), edgeKeys(plain));
 });
 
 test('pruneGraph: without multislotting, a non-root edge solving 2 pairs at once is excluded', () => {

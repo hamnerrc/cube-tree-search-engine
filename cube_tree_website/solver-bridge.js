@@ -518,7 +518,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
               session.scramble, baseRotation, session.scoredPath, optAlgExpanded, []
             );
             if (!optLuckCheck.ok) {
-              console.warn(`Discarding cross-optimised candidate: ${optLuckCheck.reason}`, { coreAlg: optAlg, rotation: baseRotation });
+              // Luck (an extra pair solved) is an expected discard, exactly as
+              // for the plain result below; only a real failure is a warning.
+              if (optLuckCheck.reason.includes('claimed solved but is not actually solved')) {
+                console.warn(`Discarding cross-optimised candidate: ${optLuckCheck.reason}`, { coreAlg: optAlg, rotation: baseRotation });
+              }
               continue;
             }
 
@@ -586,6 +590,21 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
           const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
           const trueClaimedEdges = isRoot ? relabelSlotsForRotation(allEdges, yToken) : allEdges;
 
+          // The node this candidate really reaches is the one labelled with
+          // the slots it PHYSICALLY solves (in the frame after fullRotation,
+          // which every later step searches and replays in) -- not the
+          // unrotated DAG target. Committing the unrotated target made later
+          // steps protect the wrong slot: found 2026-10-04 (PROJECT_STATUS.md
+          // §4.16), 26 of 501 later-step candidates on one scramble broke the
+          // committed pair while still passing the luck check.
+          const reachedNodeId = isRoot
+            ? rootTargetByLabels(session, trueClaimedCorners, trueClaimedEdges)
+            : edge.target;
+          if (!reachedNodeId) {
+            console.warn('Discarding candidate: no DAG node for its rotated claim', { trueClaimedCorners, trueClaimedEdges, rotation: fullRotation });
+            continue;
+          }
+
           // Luck filtering (README "Luck filtering") -- discard any
           // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
           // edge's full claimed target, old+new pairs, rotation-corrected)
@@ -631,7 +650,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
             corners: displayCorners,
             coreAlg: finalCoreAlg,
             tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
-            targetNodeId: edge.target,
+            targetNodeId: reachedNodeId,
           });
         }
       }
@@ -652,6 +671,25 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   return unique;
 }
 
+/**
+ * The root's outgoing target whose solved corners/edges are exactly the given
+ * labels (a y/y2/y' root variant reaches the relabelled node, see
+ * searchCurrentNode). Cached per session.
+ */
+function rootTargetByLabels(session, corners, edges) {
+  if (!session._rootTargetsByLabels) {
+    const map = new Map();
+    for (const e of session.tree.edges) {
+      if (e.source !== session.rootId) continue;
+      const st = session.nodeMap.get(e.target).state;
+      const key = JSON.stringify([(st.corners || []).slice().sort(), (st.edges || []).slice().sort()]);
+      if (!map.has(key)) map.set(key, e.target);
+    }
+    session._rootTargetsByLabels = map;
+  }
+  return session._rootTargetsByLabels.get(JSON.stringify([corners.slice().sort(), edges.slice().sort()])) || null;
+}
+
 function edgeTypeLabel(pairCount, isRoot, isPseudo) {
   const base = isRoot
     ? (['Cross', 'XCross', 'XXCross', 'XXXCross'][pairCount] || `${pairCount}-pair`)
@@ -668,6 +706,6 @@ if (typeof module !== 'undefined' && module.exports) {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
     DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
-    relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets,
+    relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels,
   };
 }

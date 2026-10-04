@@ -73,7 +73,7 @@ def main():
     dangling = [
         (src, tgt)
         for src, edges in adjacency_list.items()
-        for (_, _, _, tgt) in edges
+        for (_, _, _, tgt, _) in edges
         if src not in cube_states or tgt not in cube_states
     ]
     check(len(dangling) == 0, f"no dangling edge references (found {len(dangling)})", failures)
@@ -81,7 +81,7 @@ def main():
     self_loops = [
         (src, tgt)
         for src, edges in adjacency_list.items()
-        for (_, _, _, tgt) in edges
+        for (_, _, _, tgt, _) in edges
         if src == tgt
     ]
     check(len(self_loops) == 0, f"no self-loops (found {len(self_loops)})", failures)
@@ -89,7 +89,7 @@ def main():
     into_root = [
         src
         for src, edges in adjacency_list.items()
-        for (_, _, _, tgt) in edges
+        for (_, _, _, tgt, _) in edges
         if tgt == start_key
     ]
     check(len(into_root) == 0, f"the unsolved root is never a transition target (found {len(into_root)})", failures)
@@ -101,7 +101,7 @@ def main():
 
     def dfs(u):
         color[u] = GRAY
-        for (_, _, _, v) in adjacency_list.get(u, ()):
+        for (_, _, _, v, _) in adjacency_list.get(u, ()):
             if color[v] == GRAY:
                 cycle_found[0] = True
                 return
@@ -127,7 +127,7 @@ def main():
     non_monotonic = [
         (src, tgt)
         for src, edges in adjacency_list.items()
-        for (_, _, _, tgt) in edges
+        for (_, _, _, tgt, _) in edges
         if solved_count(cube_states[tgt]) <= solved_count(cube_states[src])
     ]
     check(len(non_monotonic) == 0, f"every transition strictly increases solved-piece count (found {len(non_monotonic)} violations)", failures)
@@ -147,6 +147,36 @@ def main():
 
     terminal_with_outgoing = [k for k in terminal_keys if k in adjacency_list and adjacency_list[k]]
     check(len(terminal_with_outgoing) == 0, f"terminal states have no outgoing edges (found {len(terminal_with_outgoing)})", failures)
+
+    # --- full vs simplified pseudo (README "Pseudo pairs") ---
+    # Edges flagged full_pseudo_only are exactly the ones leaving a mismatched
+    # node without being a pure repair of that mismatch; pruneGraph drops them
+    # when "simplified pseudo" is checked.
+    bad_flags = []
+    flagged = 0
+    for src, edges in adjacency_list.items():
+        src_mismatch = tree_gen.slot_mismatch_count(cube_states[src]) > 0
+        for (rot, _, _, tgt, full_only) in edges:
+            flagged += full_only
+            pure = tree_gen.is_pure_mismatch_repair(cube_states[src], cube_states[tgt])
+            if full_only != (src_mismatch and not pure):
+                bad_flags.append((src, tgt))
+    check(len(bad_flags) == 0, f"full_pseudo_only flag matches (mismatched source and not a pure repair) (found {len(bad_flags)} mismatches)", failures)
+    check(flagged > 0, f"the superset DAG contains full-pseudo-only edges (found {flagged})", failures)
+
+    # Under simplified pseudo every node reachable from the root must still
+    # reach a terminal state (no dead ends introduced by the filter).
+    simple_adj = {k: [t for t in v if not t[4]] for k, v in adjacency_list.items()}
+    seen, stack = {start_key}, [start_key]
+    while stack:
+        u = stack.pop()
+        for t in simple_adj.get(u, ()):
+            if t[3] not in seen:
+                seen.add(t[3])
+                stack.append(t[3])
+    terminal_set = set(terminal_keys)
+    dead_ends = [k for k in seen if k not in terminal_set and not simple_adj.get(k)]
+    check(len(dead_ends) == 0, f"simplified-pseudo subgraph has no dead ends (found {len(dead_ends)})", failures)
 
     print(f"\n{len(cube_states)} nodes, {sum(len(v) for v in adjacency_list.values())} edges.")
 

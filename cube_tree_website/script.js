@@ -28,7 +28,12 @@ function populateScrambles() {
     const countInput = document.getElementById('scramble-count');
     const count = Math.max(1, parseInt(countInput?.value, 10) || 1);
 
-    textareaNode.value = Array.from({ length: count }, () => generateScramble()).join('\n');
+    // Random-state (WCA-style) scrambles when random-state-scramble.js is
+    // loaded; the random-move generator above is only a fallback.
+    const nextScramble = typeof generateRandomStateScramble === 'function'
+        ? () => generateRandomStateScramble()
+        : () => generateScramble();
+    textareaNode.value = Array.from({ length: count }, nextScramble).join('\n');
 }
 
 function restoreTextareaState() {
@@ -148,6 +153,7 @@ function pruneGraph(tree, criteria) {
     const isXxcrossOn = advanced.includes("xxcross");
     const isXxxcrossOn = advanced.includes("xxxcross");
     const isMultislottingOn = advanced.includes("multislotting");
+    const isSimplifiedPseudoOn = advanced.includes("simplified_pseudo");
 
     const isNonPseudo = ({ corners, edges }) => {
         if (!corners.length && !edges.length) return true;
@@ -168,6 +174,10 @@ function pruneGraph(tree, criteria) {
 
     const validEdges = tree.edges.filter(edge => {
         if (!validNodeIds.has(edge.source) || !validNodeIds.has(edge.target)) return false;
+
+        // Simplified pseudo: out of a mismatched node, only the direct repair
+        // of that mismatch survives (tree_gen.py flags everything else).
+        if (isSimplifiedPseudoOn && edge.full_pseudo_only) return false;
 
         const isFromRoot = edge.source === unsolvedNodeId;
 

@@ -32,6 +32,7 @@ const {
   checkCandidateAgainstRealCubeState,
   relabelSlotsForRotation,
   alignPseudoAlg,
+  rootTargetByLabels,
 } = require(path.join(__dirname, '..', 'solver-bridge.js'));
 
 let failures = 0;
@@ -351,6 +352,35 @@ test('alignPseudoAlg: returns null when no D turn can align cross', () => {
 });
 
 // ---------------------------------------------------------------------
+
+// ---------------------------------------------------------------------
+// rootTargetByLabels (PROJECT_STATUS.md §4.16): a y-variant root candidate
+// must commit the node labelled with the slots it physically solves.
+// ---------------------------------------------------------------------
+
+test('rootTargetByLabels: finds the root target with exactly the rotated labels (matched and pseudo)', () => {
+  const tree = {
+    nodes: [
+      { id: 'R', state: { cross_solved: false, corners: [], edges: [] } },
+      { id: 'A', state: { cross_solved: true, corners: ['BL'], edges: ['BL'] } },
+      { id: 'B', state: { cross_solved: true, corners: ['BR'], edges: ['BR'] } },
+      { id: 'P', state: { cross_solved: true, corners: ['FL'], edges: ['BR'] } },
+      { id: 'X', state: { cross_solved: true, corners: ['BR', 'FR'], edges: ['BR', 'FR'] } },
+    ],
+    edges: [
+      { source: 'R', target: 'A' }, { source: 'R', target: 'B' }, { source: 'R', target: 'P' },
+      { source: 'A', target: 'X' },
+    ],
+  };
+  const session = new SolveSession('R U', tree, ['white'], []);
+  // DAG says BL; a "y" variant physically solves the relabelled slot.
+  assert.deepStrictEqual(relabelSlotsForRotation(['BL'], 'y'), ['BR']);
+  assert.strictEqual(rootTargetByLabels(session, ['BR'], ['BR']), 'B');
+  assert.strictEqual(rootTargetByLabels(session, ['BL'], ['BL']), 'A');
+  assert.strictEqual(rootTargetByLabels(session, ['FL'], ['BR']), 'P');
+  // Not a root target -> null (X is only reachable from A).
+  assert.strictEqual(rootTargetByLabels(session, ['FR', 'BR'], ['BR', 'FR']), null);
+});
 
 if (failures > 0) {
   console.error(`\n${failures} test(s) failed.`);
