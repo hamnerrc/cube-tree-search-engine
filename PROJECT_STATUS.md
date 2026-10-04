@@ -1589,6 +1589,21 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.21 DONE (2026-10-04, ninth pass): every action has a cost, including x rotations
+
+User decision. Measured first: `x`/`x'` cost 0 alone (MCC models them as a
+wrist shift) and appending one added no cost ~85% of the time. `algSpeed`
+now charges `x`/`x'` the rotation cost (3.5, same as `y`/`z`) and `x2`
+`rotation * double`, only in the branches that consume the token (the
+others hand back to the grip search, which re-runs it; charging there
+double-counted: `x2` came out 12.5 instead of 7.8). Tests: every one of the
+54 tokens costs > 0 alone, and appending `x`/`x'`/`x2` always increases cost
+(0 exceptions in 2000 random contexts in the test, 15000 when measured).
+Remaining non-monotonicity is not a free move: in ~0.04% of appends of an
+ordinary move the total drops slightly (up to 2.6) because MCC re-optimises
+grips for the whole sequence once it knows the next move. README "Ranking"
+updated.
+
 ### 4.20 IN PROGRESS (2026-10-04, eighth pass): professional reference solves (`pro_references.txt`)
 
 The user added `cube_tree_website/pro_references.txt`: 7 professional

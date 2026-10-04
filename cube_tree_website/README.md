@@ -85,13 +85,18 @@ MCC) that estimates how physically fast a given move sequence is to execute
 over raw move count, because the goal is the fastest *human* solve, not HTM
 optimality.
 
+**Every action has a cost.** Every move — face turn, wide move, slice, and
+every whole-cube rotation including `x`/`x'`/`x2` — adds time. (Untuned MCC
+modelled `x` as a free wrist shift; cube⑂tree charges it like `y`/`z`.)
+
 **Rotation cost:** a whole-cube rotation generally counts toward `alg_speed`
 like any other move, *except* a pure inspection rotation on a distance-1
 result (see below) — those are free, since a human absorbs them during
 inspection rather than mid-solve. `y2` specifically is forbidden as a
 mid-algorithm move; it may only appear as a distance-1 inspection rotation.
 
-> `alg_speed`'s constants are intentionally **untuned** for now (see
+> Apart from the rotation cost above, `alg_speed`'s constants are
+> intentionally **untuned** for now (see
 > [Provenance](#provenance--licensing)) — this is a deliberate, temporary
 > choice, not an oversight.
 

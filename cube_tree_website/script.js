@@ -797,7 +797,11 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                         return [j, speed, lWrist, rWrist, Math.max(lThumb[0], lIndex[0], lMiddle[0], lRing[0]), Math.max(rThumb[0], rIndex[0], rMiddle[0], rRing[0])]
                     }
                     break;
+                // Every action costs time (user decision 2026-10-04): MCC
+                // models x as a free wrist shift, but a whole-cube rotation is
+                // charged like y/z (PROJECT_STATUS.md §4.21).
                 case "X":
+                    speed += rotation;
                     lWrist += 1;
                     rWrist += 1;
                     if (lWrist > 1 || rWrist > 1) {
@@ -805,6 +809,7 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                     }
                     break;
                 case "X'":
+                    speed += rotation;
                     lWrist -= 1;
                     rWrist -= 1;
                     if (lWrist < -1 || rWrist < -1) {
@@ -812,10 +817,14 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                     }
                     break;
                 case "X2":
+                    // Charged only where the token is consumed: the other
+                    // branches hand back to the grip search, which re-runs it.
                     if (lWrist >= 1 && rWrist >= 1) {
+                        speed += rotation * double;
                         lWrist -= 2;
                         rWrist -= 2;
                     } else if (lWrist <= -1 && rWrist <= -1) {
+                        speed += rotation * double;
                         lWrist += 2;
                         rWrist += 2;
                     } else if (lWrist + rWrist > 0) {

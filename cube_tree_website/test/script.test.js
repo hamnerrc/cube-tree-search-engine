@@ -22,6 +22,7 @@ const {
   isPseudoState,
   calculateSolvedPieces,
   scoreAlgorithms,
+  algSpeed,
 } = require(path.join(__dirname, '..', 'script.js'));
 
 let failures = 0;
@@ -140,6 +141,23 @@ test('scoreAlgorithms: returns a finite number for a valid algorithm', () => {
 test('scoreAlgorithms: falls back to the 99.0 penalty for unrecognized move tokens instead of throwing', () => {
   const [score] = scoreAlgorithms(['bogus move xyz']);
   assert.strictEqual(score, 99.0);
+});
+
+// Every action has a cost (user decision 2026-10-04, PROJECT_STATUS §4.21).
+test('algSpeed: every single move, wide move, slice and rotation has a positive cost', () => {
+  const T = [...'UDRLFBudrlfbMESxyz'].flatMap(f => [f, f + "'", f + '2']);
+  for (const t of T) assert.ok(algSpeed(t, false, false) > 0, `${t} costs ${algSpeed(t, false, false)}`);
+});
+
+test('algSpeed: appending an x rotation always adds cost (2000 random contexts)', () => {
+  const T = [...'UDRLFBrlMxyz'].flatMap(f => [f, f + "'", f + '2']);
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 2000; i++) {
+    const a = Array.from({ length: 1 + Math.floor(rnd() * 10) }, () => T[Math.floor(rnd() * T.length)]).join(' ');
+    const base = algSpeed(a, false, false);
+    for (const x of ['x', "x'", 'x2']) assert.ok(algSpeed(`${a} ${x}`, false, false) > base, `${a} + ${x}`);
+  }
 });
 
 // ---------------------------------------------------------------------
