@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-03.*
+*Last updated 2026-10-04.*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -18,10 +18,44 @@ in the README.
 ## Quick orientation (read this first if you're new to the session)
 
 **Current state:** the core interactive solver loop works end-to-end and is
-verified — both in a Node harness and live in the browser — for matched
-(non-pseudo) Cross/XCross/XXCross/XXXCross plus later single-pair/multislot
-steps (note from developer: the later single pairs and/or multislots do not generate valid solutions, and all searches create many duplicate solutions). See §5 step 3 for the full picture. Full test suite (4 suites) passes;
-run them before and after any change:
+verified — both in a Node harness driving the real WASM solver and physically
+checked with a real cube simulator (`magiccube`) — for matched (non-pseudo)
+Cross/XCross/XXCross/XXXCross plus later single-pair/multislot steps.
+
+**2026-10-04: the developer note below ("later steps don't generate valid
+solutions, and all searches create many duplicate solutions") was
+investigated, root-caused, fixed, and verified — see §4.10 for the full
+writeup.** Both root causes were real bugs in `solver-bridge.js`
+(`searchCurrentNode`), not in the DAG data or the WASM solver itself:
+1. A later-step search pasted the already-rotated committed path text
+   (`session.scoredPath`) into a fresh `scramble` string and passed
+   `rotation` again, double-applying the rotation relabel. Verified with
+   `magiccube`: this silently broke cross by the second committed step on
+   every path whose rotation was non-empty (every color except yellow).
+   Fixed by using the solver's own `postAlg` option instead.
+2. `tree_gen.py` generates fully-redundant edges (same real action, same
+   solved-corners/edges outcome) both via a mid-solve y/y' setup rotation at
+   every cross-solved node, and via `permutations(edges)` for any
+   `pair_size>=2` transition (the permutation never affects which pieces end
+   up solved). Fixed by deduping `outgoingEdges()` by the target's solved
+   corners/edges before searching, in `searchCurrentNode` — no DAG
+   regeneration needed.
+
+(Historical note, superseded by the above: the "verified working" claim in
+earlier revisions of this document was based on Node/browser candidate-count
+*agreement*, which only proves the two environments run the same code
+identically — it never checked the committed path against a real cube
+simulator, which is what actually caught this.)
+
+A separate, narrower, **not yet fixed** cosmetic finding surfaced during the
+same investigation — see §4.11: for a distance-1 XCross/XXCross/XXXCross
+result, the "corners"/"edges" columns don't account for which `altAlgs`
+rotation variant was picked, so a non-identity (y/y2/y') variant can display
+the wrong slot name even though the underlying DAG bookkeeping (and thus the
+actual solve) stays correct. Lower priority than the two fixes above since it
+doesn't produce an invalid solve — just a potentially-mislabeled display.
+
+Full test suite (4 suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
@@ -33,8 +67,11 @@ node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, h
 
 A good smoke test after touching `solver-bridge.js`: scramble
 `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2`, colors=`['white']`,
-advanced=`[]`. Expect 80 candidates at step 1, 240 at step 2, 180 at step 3,
-with the same top algorithms recorded in §5 step 3.
+advanced=`[]`. Expect 80 candidates at step 1, 80 at step 2, 120 at step 3
+(counts changed from a stale 80/240/180 on 2026-10-04 — see §4.10, the dedup
+fix removed the duplicate rows at steps 2/3), with the top algorithm at each
+step physically solving the claimed cross+pairs when checked with a real
+cube simulator (verified 2026-10-04, see §4.10).
 
 **Two reasonable next tasks** (pick one, don't block on the other):
 1. Port `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask logic to
@@ -45,6 +82,9 @@ with the same top algorithms recorded in §5 step 3.
 2. Implement Cross optimisation (README "Wide moves and Cross optimisation",
    §4.5) — a net-new feature (wide-move rewrite + rotation-tracking tree
    search + orientation filter + re-score), not yet started.
+3. Investigate/fix the §4.11 rotation-variant labeling finding — needs the
+   same "verify empirically, don't hand-derive" discipline as §4.9/§1.2's
+   color-orientation finding, since it's rotation algebra.
 
 **Traps already discovered the hard way — don't rediscover these:**
 - A whole-cube rotation must go through the solver's `rotation` *option* on
@@ -54,6 +94,19 @@ with the same top algorithms recorded in §5 step 3.
   goal (dispatch via the solver class matching *total* pairs needed, not
   just new ones), or it silently disturbs committed pairs about half the
   time (§4.7).
+- Never paste the committed path-so-far into a fresh `scramble` string for a
+  later-step call, even though it's plain text that looks like it'd
+  concatenate fine. It's already expressed in the rotated frame the engine
+  returned it in; passing `rotation` again on top of that double-relabels it
+  and searches a bogus state. Use the engine's own `postAlg` option instead
+  — verified with a real cube simulator, not just by re-reading the C++, see
+  §4.10.
+- A cross-solved (later-step) DAG node's outgoing edges are not 1:1 with
+  real actions — `tree_gen.py` emits redundant edges for the same action
+  (same target solved-corners/edges) via both a mid-solve y/y' setup
+  rotation explored at every cross-solved node, and `permutations(edges)`
+  for any 2+-pair transition. Dedupe by the target's solved corners/edges
+  before searching (§4.10).
 - A later step's move-limit must scale with total pairs in goal, not stay
   flat at the spec's "single pair=10/multislot=12" (§4.8).
 - "0 `onProgress` events" from the solver does **not** reliably mean
@@ -665,6 +718,156 @@ candidate, including any that may over-solve. The rest of the loop
 verified correct — this was caught and fully reverted before being
 shipped as a silent correctness bug, not left half-working.
 
+### 4.10 FIXED (2026-10-04): later-step searches produced invalid solutions, and every search showed duplicate rows
+
+A developer note left in this document's previous revision flagged two
+problems found by actually trying the tool: "the later single pairs and/or
+multislots do not generate valid solutions, and all searches create many
+duplicate solutions." Both were investigated end-to-end against the real
+DAG and real `solver.wasm` (not mocked), and physically verified against a
+real cube simulator (`magiccube`, via `pip`) rather than just re-reading the
+code — the same "verify empirically" discipline §4.9/§1.2 already
+established for this codebase. Both root causes were in
+`solver-bridge.js`'s `searchCurrentNode`, not in the DAG or the solver.
+
+**Bug 1 — invalid later-step solutions.** `searchCurrentNode` built a
+later-step `scramble` by string-concatenating `session.scramble` with
+`session.scoredPath` (the committed path so far), then passed `rotation:
+session.rotation` to the solver call — the exact same pattern used
+correctly for the very first call. The difference: `session.scoredPath` is
+*already* text in the rotated frame the engine returned it in (per this
+file's own header comment: raw solver output is `rotation + ' ' +
+solution`, and the stored `coreAlg` is that `solution` with the rotation
+prefix stripped — i.e. it's meant to be executed *after* physically doing
+`rotation`, using that rotation's face labels). Pasting it into a fresh
+`scramble` argument and passing `rotation` *again* makes the engine's
+`AlgRotation` relabel it a second time — searching a bogus state that has
+nothing to do with the real cube.
+
+Verified directly: built a session for the documented smoke-test scramble
+(white, no advanced options — a non-empty rotation, `z2`), ran step 1
+(Cross) and step 2 (single pair) against the real solver, then took the
+literal committed `scramble + rotation + stepAlgs` text the *old* code would
+have executed and ran it through `magiccube`. Cross was solved after step 1
+alone, but **broken** after step 1+2 together — on every single trial, for
+every color except yellow (whose rotation is `''`, making the double-relabel
+a no-op, which is almost certainly why this went unnoticed: plain-white
+testing with the specific documented smoke scramble is the one case where
+the bug is live).
+
+**Fix:** pass the committed path via the solver's own `postAlg` option
+instead of folding it into `scramble`. Reading `solver.cpp`'s
+`start_search`/`start_search_persistent`: `post_alg`'s moves are applied
+*directly*, continuing from wherever the (correctly-once-rotated) `scramble`
+left the search coordinates — i.e. `postAlg` is interpreted in exactly the
+already-rotated frame `session.scoredPath` is already expressed in, with no
+further relabeling. `scramble` for a later-step call is now always
+`session.scramble` unchanged; `postAlg` carries `session.scoredPath`. The
+returned-solution prefix to strip changed to match: the engine emits
+`rotation + ' ' + postAlg + ' ' + newSolution`, so the known prefix to strip
+is now `[baseRotation, postAlgForCall].filter(Boolean).join(' ')`, not just
+`baseRotation`. Re-verified the same way: cross (and each subsequently
+claimed pair) stays physically solved after every committed step, including
+a 3-step single-pair chain and a separate xcross→single-pair→multislot chain
+that reaches full Cross+F2L completion (`isComplete: true`), both confirmed
+against `magiccube` by color-identity (not just "a slot is occupied" —
+actual corner+edge orientation/match).
+
+**Bug 2 — duplicate rows.** Confirmed two independent, fully-redundant
+sources of DAG edges, both in `tree_gen.py`:
+1. `build_f2l_dag()` sets `rotations = ("-", "y", "y'")` whenever
+   `is_cross_solved` is true — i.e. at *every* later-step node, not just a
+   root-level color choice. This produces up to 3 edges per node that
+   `extract_solved_slots()` labels identically (same `corners`/`edges`
+   arrays), because that function only reports *which* pieces are solved,
+   never which unsolved pieces got relabeled by the internal rot tag — the
+   only thing that differs between the 3 copies.
+2. `generate_pair_transitions()` loops `for edge_perm in
+   permutations(edges)` for any `pair_size >= 2`, but `solve_pieces()` marks
+   pieces solved by set membership (`for edge in solved_edges: ...`), never
+   by position in that tuple — so every permutation of a given edge
+   selection produces the exact same `next_state`. This duplicates every
+   XXCross/XXXCross root edge and every multislot later-step edge by `N!`
+   (2x for a pair, 6x for a triple).
+
+Confirmed by instrumented count: a later-step node with 4 real actions
+(single-pair to each of 4 slots) exposed 12 DAG edges; all 80 resulting
+candidates (20 raw solver results × 4 slots) appeared in the table *exactly
+3 times each* (240 total rows) — the `rotations=("-","y","y'")` tripling,
+not the `permutations` one (pair_size=1 has only one trivial permutation).
+A separate run with XXCross+multislotting enabled showed both effects (root
+XXCross edges doubled by `permutations`, later multislot edges tripled by
+the rot tag).
+
+**Fix:** `searchCurrentNode` now dedupes `outgoingEdges()` by
+`JSON.stringify([sortedCorners, sortedEdges])` of each edge's *target* node
+before dispatching, for both root and non-root nodes. This is safe because
+dispatch here is a pure function of the target's solved corners/edges (plus
+session state) — any two edges that agree on that key are, by construction,
+indistinguishable to this file regardless of *why* the DAG has both. No
+`tree_gen.py` change or DAG regeneration was needed (lower risk: avoids
+re-validating the committed 238-node/2393-edge baseline cited throughout
+this document). Re-ran the smoke-test scramble: step 2 candidates went from
+240 → 80 with zero duplicate `(alg, corners, edges, rotation)` keys (was 80
+unique keys each appearing exactly 3×); step 3 went from 180 → 120, also
+zero duplicates. The multislot scenario's step 1 went from 1360 → 880 (the
+`permutations` 2x, confirmed by the exact halving), also zero duplicates
+after the fix.
+
+Both fixes are covered by existing unit tests passing unchanged (dedup and
+`postAlg` logic don't touch anything `test/solver-bridge.test.js` already
+pins down) — there is deliberately no *new* unit test added here, since the
+actual bugs were only reachable by driving the real WASM solver end-to-end
+and checking physical cube state, which is far too slow for a unit suite;
+the Node diagnostic script used for this investigation was scratch, not
+committed. If this area regresses again, re-verify the same way (real DAG +
+real solver + `magiccube`), not by reasoning about the rotation algebra by
+hand — see §4.11 for why that's a trap.
+
+### 4.11 NOT YET FIXED: a distance-1 rotation-variant result can display the wrong slot name
+
+Found while verifying §4.10's fix, and *not* one of the two bugs the
+developer note flagged — recorded separately because it's lower severity
+(display-only, confirmed not to corrupt the actual solve) and because
+fixing it correctly needs the same empirical rigor §4.9/§1.2 already had to
+learn the hard way for this exact kind of rotation-algebra question.
+
+**What's suspected:** for a distance-1 XCross/XXCross/XXXCross result
+(`pairCount >= 1`), `searchCurrentNode` reads `newCorners`/`newEdges` once
+per edge (the DAG's fixed label for that edge, e.g. `["FR"]`) and reuses it
+for *every* `altAlgs` rotation variant of that edge's found algorithm,
+without adjusting for which variant it is. Observed directly: in a session
+with XCross enabled, the top-ranked (by TPP) distance-1 result was an
+altAlgs `y'` variant labeled `corners: ["FR"]`, with `candidate.rotation`
+(the full, composed setup rotation the user is told to perform) set to
+include that `y'`. Replaying `scramble + rotation + coreAlg` for exactly
+that result in `magiccube` and checking which physical slot ends up
+genuinely paired (by color identity, not just "something is there") found
+**BR** solved, not **FR**.
+
+**Why this needs care, not a quick fix:** `candidate.targetNodeId` is always
+the DAG edge's real target (set directly from `edge.target`, never derived
+from the algorithm text), so the *session's* belief about which abstract
+DAG node it's at — and therefore every subsequent search's dispatch — stays
+internally consistent regardless of this. This looks like a display-only
+bug (the "corners"/"edges" table columns, and the physical slot a human
+would actually observe themselves solving, can disagree for a
+non-identity-variant distance-1 result with `pairCount >= 1`), not a
+solve-correctness one — unlike §4.10's bugs, this was not observed to
+produce an invalid final state in either verification run. It's being
+recorded rather than fixed now because the correct fix requires relabeling
+`newCorners`/`newEdges` by the *same* rotation `altAlgs` applied to the
+algorithm text — i.e. porting a slot-name analogue of `altAlgs`'s
+`FACE_MAP`, a second piece of rotation algebra alongside the move-letter one
+that already exists. Given this project's own track record on exactly this
+kind of reasoning (§1.2's color/rotation finding: "verified empirically...
+not just by re-deriving rotation algebra by hand, which produced a wrong
+answer on the first attempt"), the right next step is a dedicated empirical
+test (vary the rotation, use a real trigger algorithm, check with
+`magiccube` which physical slot actually gets hit, the same method
+§1.2/slot-mapping.test.js/§4.10 all used) before writing a fix, not a
+hand-derived FACE_MAP-for-slot-names table. Not yet investigated further.
+
 ---
 
 ## 5. Actionable Roadmap
@@ -771,6 +974,24 @@ be done in parallel.
      runs per (edge, color) only, so identical results from *different*
      edges can still both appear — a known, minor, low-priority cleanup
      item, not a correctness issue.
+   - [x] **Fixed (2026-10-04) — later-step searches produced invalid
+     solutions, and real duplicate DAG edges inflated every search's result
+     count 2-3x.** Both root-caused and fixed in `searchCurrentNode`; see
+     §4.10 for the full writeup and verification (real WASM solver + a real
+     cube simulator, not just re-reading the code). The committed path is
+     now re-verified to physically reach the claimed cross+pairs state at
+     every step, for both a single-pair-only chain and a chain that
+     includes a multislot step and reaches full completion.
+   - [ ] **NOT yet fixed — §4.11: a distance-1 rotation-variant result
+     (`pairCount >= 1`) can show the wrong slot name** in the
+     "corners"/"edges" columns when a non-identity `altAlgs` variant (y/y2/
+     y') is the one ranked/shown. Confirmed display-only (the DAG's own
+     target-node bookkeeping, and therefore the actual solve, stays
+     correct) — found while verifying the §4.10 fix, not caused by it.
+     Needs a dedicated empirical investigation (vary rotation, check with
+     `magiccube` which slot a trigger alg actually hits) before attempting
+     a fix — see §4.11, this is the same class of rotation-algebra trap as
+     §1.2/§4.9.
    - [ ] **Pseudo edges are skipped entirely** (`isPseudoState` check just
      `continue`s past them) — `pseudoCrossSolver` dispatch isn't wired up
      yet. Not a regression: with the UI's current default checkboxes

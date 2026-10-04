@@ -24,6 +24,26 @@
  *   goal (use the solver class whose arity equals the TOTAL pairs needed,
  *   not just the newly-targeted ones), or it silently disturbs
  *   already-committed pairs about half the time.
+ * - CRITICAL (found 2026-10-04, see dev note in PROJECT_STATUS.md's
+ *   quick-orientation block): a later-step search must NEVER paste the
+ *   committed path-so-far (`session.scoredPath`) into a fresh `scramble`
+ *   string. That text is already expressed in the ROTATED frame the
+ *   engine returned it in (previous bullet); pasting it into `scramble`
+ *   and passing `rotation` again relabels it a SECOND time, searching a
+ *   bogus state. Verified with a real cube simulator: this silently broke
+ *   even the already-solved cross by the second committed step, on every
+ *   path whose rotation was non-empty (i.e. every color except yellow).
+ *   Fix: pass it via the engine's own `postAlg` option instead (applied
+ *   directly in the already-rotated frame, no relabeling) — then strip the
+ *   known `rotation + ' ' + postAlg` prefix, not just `rotation`, from the
+ *   returned solution.
+ * - A cross-solved (later-step) DAG node's outgoing edges include
+ *   duplicates: tree_gen.py explores a mid-solve y/y' setup rotation at
+ *   every cross-solved node, not just the root, producing multiple edges
+ *   per node that differ only in that internal tag while landing on a
+ *   target with identical solved corners/edges (the only thing dispatch
+ *   here cares about). Collapse them by target solved-state before
+ *   searching, or every later-step action gets searched/shown 2-3x over.
  * - Pseudo (mismatched) edges are skipped for now — not yet wired up.
  * - Luck filtering (README "Luck filtering") is NOT implemented here.
  *   A solver-probe approach was attempted and reverted — see
@@ -94,9 +114,9 @@ function composeRotations(a, b) {
 }
 
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
-function solverCallFor(helper, corners, scramble, rotation, maxLength) {
+function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg) {
   const slots = corners.slice().sort().map(c => SLOT_INDICES[c]);
-  const opts = { maxSolutions: 20, maxLength, rotation, allowedMoves: MOVE_RESTRICT };
+  const opts = { maxSolutions: 20, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '' };
   switch (slots.length) {
     case 0: return helper.solveCross(scramble, opts);
     case 1: return helper.solveXcross(scramble, slots[0], opts);
@@ -153,7 +173,38 @@ class SolveSession {
  */
 async function searchCurrentNode(session, helper, onStatus) {
   const isRoot = session.isAtRoot;
-  const edges = session.outgoingEdges();
+  let edges = session.outgoingEdges();
+
+  {
+    // tree_gen.py's generation has two independent sources of fully
+    // redundant edges, both confirmed empirically:
+    // (1) at ANY cross-solved node (not just the root), it explores a
+    //     mid-solve y/y' setup rotation when enumerating transitions --
+    //     producing edges that differ only in that internal rot tag (an
+    //     artifact of which UNSOLVED pieces land where) but land on a
+    //     target whose solved corners/edges are identical.
+    // (2) for any pair_size>=2 transition (XXCross/XXXCross from the root,
+    //     multislot later), it loops `for edge_perm in permutations(edges)`
+    //     but solve_pieces() marks pieces solved by set membership, not by
+    //     position in that tuple -- every permutation produces the exact
+    //     same next_state, so the same real action is duplicated N! times.
+    // This file's dispatch is a pure function of the target's solved
+    // corners/edges (plus session state) -- any node sharing that key is
+    // 100% redundant for search purposes, root or not. Collapse before
+    // searching, or real actions get searched and shown 2-6x over.
+    const seen = new Set();
+    edges = edges.filter(edge => {
+      const target = session.nodeMap.get(edge.target);
+      const key = JSON.stringify([
+        (target.state.corners || []).slice().sort(),
+        (target.state.edges || []).slice().sort(),
+      ]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   const candidates = [];
 
   const colorList = isRoot ? session.colors : [null];
@@ -172,28 +223,45 @@ async function searchCurrentNode(session, helper, onStatus) {
 
     for (const color of colorList) {
       const baseRotation = isRoot ? (COLOR_ROTATIONS[color] || '') : session.rotation;
-      const scramble = session.scramble + (session.scoredPath ? ' ' + session.scoredPath : '');
+      // The committed path-so-far (session.scoredPath) is already text in
+      // the ROTATED frame the engine returned it in (see this file's header
+      // comment) -- it must never be pasted into a fresh `scramble` string,
+      // because the `rotation` option would then relabel it a SECOND time,
+      // searching a bogus state (confirmed empirically: doing so corrupts
+      // even the already-solved cross by the second committed step). The
+      // engine's own `postAlg` option applies those moves directly in the
+      // already-rotated frame -- exactly what's needed here -- without any
+      // further relabeling.
+      const scramble = session.scramble;
+      const postAlgForCall = isRoot ? '' : session.scoredPath;
 
       if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot)}${color ? ' (' + color + ')' : ''}...`);
 
       let raw;
       try {
-        raw = await solverCallFor(helper, allCorners, scramble, baseRotation, maxLength);
+        raw = await solverCallFor(helper, allCorners, scramble, baseRotation, maxLength, postAlgForCall);
       } catch (err) {
         console.error('Solver error', err);
         continue;
       }
 
-      // Strip rotation + dedupe identical algorithms before altAlgs
-      // expansion — the solver commonly returns the same algorithm
-      // multiple times across its maxSolutions results.
+      // The engine prefixes every returned solution with `rotation + ' ' +
+      // postAlg` verbatim (see solver.cpp) -- strip exactly that known
+      // prefix to recover just the new step's algorithm. Dedupe identical
+      // algorithms before altAlgs expansion — the solver commonly returns
+      // the same algorithm multiple times across its maxSolutions results.
+      const knownPrefixParts = [];
+      if (baseRotation) knownPrefixParts.push(baseRotation);
+      if (postAlgForCall) knownPrefixParts.push(postAlgForCall);
+      const knownPrefix = knownPrefixParts.join(' ');
+
       const uniqueCoreAlgs = new Set();
       for (let sol of raw) {
         sol = (sol || '').trim();
         if (!sol) continue; // "already solved" (empty string) — not a real step here
         let coreAlg = sol;
-        if (baseRotation && sol.startsWith(baseRotation)) {
-          coreAlg = sol.slice(baseRotation.length).trim();
+        if (knownPrefix && sol.startsWith(knownPrefix)) {
+          coreAlg = sol.slice(knownPrefix.length).trim();
         }
         if (coreAlg) uniqueCoreAlgs.add(coreAlg);
       }
