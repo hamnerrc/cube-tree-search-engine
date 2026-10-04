@@ -262,8 +262,11 @@ search; current measurements are in PROJECT_STATUS.md):
   ranks like any other result.
 - **Inspection orientations off the cross colour.** Some professionals inspect
   with the cross on a side (e.g. `x'`) and bring it to the bottom with a wide
-  move during the XCross. Root searches currently start only from
-  cross-on-bottom orientations.
+  move during the XCross. Root searches start only from cross-on-bottom
+  orientations: the engine's goal is tied to the colour on the bottom at the
+  start, so these solutions have to be produced by rewriting cross-on-bottom
+  solutions (wide moves, with the leftover rotation absorbed into the free
+  inspection rotation), which is not built yet.
 - **Moves that do not touch any goal piece.** Professionals use moves like the
   `U` in `… R' U R'` (instead of `R2`) to position other pieces. The vendored
   engine prunes any solution containing a move that leaves every goal piece

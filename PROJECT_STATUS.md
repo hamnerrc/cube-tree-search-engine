@@ -1672,6 +1672,20 @@ config and checks the pro's alg is among them, modulo commuting turns).
    Note: `alg_speed` (MCC) treats `x` as a free wrist re-grip but charges
    3.5 for `y`/`z`, so x-rotation spellings rank high; faithful to the
    model, left untuned per spec.
+6d. **Off-bottom inspections (#6/#7) can't be searched directly.** Probe:
+   #7's root XXCross searched from its own `x'` inspection (green on D),
+   pro move set, centre offsets that end with white on D, all 4 adjacent
+   slot pairs, up to 400k solutions each (~5-6 min per pair): pro alg not
+   found, and the engine's results end with white on D *without* a solved
+   white cross -- its goal is tied to the starting frame, so starting off
+   the cross colour searches the wrong thing. Such solutions can only come
+   from rewriting white-down solutions: a generalised Cross optimisation
+   that also absorbs the leftover x-rotation into the (free) inspection
+   rotation (inspection J = I + M, alg = relabelAlgForRotation(converted,
+   M) with M chosen so the net end rotation is y-family). Designed, not
+   built: #6/#7 are also 15- and 12-move steps whose face-turn equivalents
+   are one of hundreds of thousands of same-length solutions, so they would
+   not reach the ranking at practical solutions-per-search anyway.
 6c. **Solutions per search (UI):** index.html has a "solutions per search"
    field (default 100; the bridge's own default stays 20 so tests/smoke
    baselines are unchanged), saved with the criteria and applied as
