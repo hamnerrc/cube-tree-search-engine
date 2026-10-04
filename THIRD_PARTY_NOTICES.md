@@ -25,6 +25,12 @@ listed here with the date of the change.
 - **2026-10-04** `crossSolver/worker-persistent.js`, `solver-helper.js`,
   `solver-helper-node.js`: pass a `noopMoves` option through to
   `setNoopMoves()` on every call.
+- **2026-10-04** `pseudoCrossSolver/pseudo.cpp`: the same `setNoopMoves()`
+  gating (8 checks); move/multi tables built once per process (a pristine
+  prototype of each search class is copied per call) and prune tables cached
+  by their inputs (`g_prune_cache`). Rebuilt `pseudo.js` / `pseudo.wasm` with
+  the new `pseudoCrossSolver/compile.sh`. `worker3.js`, `solver-helper.js`,
+  `solver-helper-node.js`: pass `noopMoves` through.
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

@@ -176,6 +176,7 @@ class PseudoSolverHelper {
         max_rot_count: maxRotCount,
         ma2,
         mcString: moveCount,
+        noopMoves: options.noopMoves ? this._restStr(options.noopMoves) : '', // cube-tree modification
       });
     });
   }

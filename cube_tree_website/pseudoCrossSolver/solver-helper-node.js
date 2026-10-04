@@ -151,11 +151,18 @@ class PseudoSolverHelperNode {
     const slot = edgeSlots.join(' ');
     const pslot = cornerSlots.join(' ');
 
-    return this._doSolve(() => this.Module.solve(
+    return this._doSolve(() => {
+      // cube-tree modification: per-call no-op move set (pseudo.cpp
+      // setNoopMoves); always reset so settings never leak between calls.
+      if (typeof this.Module.setNoopMoves === 'function') {
+        this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
+      }
+      return this.Module.solve(
       scramble, rotation, slot, pslot, maxSolutions, maxLength,
       this._restStr(allowedMoves), postAlg,
       this._centerOffsetStr(centerOffset), maxRotCount, ma2, moveCount,
-    ));
+      );
+    });
   }
 
   /**

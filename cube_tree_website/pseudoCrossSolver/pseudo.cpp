@@ -1,3 +1,4 @@
+#include <map>
 #include <emscripten/bind.h>
 #include <emscripten.h>
 #include <iostream>
@@ -210,6 +211,28 @@ std::vector<std::vector<int>> index_to_center =
 std::vector<std::string> move_names = {"U", "U2", "U'", "D", "D2", "D'", "L", "L2", "L'", "R", "R2", "R'", "F", "F2", "F'", "B", "B2", "B'", "u", "u2", "u'", "d", "d2", "d'", "l", "l2", "l'", "r", "r2", "r'", "f", "f2", "f'", "b", "b2", "b'", "M", "M2", "M'", "E", "E2", "E'", "S", "S2", "S'", "x", "x2", "x'", "y", "y2", "y'", "z", "z2", "z'"};
 
 std::vector<std::string> rotation_names = {"x", "x2", "x'", "y", "y2", "y'", "z", "z2", "z'"};
+
+// cube-tree modification (2026-10-04, see THIRD_PARTY_NOTICES.md): moves that
+// may leave every goal piece unchanged (upstream rejects such solutions).
+// Empty by default = upstream behaviour. Same as crossSolver/solver.cpp.
+std::vector<bool> g_noop_allowed(54, false);
+
+void setNoopMoves(std::string moves)
+{
+	std::fill(g_noop_allowed.begin(), g_noop_allowed.end(), false);
+	for (char &ch : moves)
+	{
+		if (ch == '_') ch = ' ';
+		if (ch == '-') ch = '\'';
+	}
+	std::stringstream ss(moves);
+	std::string tok;
+	while (ss >> tok)
+	{
+		auto it = std::find(move_names.begin(), move_names.end(), tok);
+		if (it != move_names.end()) g_noop_allowed[std::distance(move_names.begin(), it)] = true;
+	}
+}
 
 std::string AlgToString(std::vector<int> &alg)
 {
@@ -829,6 +852,37 @@ std::vector<bool> create_ma_table()
 	return ma;
 }
 
+// cube-tree modification (2026-10-04): prune tables depend only on these
+// inputs (the target index, the depth parameter, the move set and the fixed
+// move tables), so each is built once per process instead of on every call.
+std::map<std::string, std::vector<unsigned char>> g_prune_cache;
+
+static std::string prune_cache_key(const char *kind, int index, int depth, std::vector<int> moves, size_t t1, size_t t2, size_t out)
+{
+	std::sort(moves.begin(), moves.end());
+	std::string key = std::string(kind) + "|" + std::to_string(index) + "|" + std::to_string(depth) + "|" + std::to_string(t1) + "|" + std::to_string(t2) + "|" + std::to_string(out) + "|";
+	for (int m : moves) key += std::to_string(m) + ",";
+	return key;
+}
+
+void cached_prune_table_cross(int depth, const std::vector<int> &table1, const std::vector<int> &table2, std::vector<unsigned char> &prune_table, std::vector<int> &move_restrict, std::vector<unsigned char> &tmp_array, std::vector<std::vector<int>> &center_move_table)
+{
+	std::string key = prune_cache_key("c", 0, depth, move_restrict, table1.size(), table2.size(), prune_table.size());
+	auto it = g_prune_cache.find(key);
+	if (it != g_prune_cache.end()) { prune_table = it->second; return; }
+	create_prune_table_cross(depth, table1, table2, prune_table, move_restrict, tmp_array, center_move_table);
+	g_prune_cache[key] = prune_table;
+}
+
+void cached_prune_table_xcross(int index2, int depth, const std::vector<int> &table1, const std::vector<int> &table2, std::vector<unsigned char> &prune_table, std::vector<int> &move_restrict, std::vector<unsigned char> &tmp_array, std::vector<std::vector<int>> &center_move_table)
+{
+	std::string key = prune_cache_key("x", index2, depth, move_restrict, table1.size(), table2.size(), prune_table.size());
+	auto it = g_prune_cache.find(key);
+	if (it != g_prune_cache.end()) { prune_table = it->second; return; }
+	create_prune_table_xcross(index2, depth, table1, table2, prune_table, move_restrict, tmp_array, center_move_table);
+	g_prune_cache[key] = prune_table;
+}
+
 struct cross_search
 {
 	std::vector<int> sol;
@@ -936,7 +990,7 @@ struct cross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1049,7 +1103,7 @@ struct cross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1153,7 +1207,7 @@ struct cross_search
 		center_offset = arg_center_offset;
 		index1 = 416;
 		index2 = 520;
-		create_prune_table_cross(20, multi_move_table, multi_move_table, prune_table, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_cross(20, multi_move_table, multi_move_table, prune_table, move_restrict_tmp, tmp_array, center_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -1322,7 +1376,7 @@ struct xcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == edge_move_table[index3_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == edge_move_table[index3_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1439,7 +1493,7 @@ struct xcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == edge_move_table[index3_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == edge_move_table[index3_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1552,7 +1606,7 @@ struct xcross_search
 		index2 = corner_index[pslot1];
 		index3 = single_edge_index[slot1];
 		edge_solved1 = index3;
-		create_prune_table_xcross(index2, 20, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index2, 20, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -1745,7 +1799,7 @@ struct xxcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == edge_move_table[index6_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == edge_move_table[index6_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1871,7 +1925,7 @@ struct xxcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == edge_move_table[index6_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == edge_move_table[index6_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -1990,11 +2044,11 @@ struct xxcross_search
 		index2 = corner_index[pslot1];
 		index5 = single_edge_index[slot1];
 		edge_solved1 = index5;
-		create_prune_table_xcross(index2, 20, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index2, 20, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
 		index4 = corner_index[pslot2];
 		index6 = single_edge_index[slot2];
 		edge_solved2 = index6;
-		create_prune_table_xcross(index4, 20, multi_move_table, corner_move_table, prune_table2, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index4, 20, multi_move_table, corner_move_table, prune_table2, move_restrict_tmp, tmp_array, center_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -2215,7 +2269,7 @@ struct xxxcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == edge_move_table[index9_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == edge_move_table[index9_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -2350,7 +2404,7 @@ struct xxxcross_search
 						}
 						m_tmp = converter[rotationMapReverse[center_tmp][j]];
 						center_tmp = center_move_table[center_tmp][j];
-						if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == edge_move_table[index9_tmp2 + m_tmp] * 27)
+						if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == edge_move_table[index9_tmp2 + m_tmp] * 27)
 						{
 							valid = false;
 							break;
@@ -2475,15 +2529,15 @@ struct xxxcross_search
 		index2 = corner_index[pslot1];
 		index7 = single_edge_index[slot1];
 		edge_solved1 = index7;
-		create_prune_table_xcross(index2, 10, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index2, 10, multi_move_table, corner_move_table, prune_table1, move_restrict_tmp, tmp_array, center_move_table);
 		index4 = corner_index[pslot2];
 		index8 = single_edge_index[slot2];
 		edge_solved2 = index8;
-		create_prune_table_xcross(index4, 10, multi_move_table, corner_move_table, prune_table2, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index4, 10, multi_move_table, corner_move_table, prune_table2, move_restrict_tmp, tmp_array, center_move_table);
 		index6 = corner_index[pslot3];
 		index9 = single_edge_index[slot3];
 		edge_solved3 = index9;
-		create_prune_table_xcross(index6, 10, multi_move_table, corner_move_table, prune_table3, move_restrict_tmp, tmp_array, center_move_table);
+		cached_prune_table_xcross(index6, 10, multi_move_table, corner_move_table, prune_table3, move_restrict_tmp, tmp_array, center_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -2876,22 +2930,26 @@ void controller(std::string scr, std::string rot, std::string slot, std::string 
 
 	if (count == 0)
 	{
-		cross_search search;
+		static const cross_search prototype; // tables built once (cube-tree modification)
+		cross_search search = prototype;
 		search.start_search(scr, rot, num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mc);
 	}
 	else if (count == 1)
 	{
-		xcross_search search;
+		static const xcross_search prototype; // tables built once (cube-tree modification)
+		xcross_search search = prototype;
 		search.start_search(scr, rot, slot_list2[0], pslot_list2[0], num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mc);
 	}
 	else if (count == 2)
 	{
-		xxcross_search search;
+		static const xxcross_search prototype; // tables built once (cube-tree modification)
+		xxcross_search search = prototype;
 		search.start_search(scr, rot, slot_list2[0], slot_list2[1], pslot_list2[0], pslot_list2[1], num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mc);
 	}
 	else if (count == 3)
 	{
-		xxxcross_search search;
+		static const xxxcross_search prototype; // tables built once (cube-tree modification)
+		xxxcross_search search = prototype;
 		search.start_search(scr, rot, slot_list2[0], slot_list2[1], slot_list2[2], pslot_list2[0], pslot_list2[1], pslot_list2[2], num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mc);
 	}
 }
@@ -2899,4 +2957,5 @@ void controller(std::string scr, std::string rot, std::string slot, std::string 
 EMSCRIPTEN_BINDINGS(my_module)
 {
 	emscripten::function("solve", &controller);
+	emscripten::function("setNoopMoves", &setNoopMoves);
 }

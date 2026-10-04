@@ -337,7 +337,7 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
 function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS) {
   const toLetters = list => list.slice().sort();
   return pseudoHelper.solvePseudo(scramble, toLetters(edges), toLetters(corners), {
-    maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '',
+    maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '', noopMoves: NOOP_MOVES,
   });
 }
 

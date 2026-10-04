@@ -266,10 +266,7 @@ where the optimised variant wins outright.
    solutions-per-search (100) against real timing data.
 
 **Earlier list (seventh pass):**
-1. Pseudo performance (§5 step 4): persistent pseudo tables need `emcc`
-   (not installed; installing a toolchain is the user's call), or a
-   stopgap such as a per-step pseudo candidate cap. Full pseudo makes this
-   worse: a root step is ~20-30 s per colour in Node.
+1. Pseudo performance: largely DONE (§4.23, tables built once).
 2. Limited look-ahead (README; explicitly optional).
 
 Everything else from the original §0 spec-alignment review is now
@@ -1589,6 +1586,28 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.23 DONE (2026-10-04, ninth pass): pseudo engine rebuilt — U-layer no-ops, tables built once
+
+No upstream build script; the flags were inferred from `pseudo.js`
+(non-MODULARIZE, memory growth, no Asyncify) and confirmed: rebuilding the
+unmodified `pseudo.cpp` with `em++ -O3 --bind -s ALLOW_MEMORY_GROWTH=1` gave
+output identical to the shipped binary. Saved as
+`pseudoCrossSolver/compile.sh`.
+
+Changes (THIRD_PARTY_NOTICES.md): the same `setNoopMoves()` gating (8
+sites); each search class's move/multi tables (≈20 MB for xcross, the bulk
+of the old 1-3 s per call) are built once into a pristine `static const`
+prototype that is *copied* for each call (fresh per-call state, so nothing
+can leak between calls); prune tables are cached in `g_prune_cache`, keyed
+by kind, target index, depth parameter, table sizes and the sorted move set.
+Verified: 30 calls (5 rotations incl. relabelled move lists, 1-3 pairs,
+postAlg) run twice in one process in opposite orders are identical to each
+other and to upstream. Two cached XXCross calls: 12 ms total (was ~2 s
+each). Pseudo root XCross step in e2e: 12 s cold, then ~1.3 s (was 20-30 s);
+e2e `--pseudo --pick full` 3/3 solved, 4 full-pseudo-only steps, 0
+warnings, 0 frame failures. The bridge now passes `NOOP_MOVES` to pseudo
+calls too.
+
 ### 4.22 DONE (2026-10-04, ninth pass): Emscripten installed; engine patched to allow U-layer "positioning" moves
 
 User-authorised. emsdk installed at `~/emsdk` (emcc 6.0.11; `compile.sh`
@@ -1999,7 +2018,7 @@ be done in parallel.
 
 4. **Give `pseudoCrossSolver` the same persistent-table treatment as
    `crossSolver`**
-   - [ ] **Now the main practical blocker for pseudo F2L** (pseudo root steps
+   - [x] **Done (2026-10-04, §4.23).** Was: the main practical blocker for pseudo F2L (pseudo root steps
      take 15-80 s in Node, §4.14); a cheaper stopgap is capping candidates per
      step. Port the `Persistent*Solver` struct pattern documented in
      `crossSolver/IMPLEMENTATION_NOTES.md` §"Adding a New Solver" to
