@@ -744,6 +744,24 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
               candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
             }
           }
+
+          // Side-cross inspections (pro move set, root only): start with a
+          // wide move from an inspection that has the cross on a side. Each
+          // variant is physically identical to this candidate, end orientation
+          // included (the wide move's x-rotation is undone in the free
+          // inspection rotation), so it reaches the same node with the same
+          // labels. §4.25.
+          if (isRoot && session.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
+            for (const v of inspectionWideVariants(finalCoreAlg)) {
+              const vTpp = algSpeed(v.alg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+              candidates.push({
+                ...candidate,
+                rotation: rotationName(`${fullRotation} ${v.inspection}`),
+                coreAlg: v.alg,
+                tpp: Number.isFinite(vTpp) ? vTpp : Infinity,
+              });
+            }
+          }
         }
       }
     }

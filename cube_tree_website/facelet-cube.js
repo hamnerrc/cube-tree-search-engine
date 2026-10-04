@@ -252,6 +252,39 @@ function rotationSpellings(alg, allowLeading = true) {
     return out;
 }
 
+/**
+ * Inspection-absorbed wide-move variants (PROJECT_STATUS.md §4.25): converting
+ * an L/R-family turn into its wide form ("L" -> "r", which is "L x") makes the
+ * alg physically "alg, then rho" for an x-family rho, so the cross would end
+ * off the bottom. Undoing rho in the (free) inspection instead keeps the
+ * result physically identical to the original: returns
+ * [{ alg, inspection }] where `inspection` is the rotation to append to the
+ * original inspection and `alg` the rewritten algorithm. Only the first
+ * `maxPos` turns are converted -- that is where solvers use this ("inspect
+ * with the cross on a side, bring it down with a wide move").
+ */
+function inspectionWideVariants(alg, maxPos = 2) {
+    const t = String(alg).split(/\s+/).filter(Boolean);
+    const out = [];
+    for (let k = 0; k < Math.min(maxPos, t.length); k++) {
+        if (!/^[LR]/.test(t[k])) continue;
+        for (const rho of ['x', "x'", 'x2']) {
+            const w = TOKEN_BY_PERM.get(permKey(composePerm(MOVE_TABLE[t[k]], MOVE_TABLE[rho])));
+            if (!w || !/^[rl]/.test(w)) continue;
+            // t[:k] w relabel(t[k+1:], rho) == alg then rho
+            const spelled = [...t.slice(0, k), w, relabelAlgForRotation(t.slice(k + 1).join(' '), rho)].join(' ').trim();
+            const undo = inverseRotation(rho);
+            out.push({ alg: relabelAlgForRotation(spelled, undo), inspection: undo });
+        }
+    }
+    return out;
+}
+
+/** Shortest name for the net rotation of a rotation string. */
+function rotationName(rotation) {
+    return canonicalizeForEngine('', rotation).rotation;
+}
+
 /** The rotation string that undoes `rotation` ('' for none). */
 function inverseRotation(rotation) {
     const perm = String(rotation || '').split(/\s+/).filter(Boolean)
@@ -281,5 +314,7 @@ if (typeof module !== 'undefined' && module.exports) {
         relabelAlgForRotation,
         commuteNormalize,
         rotationSpellings,
+        inspectionWideVariants,
+        rotationName,
     };
 }

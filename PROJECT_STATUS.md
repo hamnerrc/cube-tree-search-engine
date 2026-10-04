@@ -1586,6 +1586,24 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.25 DONE (2026-10-04, ninth pass): side-cross inspections (pro move set, root)
+
+Pros #6/#7 inspect with the cross on a side and bring it down with a wide
+move; the engine can't search that directly (§4.20 item 6d). Built as the
+rewrite designed there, generalised: `inspectionWideVariants(alg)` converts
+an L/R-family turn among the first two into its wide form (identified by
+permutation: e.g. R2 -> l2), which makes the alg "alg, then rho" for an
+x-family rho, then undoes rho in the free inspection rotation and relabels
+the alg — physically identical to the original including end orientation
+(322/322 random checks; unit-tested). Root candidates in pro mode get these
+variants (same node/labels, new inspection rotation via `rotationName`).
+e2e `--pro --pick insp` (new pick mode: prefer inspections with the cross off
+the bottom): 3/3 solved, one session committed `x' y'` + `l2 D2 R F R`; 0
+warnings, 0 frame failures. Limits: only the first two turns (where the
+technique is used; all subsets would multiply root candidates up to 64x), and
+no mid-step `x` insertion, so pro #7 (`r2 U' D' x …`, two operations) and #6
+(15 moves > the 11-move XCross limit) are still not found exactly.
+
 ### 4.24 (2026-10-04, ninth pass): default solutions per search raised to 500
 
 User priority: accuracy over speed, maintain or increase solutions. Measured

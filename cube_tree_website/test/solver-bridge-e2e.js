@@ -7,7 +7,7 @@
  * completed session really is a solved Cross+F2L.
  *
  * Usage: node test/solver-bridge-e2e.js [--pseudo [--simplified]] [--advanced xcross,...]
- *          [--scrambles N] [--seed S] [--pick top|random|full|wide|rot] [--pro] [--colors white,green]
+ *          [--scrambles N] [--seed S] [--pick top|random|full|wide|rot|insp] [--pro] [--colors white,green]
  *
  * --pick full steers toward full-pseudo-only transitions (README "Pseudo
  * pairs", simplified pseudo off): a pseudo result when no mismatch exists
@@ -30,7 +30,7 @@ Object.assign(global, require(path.join(root, 'script.js')));
 Object.assign(global, require(path.join(root, 'facelet-cube.js')));
 Object.assign(global, require(path.join(root, 'facelet-flags.js')));
 Object.assign(global, require(path.join(root, 'cross-optimization.js')));
-const { SolveSession, searchCurrentNode, replayFacelets } = require(path.join(root, 'solver-bridge.js'));
+const { SolveSession, searchCurrentNode, replayFacelets, COLOR_ROTATIONS } = require(path.join(root, 'solver-bridge.js'));
 const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
 const PseudoSolverHelperNode = require(path.join(root, 'pseudoCrossSolver', 'solver-helper-node.js'));
 
@@ -95,6 +95,11 @@ function randomScramble(n) {
         }
       }
       let pool = results;
+      if (pick === 'insp') {
+        // Prefer root results whose inspection leaves the cross off the bottom.
+        const down = results.filter(r => applyAlgorithm(SOLVED_FACELETS, r.rotation || '')[31] !== applyAlgorithm(SOLVED_FACELETS, COLOR_ROTATIONS[r.color] || '')[31]);
+        if (down.length) pool = down;
+      }
       if (pick === 'rot') {
         const rot = results.filter(r => r.coreAlg.split(' ').some(t => /^[xyzrl]/.test(t)));
         if (rot.length) pool = rot;
@@ -110,7 +115,7 @@ function randomScramble(n) {
           : results.filter(r => /pseudo/.test(r.type));
         if (preferred.length) pool = preferred;
       }
-      const c = pick === 'top' || pick === 'wide' || pick === 'rot' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
+      const c = pick === 'top' || pick === 'wide' || pick === 'rot' || pick === 'insp' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
       const wasFullOnly = fullOnly.has(`${session.currentNodeId}>${c.targetNodeId}`);
       if (wasFullOnly) fullOnlySteps++;
       const nPseudo = results.filter(r => /pseudo/.test(r.type)).length;

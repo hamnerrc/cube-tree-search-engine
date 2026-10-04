@@ -128,6 +128,25 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
         applyAlgorithm(start, `y ${relabelAlgForRotation('R', 'y')}`) === applyAlgorithm(start, 'R y'));
 }
 
+{
+    const { inspectionWideVariants, rotationName } = require('../facelet-cube.js');
+    const start = applyAlgorithm(SOLVED_FACELETS, "R U F' D2 B L U2");
+    const V = [...'UDRLFB'].flatMap(f => [f, f + "'", f + '2']);
+    let seed = 3, n = 0, bad = 0;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < 300; i++) {
+        const a = Array.from({ length: 8 }, () => V[Math.floor(rnd() * 18)]).join(' ');
+        const I = ['z2', 'z2 y', '', "x' y2"][i % 4];
+        for (const v of inspectionWideVariants(a)) {
+            n++;
+            const J = rotationName([I, v.inspection].filter(Boolean).join(' '));
+            const same = applyAlgorithm(start, [J, v.alg].filter(Boolean).join(' ')) === applyAlgorithm(start, [I, a].filter(Boolean).join(' '));
+            if (!same || !/^(\S+ )?[rl]/.test(v.alg)) bad++;
+        }
+    }
+    check(`inspectionWideVariants: physically identical incl. end orientation, wide move within the first two (${n} variants, ${bad} bad)`, n > 0 && bad === 0);
+}
+
 if (process.exitCode) {
     console.error(`\n${passCount}/${cases.length + 8} checks passed.`);
 } else {
