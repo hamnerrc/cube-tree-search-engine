@@ -230,11 +230,13 @@ default, slice moves and wide moves are not part of the search move set —
 wide moves exist only as the post-hoc Cross-optimisation transform described
 above.
 
-The optional **pro move set** (an advanced checkbox) widens the search to
+The **pro move set** (an advanced checkbox, on by default) widens the search to
 the move subsets professionals actually use: wide `r`/`l` and at most one
 mid-step `y`, `y'`, `x` or `x'` rotation (never `y2`), with the cross still
-required to finish on the bottom. It is slower, and it applies to matched
-(non-pseudo) searches.
+required to finish on the bottom, plus rotated spellings and side-cross
+inspections (below). It is slower, and it applies to matched (non-pseudo)
+searches. In every mode, `U`-layer turns may be used to position other
+pieces even when they move no goal piece (e.g. `R' U R'` instead of `R2`).
 
 ## Professional reference solves and known gaps
 

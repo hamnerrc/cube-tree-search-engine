@@ -1586,6 +1586,16 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.26 (2026-10-04, ninth pass): pro move set on by default; reference membership 22/24
+
+Membership re-measured with both patched engines (no-op U moves, §4.22):
+default move set **18/24** (was 16), pro move set **22/24** (was 20). The
+two misses: #6 xcross (15 moves vs the 11-move limit, side-cross start) and
+#7 xcross+2nd pair (side-cross start combined with a mid-step `x`). Per the
+user's priority (professional-level solutions over speed), the "pro move
+set" checkbox is now checked by default on index.html (saved criteria still
+win). README "Move set" updated.
+
 ### 4.25 DONE (2026-10-04, ninth pass): side-cross inspections (pro move set, root)
 
 Pros #6/#7 inspect with the cross on a side and bring it down with a wide
