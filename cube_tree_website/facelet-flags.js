@@ -45,8 +45,8 @@ function faceOf(position) {
     return FACE_ORDER[Math.floor(position / 9)];
 }
 
-function isSlotSolved(facelets, maskName) {
-    const mask = MASKS[maskName];
+function isSlotSolved(facelets, maskName, maskTable = MASKS) {
+    const mask = maskTable[maskName];
     for (let pos = 0; pos < 54; pos++) {
         if (mask[pos] === mask[pos].toUpperCase()) continue; // ignored position
         const center = facelets[CENTERS[faceOf(pos)]];
@@ -66,6 +66,66 @@ function solvedFlags(facelets) {
     };
 }
 
+// Corner-only / edge-only masks, for pseudo (mismatched) F2L checking: a
+// genuine pseudo-pair result places a corner piece and an edge piece at
+// *independent* home-slots (see PROJECT_STATUS.md's pseudo-dispatch
+// writeup), so "is the pair at slot X solved" (the combined masks above)
+// cannot validate it -- each half needs its own check.
+//
+// Derived from the combined BL/BR/FL/FR masks above by a geometric fact
+// about the Kociemba facelet convention also already in use via `CENTERS`
+// in this file: within each face's own 9-char block, positions {0,2,6,8}
+// are that face's corner stickers and {1,3,5,7} are its edge stickers (4
+// is the center, never part of a mask). A corner piece has 3 stickers
+// (D-layer + 2 side faces, all at corner positions); an F2L edge piece has
+// exactly 2 stickers (2 side faces only, both at edge positions, since F2L
+// edges live in the middle layer and never touch U or D). Splitting each
+// combined mask by this parity therefore exactly separates "is this slot's
+// corner correctly placed" from "is this slot's edge correctly placed".
+// Not hand-trusted, though: cross-verified against 500 random scrambles'
+// worth of magiccube ground truth (get_piece_color-by-identity, not just
+// "a slot looks right") in
+// pseudoCrossSolver/investigation/verify_pseudo_masks.py (2000/2000
+// (scramble, slot) combinations agreed, for both the corner-only and
+// edge-only split AND the sanity check that corner-only AND edge-only
+// reconstitutes the pre-existing combined mask's result).
+const CORNER_MASKS = {
+    BL: 'WWWWWWWWWRRRRRRRRRGGGGGGGGGYYYYYYyYYOOOOOOoOOBBBBBBBBb',
+    BR: 'WWWWWWWWWRRRRRRRRrGGGGGGGGGYYYYYYYYyOOOOOOOOOBBBBBBbBB',
+    FL: 'WWWWWWWWWRRRRRRRRRGGGGGGgGGyYYYYYYYYOOOOOOOOoBBBBBBBBB',
+    FR: 'WWWWWWWWWRRRRRRrRRGGGGGGGGgYYyYYYYYYOOOOOOOOOBBBBBBBBB',
+};
+const EDGE_MASKS = {
+    BL: 'WWWWWWWWWRRRRRRRRRGGGGGGGGGYYYYYYYYYOOOoOOOOOBBBBBbBBB',
+    BR: 'WWWWWWWWWRRRRRrRRRGGGGGGGGGYYYYYYYYYOOOOOOOOOBBBbBBBBB',
+    FL: 'WWWWWWWWWRRRRRRRRRGGGgGGGGGYYYYYYYYYOOOOOoOOOBBBBBBBBB',
+    FR: 'WWWWWWWWWRRRrRRRRRGGGGGgGGGYYYYYYYYYOOOOOOOOOBBBBBBBBB',
+};
+
+for (const [prefix, table] of [['CORNER', CORNER_MASKS], ['EDGE', EDGE_MASKS]]) {
+    for (const [name, mask] of Object.entries(table)) {
+        if (mask.length !== 54) {
+            throw new Error(`facelet-flags: ${prefix}_MASKS["${name}"] has length ${mask.length}, expected 54`);
+        }
+    }
+}
+
+/**
+ * Independent per-piece placement check, for pseudo (mismatched) F2L
+ * results. Returns { cornerAt: {BL,BR,FL,FR}, edgeAt: {BL,BR,FL,FR} }: each
+ * boolean is true iff that slot's corner (or edge) piece specifically is
+ * correctly placed and oriented, regardless of its partner piece's state.
+ */
+function pseudoSolvedFlags(facelets) {
+    const cornerAt = {};
+    const edgeAt = {};
+    for (const slot of ['BL', 'BR', 'FL', 'FR']) {
+        cornerAt[slot] = isSlotSolved(facelets, slot, CORNER_MASKS);
+        edgeAt[slot] = isSlotSolved(facelets, slot, EDGE_MASKS);
+    }
+    return { cornerAt, edgeAt };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { solvedFlags, MASKS };
+    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS };
 }
