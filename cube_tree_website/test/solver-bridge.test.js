@@ -12,9 +12,12 @@ const assert = require('assert');
 const path = require('path');
 
 // solver-bridge.js expects algSpeed/calculateSolvedPieces/altAlgs/
-// isPseudoState as bare globals (shared <script> scope in the browser).
+// isPseudoState/applyAlgorithm/SOLVED_FACELETS/solvedFlags as bare globals
+// (shared <script> scope in the browser).
 const scriptExports = require(path.join(__dirname, '..', 'script.js'));
 Object.assign(global, scriptExports);
+Object.assign(global, require(path.join(__dirname, '..', 'facelet-cube.js')));
+Object.assign(global, require(path.join(__dirname, '..', 'facelet-flags.js')));
 
 const {
   SolveSession,
@@ -25,6 +28,7 @@ const {
   LATER_LIMITS_BY_TOTAL,
   SLOT_INDICES,
   COLOR_ROTATIONS,
+  checkCandidateAgainstRealCubeState,
 } = require(path.join(__dirname, '..', 'solver-bridge.js'));
 
 let failures = 0;
@@ -185,6 +189,53 @@ test('SolveSession: isComplete becomes true once all 4 corners/edges are solved'
   assert.strictEqual(s.isComplete, false);
   s.commit({ rotation: '', coreAlg: 'C', targetNodeId: 'N3' });
   assert.strictEqual(s.isComplete, true);
+});
+
+// ---------------------------------------------------------------------
+// checkCandidateAgainstRealCubeState (luck filtering)
+//
+// Uses the same "R U R' U'" commutator crossSolver/test/slot-mapping.test.js
+// already established (from this project's own real-solver verification):
+// from a solved cube it disturbs exactly the FR pair, leaving cross and the
+// other three pairs solved.
+// ---------------------------------------------------------------------
+
+test('checkCandidateAgainstRealCubeState: an exact, correct solve passes', () => {
+  const result = checkCandidateAgainstRealCubeState(
+    "R U R' U'", '', '', "U R U' R'", ['BL', 'BR', 'FL', 'FR']
+  );
+  assert.strictEqual(result.ok, true);
+});
+
+test('checkCandidateAgainstRealCubeState: solving more than claimed is discarded as luck', () => {
+  // Solved cube, no moves at all -- actually solves cross + all 4 pairs,
+  // but this candidate only claims cross (0 pairs).
+  const result = checkCandidateAgainstRealCubeState('', '', '', '', []);
+  assert.strictEqual(result.ok, false);
+  assert.match(result.reason, /luck/);
+});
+
+test('checkCandidateAgainstRealCubeState: claiming a pair that is not actually solved is discarded', () => {
+  // The scramble alone leaves FR unsolved; doing nothing else cannot
+  // possibly have solved it, no matter what the DAG edge claims.
+  const result = checkCandidateAgainstRealCubeState("R U R' U'", '', '', '', ['BL', 'BR', 'FL', 'FR']);
+  assert.strictEqual(result.ok, false);
+  assert.match(result.reason, /FR.*not actually solved/);
+});
+
+test('checkCandidateAgainstRealCubeState: claiming cross when it is not actually solved is discarded', () => {
+  const result = checkCandidateAgainstRealCubeState('R', '', '', '', []);
+  assert.strictEqual(result.ok, false);
+  assert.match(result.reason, /cross/);
+});
+
+test('checkCandidateAgainstRealCubeState: priorPath is included in the replay', () => {
+  // Splitting the same solve across two "committed" moves (priorPath +
+  // coreAlg) must give the identical result as doing it in one step.
+  const result = checkCandidateAgainstRealCubeState(
+    "R U R' U'", '', 'U', "R U' R'", ['BL', 'BR', 'FL', 'FR']
+  );
+  assert.strictEqual(result.ok, true);
 });
 
 // ---------------------------------------------------------------------

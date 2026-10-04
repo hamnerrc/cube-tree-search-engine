@@ -44,17 +44,46 @@
  *   target with identical solved corners/edges (the only thing dispatch
  *   here cares about). Collapse them by target solved-state before
  *   searching, or every later-step action gets searched/shown 2-3x over.
+ * - CRITICAL (found 2026-10-04 while verifying luck filtering against the
+ *   real solver — see PROJECT_STATUS.md §4.12): that same mid-solve y/y'
+ *   exploration can ALSO produce a later-step target whose solved
+ *   corners/edges are NOT a superset of the current node's — a committed
+ *   slot's label gets renamed by the relabeling instead of carried forward
+ *   under its real name. Dispatch has no mechanism to apply that implied
+ *   second rotation (`session.rotation` is fixed once at the root), so
+ *   taking such an edge at face value silently asks the solver to protect
+ *   the wrong slot — verified directly: 26 of 86 otherwise-normal-looking
+ *   "Single pair" candidates disturbed an already-committed pair 100% of
+ *   the time, with no error. Any later-step edge whose target drops a
+ *   committed label is filtered out before searching (see the `!isRoot`
+ *   block below) — it is not a safe transition from the session's actual
+ *   frame.
  * - Pseudo (mismatched) edges are skipped for now — not yet wired up.
- * - Luck filtering (README "Luck filtering") is NOT implemented here.
- *   A solver-probe approach was attempted and reverted — see
- *   PROJECT_STATUS.md §4.9: the "0 onProgress events = already solved"
- *   signal used throughout this file's own verified findings is actually
- *   ambiguous whenever the probe's maxLength is smaller than the TRUE
- *   solution depth (IDA* skips announcing depths it can prove infeasible
- *   via the prune table's lower bound, which looks identical to "already
- *   solved" from the outside). A reliable implementation needs an actual
- *   cube-state check, not a cheap solver probe — see PROJECT_STATUS.md §2
- *   items 3–4 for the recommended approach.
+ * - Luck filtering (README "Luck filtering") IS implemented here, as of
+ *   2026-10-04 — see PROJECT_STATUS.md §4.3/§4.9/§4.12. A solver-probe
+ *   approach was attempted first and reverted (§4.9): the "0 onProgress
+ *   events = already solved" signal this file's other verified findings
+ *   rely on is ambiguous whenever a probe's maxLength is smaller than the
+ *   TRUE solution depth, making that approach produce false positives on
+ *   real scrambles. The real fix is a real cube-state check:
+ *   `checkCandidateAgainstRealCubeState` replays the literal move sequence
+ *   [scramble, rotation, priorPath, coreAlg] (the same order this file's
+ *   own header comment and PROJECT_STATUS.md §4.10 already established is
+ *   the correct physical replay of a committed path) through facelet-cube.js
+ *   — a plain-JS facelet simulator cross-verified bit-for-bit against the
+ *   `magiccube` Python package, see test/facelet-cube.test.js — and checks
+ *   the resulting real cube state with facelet-flags.js (a JS port of
+ *   archived_attempts/try_1/utils/CFOPflags.py's facelet-mask slot check)
+ *   against exactly what the candidate's DAG edge claims to solve. A
+ *   candidate that solves anything beyond its claim (lucky) is discarded,
+ *   per spec, in favor of it showing up under the matching higher-arity
+ *   edge instead; a candidate that fails to solve what it claims (which
+ *   would be a solver/DAG bug, not luck) is also discarded, with a console
+ *   warning, since no result that doesn't actually solve what it claims
+ *   should ever be shown. facelet-cube.js and facelet-flags.js must be
+ *   loaded as bare globals (plain <script> tags, before this file, same as
+ *   script.js's algSpeed/isPseudoState/altAlgs) in the browser; Node tests
+ *   require() them and assign onto `global`, same pattern as script.js.
  */
 'use strict';
 
@@ -111,6 +140,40 @@ function stripLeadingRotation(alg) {
 /** Compose two rotation strings (either may be ''). */
 function composeRotations(a, b) {
   return [a, b].filter(Boolean).join(' ');
+}
+
+const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
+
+/**
+ * Luck filtering (README "Luck filtering"): replays [scramble, rotation,
+ * priorPath, coreAlg] as literal moves on a solved cube via facelet-cube.js
+ * and checks, via facelet-flags.js, whether the result solves EXACTLY
+ * `claimedCorners` (plus cross, always claimed) — no more, no less. Returns
+ * { ok: true } or { ok: false, reason }. See this file's header comment for
+ * why this exact replay order is correct and where it's verified.
+ */
+function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners) {
+  const sequence = [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' ');
+  const facelets = applyAlgorithm(SOLVED_FACELETS, sequence);
+  const actual = solvedFlags(facelets);
+  const claimed = new Set(claimedCorners || []);
+
+  if (!actual.cross) {
+    return { ok: false, reason: 'cross claimed solved but is not actually solved' };
+  }
+  for (const slot of F2L_SLOTS) {
+    const actuallySolved = actual[slot];
+    const claimsSolved = claimed.has(slot);
+    if (actuallySolved !== claimsSolved) {
+      return {
+        ok: false,
+        reason: actuallySolved
+          ? `slot ${slot} solved by luck (not claimed by this edge)`
+          : `slot ${slot} claimed solved but is not actually solved`,
+      };
+    }
+  }
+  return { ok: true };
 }
 
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
@@ -205,6 +268,40 @@ async function searchCurrentNode(session, helper, onStatus) {
     });
   }
 
+  if (!isRoot) {
+    // CRITICAL (found 2026-10-04 while verifying luck filtering end-to-end
+    // against the real solver -- see PROJECT_STATUS.md §4.12): the same
+    // mid-solve y/y' exploration described above can also produce a target
+    // whose solved corners/edges are NOT a superset of the current node's
+    // -- a previously-committed slot's label gets renamed by the rotation
+    // (e.g. a committed "BR" becomes "FR" or "BL" under the relabeling)
+    // instead of carried forward under its real name. Dispatch here has no
+    // mechanism to apply that implied second rotation (session.rotation is
+    // fixed once at the root and reused verbatim) -- taking such an edge at
+    // face value asks the solver to protect the wrong slot entirely,
+    // silently disturbing the real, already-committed piece. Verified
+    // directly against the real WASM solver + a real facelet replay: for
+    // one committed session, 26 of 86 otherwise-plausible later-step
+    // candidates (spanning multiple distinct target nodes, all sharing this
+    // shape) disturbed a committed pair 100% of the time, with no error and
+    // a perfectly normal-looking "Single pair" label -- this predates and
+    // is independent of luck filtering, and luck filtering's own check
+    // cannot catch it, since both the (wrong) claim and the real outcome
+    // agree the dropped slot isn't solved. Any later-step edge that drops a
+    // committed label is therefore not a safe transition from the session's
+    // actual (unrotated-beyond-session.rotation) frame and must be skipped.
+    const committed = session.currentNode.state;
+    const committedCorners = new Set(committed.corners || []);
+    const committedEdges = new Set(committed.edges || []);
+    edges = edges.filter(edge => {
+      const target = session.nodeMap.get(edge.target);
+      const targetCorners = target.state.corners || [];
+      const targetEdges = target.state.edges || [];
+      return [...committedCorners].every(c => targetCorners.includes(c))
+        && [...committedEdges].every(e => targetEdges.includes(e));
+    });
+  }
+
   const candidates = [];
 
   const colorList = isRoot ? session.colors : [null];
@@ -266,14 +363,6 @@ async function searchCurrentNode(session, helper, onStatus) {
         if (coreAlg) uniqueCoreAlgs.add(coreAlg);
       }
 
-      // NOTE: luck filtering (README "Luck filtering") is intentionally not
-      // applied here. See PROJECT_STATUS.md §4.9 — a solver-probe approach
-      // was implemented and reverted after discovering it produces false
-      // positives (the "already solved" signal this file's other verified
-      // findings rely on is ambiguous when the probe's maxLength is smaller
-      // than the true solution depth). Candidates may currently include
-      // "lucky" over-solves that should, per spec, be attributed to a
-      // different, higher-arity edge instead.
       for (const coreAlg of uniqueCoreAlgs) {
         const variants = isRoot && typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
 
@@ -282,6 +371,21 @@ async function searchCurrentNode(session, helper, onStatus) {
           const fullRotation = isRoot ? composeRotations(baseRotation, yToken) : session.rotation;
 
           if (!finalCoreAlg) continue; // shouldn't happen, but guard
+
+          // Luck filtering (README "Luck filtering") -- discard any
+          // candidate that doesn't solve EXACTLY `allCorners` (this edge's
+          // full claimed target, old+new pairs) when physically replayed.
+          // See this file's header comment and PROJECT_STATUS.md §4.3/§4.9
+          // for why a real cube-state check, not a solver probe, is needed.
+          const luckCheck = checkCandidateAgainstRealCubeState(
+            session.scramble, fullRotation, session.scoredPath, finalCoreAlg, allCorners
+          );
+          if (!luckCheck.ok) {
+            if (luckCheck.reason.includes('claimed solved but is not actually solved')) {
+              console.warn(`Discarding candidate: ${luckCheck.reason}`, { coreAlg: finalCoreAlg, rotation: fullRotation, allCorners });
+            }
+            continue;
+          }
 
           const scoredAlg = session.scoredPath
             ? session.scoredPath + ' ' + finalCoreAlg
@@ -319,5 +423,9 @@ function edgeLabel(pairCount, isRoot) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS, DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor, stripLeadingRotation, composeRotations };
+  module.exports = {
+    SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
+    DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
+    stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
+  };
 }

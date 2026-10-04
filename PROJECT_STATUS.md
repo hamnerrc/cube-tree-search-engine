@@ -20,9 +20,57 @@ in the README.
 **Current state:** the core interactive solver loop works end-to-end and is
 verified — both in a Node harness driving the real WASM solver and physically
 checked with a real cube simulator (`magiccube`) — for matched (non-pseudo)
-Cross/XCross/XXCross/XXXCross plus later single-pair/multislot steps.
+Cross/XCross/XXCross/XXXCross plus later single-pair/multislot steps. **Luck
+filtering is now implemented and verified** (see §4.3/§4.9/§4.12 below) — the
+last of the "core loop" checklist items in §5 step 3 that was still open.
 
-**2026-10-04: the developer note below ("later steps don't generate valid
+**2026-10-04 (second pass, same day): luck filtering implemented, and a
+second, more serious bug discovered and fixed while verifying it — see §4.12
+for the full writeup.** Summary:
+1. **Luck filtering (§4.3) is now implemented**, resolving the open gap from
+   §4.9 (the reverted solver-probe attempt). New files
+   [facelet-cube.js](cube_tree_website/facelet-cube.js) (a plain-JS 54-facelet
+   cube simulator, cross-verified bit-for-bit against `magiccube` for 328
+   cases — see [test/facelet-cube.test.js](cube_tree_website/test/facelet-cube.test.js))
+   and [facelet-flags.js](cube_tree_website/facelet-flags.js) (a JS port of
+   `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask slot check)
+   give `searchCurrentNode` a real cube-state check: replay
+   `[scramble, rotation, priorPath, coreAlg]` as literal moves and compare the
+   resulting solved slots against exactly what the edge claims. A candidate
+   that solves more than claimed is discarded (luck, per spec); one that
+   solves less is also discarded, with a console warning (a solver/DAG bug,
+   not luck).
+2. **While verifying this against the real solver end-to-end, found a second,
+   independent, more serious bug**: a later-step DAG edge (from `tree_gen.py`'s
+   mid-solve y/y' exploration, previously known only as a *duplicate-edge*
+   source — see §4.10 bug 2) can land on a target whose claimed solved
+   corners/edges are **not a superset** of the current node's — i.e. the edge
+   silently drops an already-committed slot's label (renamed by the
+   relabeling instead of carried forward). `searchCurrentNode` had no
+   mechanism to apply the implied second rotation, so it dispatched these
+   edges using the solver class/slots implied by the (wrong) dropped label,
+   which doesn't protect the real already-committed piece. **Verified
+   directly against the real WASM solver + a real facelet replay: 26 of 86
+   otherwise-normal-looking "Single pair" candidates disturbed an
+   already-committed pair 100% of the time, with no error and a perfectly
+   ordinary-looking label.** This predates luck filtering, is independent of
+   it, and luck filtering's own check cannot catch it (the wrong claim and
+   the real outcome agree the dropped slot isn't solved, so nothing looks
+   wrong from that check's point of view). Fixed by filtering out, for any
+   non-root search, every outgoing edge whose target doesn't preserve every
+   corner/edge already solved at the current node — see §4.12.
+3. A **third, related but lower-severity finding**: even after fix #2, a
+   later-step edge from this same mid-solve-rotation family can still pass
+   the superset check (the full target label set is correct) while its own
+   per-edge "newly solved" display label is wrong (e.g. shows `BR` when the
+   piece actually newly solved is `BL`) — confirmed cosmetic only (the
+   candidate's `targetNodeId`, and therefore dispatch and the final solve,
+   stay correct; only the UI-facing "corners"/"edges" column can be
+   mislabeled). This is the non-root analogue of the already-documented
+   §4.11 finding; **not fixed**, same reasoning as §4.11 for why it isn't a
+   quick fix. See §4.12's final paragraph.
+
+**2026-10-04 (first pass): the developer note below ("later steps don't generate valid
 solutions, and all searches create many duplicate solutions") was
 investigated, root-caused, fixed, and verified — see §4.10 for the full
 writeup.** Both root causes were real bugs in `solver-bridge.js`
@@ -55,36 +103,41 @@ the wrong slot name even though the underlying DAG bookkeeping (and thus the
 actual solve) stays correct. Lower priority than the two fixes above since it
 doesn't produce an invalid solve — just a potentially-mislabeled display.
 
-Full test suite (4 suites) passes; run them before and after any change:
+Full test suite (6 suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
 node cube_tree_website/test/script.test.js
 node cube_tree_website/test/solver-bridge.test.js
+node cube_tree_website/test/facelet-cube.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 ```
 
 A good smoke test after touching `solver-bridge.js`: scramble
 `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2`, colors=`['white']`,
-advanced=`[]`. Expect 80 candidates at step 1, 80 at step 2, 120 at step 3
-(counts changed from a stale 80/240/180 on 2026-10-04 — see §4.10, the dedup
-fix removed the duplicate rows at steps 2/3), with the top algorithm at each
-step physically solving the claimed cross+pairs when checked with a real
-cube simulator (verified 2026-10-04, see §4.10).
+advanced=`[]`. As of the §4.12 fixes, expect **80 candidates at step 1, 80 at
+step 2, 60 at step 3** (step 1/2 unchanged from the §4.10 baseline; step 3
+dropped from 120 to 60 — 34 removed as luck-filtered over-solves, 26 removed
+as the §4.12 superset-safety fix — both confirmed, not just counted, by
+replaying the full committed path through `facelet-cube.js`/`facelet-flags.js`
+and checking every claimed slot against the real resulting cube state). The
+full chain for this scramble reaches a genuine, independently-verified
+complete Cross+F2L solve in 5 steps (Cross + 4 single pairs).
 
 **Two reasonable next tasks** (pick one, don't block on the other):
-1. Port `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask logic to
-   JS to get a real cube-state check — this unblocks luck filtering (§4.3),
-   which was attempted via solver probes and deliberately reverted as
-   unreliable (§4.9 — **read this before attempting luck filtering again**,
-   it explains a non-obvious trap).
-2. Implement Cross optimisation (README "Wide moves and Cross optimisation",
+1. Implement Cross optimisation (README "Wide moves and Cross optimisation",
    §4.5) — a net-new feature (wide-move rewrite + rotation-tracking tree
    search + orientation filter + re-score), not yet started.
-3. Investigate/fix the §4.11 rotation-variant labeling finding — needs the
+2. Investigate/fix the §4.11 rotation-variant labeling finding (now also
+   confirmed to have a non-root analogue, §4.12's finding #3) — needs the
    same "verify empirically, don't hand-derive" discipline as §4.9/§1.2's
-   color-orientation finding, since it's rotation algebra.
+   color-orientation finding, since it's rotation algebra. Worth doing both
+   instances (root altAlgs-variant and non-root mid-solve-rotation-variant)
+   together, since they're likely the same underlying fix (relabel
+   `newCorners`/`newEdges` by whichever rotation was actually applied).
+3. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
+   untouched.
 
 **Traps already discovered the hard way — don't rediscover these:**
 - A whole-cube rotation must go through the solver's `rotation` *option* on
@@ -109,6 +162,21 @@ cube simulator (verified 2026-10-04, see §4.10).
   before searching (§4.10).
 - A later step's move-limit must scale with total pairs in goal, not stay
   flat at the spec's "single pair=10/multislot=12" (§4.8).
+- The same mid-solve y/y' exploration that causes the duplicate-edge trap
+  above can ALSO produce a later-step target whose claimed solved
+  corners/edges are not a superset of the current node's — i.e. it silently
+  drops an already-committed slot's label instead of carrying it forward.
+  Taking such an edge at face value lets the solver disturb a real,
+  already-committed pair with no error. Filter out any non-root edge whose
+  target doesn't preserve every corner/edge already solved at the current
+  node, before searching (§4.12).
+- A real cube-state check (facelet simulation + the CFOPflags-style mask
+  check) is the only reliable way to verify which pieces a result *actually*
+  solves — a solver probe is not (§4.9), and neither is trusting the DAG's
+  own labels at face value (§4.12). `facelet-cube.js` must be
+  cross-verified against `magiccube`, not hand-derived — see
+  test/facelet-cube.test.js for the method (derive each base move's facelet
+  permutation from many random before/after pairs, then verify independently).
 - "0 `onProgress` events" from the solver does **not** reliably mean
   "already solved" — it's ambiguous whenever the call's `maxLength` is
   shorter than the true solution depth (IDA* silently skips announcing
@@ -361,7 +429,7 @@ DAG+solver+scoring wiring *can* work, but:
 | Abstract F2L DAG (unsolved → full Cross+F2L) | **Done, verified.** 238 nodes / 2393 edges, see §1.1. |
 | Multi-step click-to-commit interactive loop | **Working, verified in-browser** for matched (non-pseudo) Cross/XCross/XXCross/XXXCross + later single-pair/multislot. See §5 step 3. |
 | TPP ranking over the cumulative path | **Working, verified.** See §5 step 3. |
-| Luck filtering | **Attempted and reverted** — a solver-probe approach proved unreliable, not just unbuilt. See §4.9. |
+| Luck filtering | **Done, verified.** A solver-probe approach was tried first and reverted as unreliable (§4.9); the real fix is a facelet-based real cube-state check (§4.12). |
 | Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today; pseudo dispatch not wired up at all yet.** See §4.1 and §5 step 3. |
 | Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
 | Cross optimisation (wide-move post-processing) | **Not built at all.** See §4.5. |
@@ -371,10 +439,13 @@ DAG+solver+scoring wiring *can* work, but:
 **Bottom line:** the core interactive loop — the thing that was entirely
 missing before — now works end-to-end in the actual browser for the
 non-pseudo subset of the product, verified against both a Node harness and
-a live click-through session with matching results. The remaining gaps are
-specific and bounded: luck filtering, pseudo dispatch, simplified-pseudo
-DAG support, cross optimisation, multi-scramble verification, and the
-Xxxxcross cold-start latency.
+a live click-through session with matching results, and now also with luck
+filtering (§4.12) protecting every result against both over-solving and
+(a newly-discovered, now-fixed issue found while building it) silently
+disturbing an already-committed pair. The remaining gaps are specific and
+bounded: pseudo dispatch, simplified-pseudo DAG support, cross optimisation,
+the §4.11/§4.12 display-label rotation mismatch, multi-scramble
+verification, and the Xxxxcross cold-start latency.
 
 ---
 
@@ -401,29 +472,29 @@ and a cube-state GNN — and are not reusable here):
    currently specified. Treat as optional, not roadmap-blocking.
 
 3. **Real-cube-state solved-pair detector — [`try_1/utils/CFOPflags.py`](archived_attempts/try_1/utils/CFOPflags.py)**
-   Takes a 54-character Kociemba-style facelet string and, via fixed
-   bitmasks, returns `[cross, bl, br, fl, fr]` solved flags by comparing
-   facelets to their face centers. **Confirmed (not just suspected) to be a
-   prerequisite for luck filtering**: a solver-probe approach was actually
-   built and tested (§4.9) and found unreliable for exactly the reason this
-   item predicted — the solver's own coordinate space doesn't track pieces
-   outside what it was asked to search for, and probing around that
-   limitation turned out to be fundamentally ambiguous, not just slow.
-   Porting this (as JS, operating on whatever facelet format the WASM
-   solvers expose, or a simple cube simulator) is the recommended next
-   attempt at luck filtering, not another solver-probe variant.
+   — **ported, 2026-10-04, see §4.12.** Takes a 54-character Kociemba-style
+   facelet string and, via fixed bitmasks, returns `[cross, bl, br, fl, fr]`
+   solved flags by comparing facelets to their face centers. This was
+   confirmed to be the right prerequisite for luck filtering (a solver-probe
+   approach was tried first and found unreliable, §4.9) and is now ported as
+   [facelet-flags.js](cube_tree_website/facelet-flags.js), operating on a
+   purpose-built JS facelet simulator ([facelet-cube.js](cube_tree_website/facelet-cube.js))
+   rather than `try_4/cubestate_encoder.py`'s `magiccube`-wrapping approach
+   (item 4 below) — a self-contained JS simulator avoids a Python
+   dependency in the browser-facing code path; `magiccube` was still used,
+   at build/verification time only, as the ground truth to derive and
+   cross-check `facelet-cube.js`'s move tables.
 
 4. **Cube-state simulation plumbing — [`try_4/cubestate_encoder.py`](archived_attempts/try_4/cubestate_encoder.py)**
-   Partially reusable: wraps the `magiccube` Python library plus a
-   face-adjacency graph (`archived_attempts/try_3/data/cube.graphml`) to
-   apply a scramble string and read back facelet colors. The one-hot GNN
-   encoding is ML-specific and not relevant here, but the "apply scramble →
-   get facelet colors" wrapper is a ready-made way to drive
-   `CFOPflags`-style verification without writing a cube simulator from
-   scratch — same relevance to luck filtering as item 3. Note: as checked
-   out, this file's `GRAPHML_PATH` is broken (points at a path one
-   directory off from where the file actually lives under `try_3/data/`);
-   fix the path or copy the file before reusing.
+   Not ported directly (see item 3 above — a native JS simulator was built
+   instead, since the browser-facing code can't depend on Python/`magiccube`
+   at runtime), but `magiccube` itself (the library this file wraps) was
+   used as the empirical ground truth to derive and verify `facelet-cube.js`'s
+   move tables (`gen_facelet_fixture.py`), matching this item's original
+   relevance to luck filtering. Note: as checked out, this file's
+   `GRAPHML_PATH` is broken (points at a path one directory off from where
+   the file actually lives under `try_3/data/`); not relevant to the path
+   actually taken, but still broken if anyone reuses this file directly.
 
 Not recommended to pull forward: `try_1/utils/npz_generate.py`,
 `try_1/models/main.py`, `try_2/models/cross_picker.py`, `try_3/scripts/*` —
@@ -523,7 +594,10 @@ solved so far, and score every new candidate as
 `algSpeed(pathSoFar + candidate) / piecesSoFar(path + candidate)` — not by
 reusing `scoreAlgorithms`/`calculateSolvedPieces` as they're called today.
 
-### 4.3 No luck filtering exists
+### 4.3 FIXED (2026-10-04): no luck filtering existed — see §4.12
+
+**Resolved — see §4.12 for the full implementation writeup.** The
+description below is kept as the original problem statement.
 
 Neither `cross_xcross.js` nor `backend_test.js` checks whether a returned
 solution solved anything beyond what its DAG edge claims. The WASM solvers'
@@ -666,7 +740,12 @@ during earlier steps, or investigating whether a tighter move-restriction
 or different search strategy avoids needing the full 4-pair coordinate
 space at all for what is, physically, usually a short remaining solve.
 
-### 4.9 Luck filtering: a solver-probe implementation was attempted and reverted — it was unreliable, not just slow
+### 4.9 Luck filtering attempt #1: a solver-probe implementation was attempted and reverted — it was unreliable, not just slow
+
+**Superseded — the real fix (a facelet-based cube-state check, not a solver
+probe) is in §4.12, implemented and verified 2026-10-04.** Kept below as-is:
+it's the reason the §4.12 implementation uses a real cube simulator instead
+of another probe variant, and the failure mode here is still worth knowing.
 
 Implemented, tested, and **reverted** on 2026-10-03. Worth recording in
 detail because the failure mode is subtle and would be easy to
@@ -868,6 +947,138 @@ test (vary the rotation, use a real trigger algorithm, check with
 §1.2/slot-mapping.test.js/§4.10 all used) before writing a fix, not a
 hand-derived FACE_MAP-for-slot-names table. Not yet investigated further.
 
+### 4.12 FIXED (2026-10-04): luck filtering implemented, plus a newly-discovered later-step dispatch bug found and fixed while verifying it
+
+**Luck filtering (§4.3/§4.9) is now implemented.** Two new files:
+[facelet-cube.js](cube_tree_website/facelet-cube.js) is a plain-JS 54-facelet
+3×3 cube simulator (apply ordinary face turns plus whole-cube x/y/z
+rotations to a Kociemba-convention facelet string). Its 9 base-generator
+permutations (U/D/R/L/F/B/x/y/z) were **derived empirically against
+`magiccube`**, not hand-derived — for each generator, many random scrambles
+were run through both a "before" and "after" state, and for each output
+position the set of input positions consistent with the observed color
+transformation was intersected across trials until exactly one candidate
+remained per position; every derived permutation was then independently
+re-verified against 30 more random trials. The whole simulator is also
+cross-checked bit-for-bit against 328 `magiccube`-generated cases (random
+algorithms up to 30 moves, every single move token in isolation) in
+[test/facelet-cube.test.js](cube_tree_website/test/facelet-cube.test.js) —
+all match exactly. [facelet-flags.js](cube_tree_website/facelet-flags.js) is
+a JS port of `archived_attempts/try_1/utils/CFOPflags.py`'s facelet-mask
+slot-solved check (operating on the same facelet convention), sanity-checked
+against the `R U R' U'` commutator this project's own
+`crossSolver/test/slot-mapping.test.js` already established disturbs exactly
+the FR pair from solved.
+
+`solver-bridge.js`'s `checkCandidateAgainstRealCubeState` uses both: it
+replays `[scramble, rotation, priorPath, coreAlg]` as literal moves (the
+same replay order this file's header comment and §4.10 already established
+is the correct physical reconstruction of a committed path) and compares the
+resulting real solved slots against exactly what the candidate's DAG edge
+claims (`allCorners`, the target's full old+new corner list) — a candidate
+that solves more is discarded as luck (per spec, it belongs to a different,
+higher-arity edge instead); a candidate that solves less is also discarded,
+with a console warning, since that would mean the DAG/solver claim is
+simply wrong. Verified on the documented smoke-test scramble: step 3's
+candidate count drops from 120 (the §4.10 baseline) to 86 after luck
+filtering alone, with the 34 removed candidates confirmed (via a temporary
+diagnostic, not committed) to all be genuine over-solves of the committed
+BR pair in an edge whose claim didn't include it.
+
+**While verifying this end-to-end, a second, independent, and more serious
+bug was found** — not a luck-filtering issue at all, but a pre-existing
+later-step dispatch bug exposed by the same investigation. `tree_gen.py`'s
+mid-solve y/y' exploration (§4.10 bug 2's `rotations = ("-","y","y'")` at
+every cross-solved node, previously known only as a *duplicate-edge* source)
+relabels ALL pieces' slot names when exploring from a rotated perspective —
+including already-solved ones. For a node with, say, BR already solved, the
+"y" exploration relabels that piece as "FR" (carried forward under the new
+name) before selecting which additionally-unsolved piece to solve next; the
+resulting target's `state.corners` genuinely does **not** contain "BR"
+(e.g. `["BL", "FR"]` instead of `["BL", "BR", "FR"]`) even though the
+*same physical BR piece* is still solved — it's just renamed. This differs
+from the known duplicate-edge case (§4.10 bug 2) in a critical way: there,
+multiple edges land on targets with *identical* labels (pure duplication,
+safe to dedupe); here, a single edge lands on a target with *different,
+non-superset* labels (not a duplicate of anything — a real, distinctly-named
+target that silently drops a committed slot).
+
+`searchCurrentNode` has no mechanism to apply this implied second rotation —
+`session.rotation` is fixed once at the root commit and reused verbatim for
+every later call (by design, per this file's header comment and §4.7/§4.10).
+Taking such an edge's target labels at face value and dispatching via
+`solverCallFor(helper, allCorners, ...)` therefore asks the solver to
+protect the *wrong* slot (e.g. "FR", which isn't really at risk) while
+leaving the *actually*-committed slot ("BR") completely unprotected —
+exactly the §4.7 failure mode (an unprotected committed pair gets disturbed
+close to half the time), just reached via a different, previously-unnoticed
+edge class.
+
+**Verified directly against the real WASM solver + a real facelet replay**
+(not reasoned about by hand): for one committed session on the documented
+smoke-test scramble (Cross, then BR as a single pair), 26 of the 86
+luck-filtered step-3 candidates had a target whose full corner claim
+excluded BR, and **every single one of those 26, when physically replayed,
+had actually disturbed BR** — with no error, and a perfectly ordinary-looking
+`type: "Single pair"` label (e.g. `corners: ["BL"]`). Luck filtering's own
+check cannot catch this: both the (wrong) claim and the real outcome agree
+BR isn't part of this edge, so nothing looks inconsistent from that check's
+point of view. A separate, smaller investigation script run with the actual
+fix in place (below) confirmed zero such candidates remain.
+
+**Fix:** in `searchCurrentNode`, for any non-root search, filter out every
+outgoing edge whose target's solved corners/edges are not a superset of the
+*current* node's solved corners/edges, before the existing dedup/dispatch
+logic runs. This is the direct DAG-edge-filtering analogue of §4.7's
+dispatch-level fix (protect every already-committed slot), applied one level
+earlier (at edge selection, not solver-call construction) because the
+mislabeling here means the solver-call construction itself can't be trusted
+for these edges. Re-ran the full 5-step smoke-test chain with the fix in
+place: step 3 goes from 86 → 60 retained candidates (removing exactly the 26
+disturbance cases, confirmed — none of the 60 remaining candidates have a
+target that drops a committed slot), the chain still reaches a genuine,
+independently-verified complete Cross+F2L solve (`isComplete: true`, and
+separately confirmed via a full-path `facelet-cube.js`/`facelet-flags.js`
+replay — `{cross: true, BL: true, BR: true, FL: true, FR: true}`), and the
+top-ranked results at steps 1–2 are byte-for-byte unchanged from before
+either fix (only step 3 onward, where the broken edge class exists, is
+affected).
+
+**A third, related, lower-severity finding surfaced while re-verifying the
+fix, recorded but not fixed — the non-root analogue of §4.11.** Even after
+the superset fix above, a later-step edge from this same mid-solve-rotation
+family can still legitimately survive (its full target label set is a
+correct superset) while its own per-edge "newly solved" label
+(`edge.solved_step.corners`/`.edges`, shown in the UI as the result's
+"corners"/"edges" columns) is wrong. Observed directly in the smoke-test's
+step 5 (the "finish the last pair" step, 3 pairs already committed): the
+top-ranked candidate displayed `corners: ["BR"]` — but BR was *already*
+committed before this step, and the current node's state after committing
+this candidate showed the new total was `["BL", "BR", "FL", "FR"]`, meaning
+the piece actually newly solved was **BL**, not BR. Confirmed cosmetic only
+— `allCorners`/`targetNodeId` (what dispatch and luck filtering actually
+use) are correct for this edge, the superset filter above correctly allows
+it through, and the final chain's independently-replayed state is fully and
+correctly solved. This is the exact same class of bug as §4.11 (a rotation
+applied to the underlying algorithm/state without equivalently relabeling
+the *display* fields), just occurring for a non-root mid-solve-rotation edge
+instead of a root `altAlgs` variant — strongly suggesting both should be
+fixed together (likely the same underlying "relabel the display slot names
+by whichever rotation was actually applied" fix), per the same
+"verify-empirically-first" discipline §4.11 already called for.
+
+Both the luck-filtering feature and the superset-safety fix are covered by
+new unit tests in
+[test/solver-bridge.test.js](cube_tree_website/test/solver-bridge.test.js)
+(`checkCandidateAgainstRealCubeState`, using the same `R U R' U'`-commutator
+methodology `crossSolver/test/slot-mapping.test.js` established) and by
+[test/facelet-cube.test.js](cube_tree_website/test/facelet-cube.test.js).
+The specific end-to-end real-solver investigation (counting 120→86→60,
+confirming the 26 disturbances, confirming the final chain's independent
+solved state) was done with scratch Node scripts, not committed — re-run the
+same way (real DAG + real solver + `facelet-cube.js`/`facelet-flags.js`, or
+`magiccube`) if this area regresses again.
+
 ---
 
 ## 5. Actionable Roadmap
@@ -961,13 +1172,14 @@ be done in parallel.
    - [x] **Click-to-commit**, re-triggering search from the new node.
    - [x] **Search limits** per §4.6/§4.8 (`searchLimitFor`, keyed by total
      pairs in goal for later steps).
-   - [ ] **Luck filtering** (§4.3/§4.9) — attempted via solver probes and
-     **reverted**: the approach is unreliable (false positives), not just
-     slow — see §4.9 for the full finding. Candidates are currently shown
-     as returned by the solver (deduped) with no check for accidental
-     over-solving. Next concrete step is **not** another solver-probe
-     variant: port `CFOPflags.py`'s facelet-mask logic (§2 items 3–4) to
-     JS and check the real resulting cube state directly.
+   - [x] **Luck filtering** (§4.3/§4.9) — **done (2026-10-04), see §4.12.**
+     A solver-probe approach was tried first and reverted (§4.9: unreliable,
+     false positives). The real fix ported `CFOPflags.py`'s facelet-mask
+     logic to JS (`facelet-flags.js`) on top of a new, `magiccube`-verified
+     facelet simulator (`facelet-cube.js`), and checks every candidate's
+     real resulting cube state against its DAG edge's claim. Building this
+     also surfaced and fixed an independent, more serious later-step
+     dispatch bug (§4.12) that predated luck filtering.
    - [x] **Deduplication**: identical algorithm text returned multiple
      times by the solver (common — `maxSolutions` frequently yields
      repeats) is deduped before scoring/display. Note: dedup currently
@@ -1052,9 +1264,9 @@ be done in parallel.
      present in this environment as of 2026-10-02.)
 
 5. **Recyclable-utility follow-ups from §2**
-   - [ ] Port `CFOPflags.py`'s facelet-mask logic into a small JS
-     verification helper — now motivated specifically by luck filtering
-     (§4.3/§2 items 3–4), not just general DAG correctness checking.
+   - [x] Port `CFOPflags.py`'s facelet-mask logic into a small JS
+     verification helper — **done (2026-10-04), see §4.12** —
+     `facelet-flags.js`, used by luck filtering.
    - [ ] `mirror_alg.py`'s R/L mirror utility remains optional, not
      spec-required; revisit only if/when widening the ranked pool beyond
      y-rotation variants becomes a priority.
