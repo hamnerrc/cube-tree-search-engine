@@ -51,31 +51,20 @@
  * from the convertible set) per the README's explicit "y2 is forbidden as
  * a mid-algorithm move" rule.
  *
- * DELIBERATE DEVIATION FROM THE README'S LITERAL NOTATION: the README
- * writes the D-layer wide-move equivalence as "u = D + y" (i.e. names the
- * wide form "u"). Taken literally, this collides with this project's own
- * solver engine: `crossSolver/solver.cpp`'s move table groups "u" with the
- * U/E/y axis (`y_axis_order = {U:0, D:1, E:2, u:3, d:4, y:5}`), i.e. the
- * engine's "u" means conventional wide-U (top two layers), not wide-D.
- * `script.js`'s `algSpeed` likewise has a dedicated branch for "d" distinct
- * from "u" (its own grip-state logic). A Cross-optimised result that used
- * the README's literal "u" would therefore be silently misinterpreted as a
- * wide-U move the moment it's committed and fed back into the solver as
- * `postAlg` for a later step (or scored by algSpeed as if it were wide-U)
- * — a real, silent corruption bug, not a style choice. This file emits the
- * conventionally-correct, solver-and-algSpeed-recognized "d"/"d'" instead;
- * the underlying equivalence (D+y / D'+y') is unchanged, only the output
- * letter differs from the README's prose. Flagged here for the record,
- * since it's a deviation from the literal spec text — see
- * PROJECT_STATUS.md §4.13.
+ * NOTATION (corrected 2026-10-04, PROJECT_STATUS.md §4.19): the D-layer
+ * conversion emits "u"/"u'", exactly as the README says ("u = D + y"). Wide
+ * U turns the top two layers, which is the same as turning D and rotating
+ * the whole cube by y. An earlier version emitted "d"/"d'" on the mistaken
+ * belief that the engine's "u" meant something else; the engine, magiccube
+ * and facelet-cube.js all read "d" as U + y', so every such result was
+ * physically wrong once committed (0 next-step candidates, cross broken).
  */
 'use strict';
 
 // Each entry: converting this literal (already-relabeled) move emits
 // `wide` and accumulates `rotation` into the running cumulative rotation.
 // D2 is deliberately absent -- its only wide form needs a y2 rotation,
-// which the README forbids mid-algorithm. The D/D' wide token is "d"/"d'",
-// not the README's literal "u"/"u'" -- see the header comment above.
+// which the README forbids mid-algorithm.
 const WIDE_MOVE_RULES = {
     L: { wide: 'r', rotation: 'x' },
     "L'": { wide: "r'", rotation: "x'" },
@@ -83,8 +72,8 @@ const WIDE_MOVE_RULES = {
     R: { wide: 'l', rotation: "x'" },
     "R'": { wide: "l'", rotation: 'x' },
     R2: { wide: 'l2', rotation: 'x2' },
-    D: { wide: 'd', rotation: 'y' },
-    "D'": { wide: "d'", rotation: "y'" },
+    D: { wide: 'u', rotation: 'y' },
+    "D'": { wide: "u'", rotation: "y'" },
 };
 
 /** M' such that compose(rho, M') == compose(M, rho) -- see header comment. */

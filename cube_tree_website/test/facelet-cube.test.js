@@ -73,7 +73,7 @@ check(
     'unrecognized move token throws instead of silently no-opping',
     (() => {
         try {
-            applyAlgorithm(SOLVED_FACELETS, 'r');
+            applyAlgorithm(SOLVED_FACELETS, 'Rw');
             return false;
         } catch (e) {
             return /unrecognized move token/.test(e.message);
@@ -81,7 +81,28 @@ check(
     })()
 );
 check('isMoveToken recognizes a standard face turn', isMoveToken('R2'));
-check('isMoveToken rejects a wide move (out of this project\'s search move set)', !isMoveToken('r'));
+check('isMoveToken rejects unknown notation (Rw: wide moves are written lowercase here)', !isMoveToken('Rw') && !isMoveToken('Q'));
+check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', "S'", "R2'"].every(isMoveToken));
+
+// canonicalizeForEngine (§4.19): state(prefix, alg) == state(rotation, moves),
+// with `moves` face turns only, for random mixed-notation sequences.
+{
+    const { canonicalizeForEngine } = require('../facelet-cube.js');
+    const V = [...'UDRLFBxyzrludfbMES'].flatMap(f => [f, f + "'", f + '2']);
+    let seed = 3;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const start = applyAlgorithm(SOLVED_FACELETS, "R U2 F' D L2 B");
+    let bad = 0;
+    for (let i = 0; i < 1000; i++) {
+        const alg = Array.from({ length: 1 + Math.floor(rnd() * 15) }, () => V[Math.floor(rnd() * V.length)]).join(' ');
+        const pre = ['', 'z2', 'x', 'z2 y', "x' y2"][i % 5];
+        const c = canonicalizeForEngine(pre, alg);
+        const faceOnly = c.moves.split(' ').filter(Boolean).every(t => /^[UDRLFB]['2]?$/.test(t));
+        if (!faceOnly || applyAlgorithm(start, [pre, alg].join(' ')) !== applyAlgorithm(start, [c.rotation, c.moves].join(' '))) bad++;
+    }
+    check(`canonicalizeForEngine preserves the state and emits face turns only (1000 random wide/slice/rotation sequences, ${bad} bad)`, bad === 0);
+    check('canonicalizeForEngine: "u" is D + y', canonicalizeForEngine('', 'u').rotation === 'y' && canonicalizeForEngine('', 'u').moves === 'D');
+}
 
 if (process.exitCode) {
     console.error(`\n${passCount}/${cases.length + 8} checks passed.`);

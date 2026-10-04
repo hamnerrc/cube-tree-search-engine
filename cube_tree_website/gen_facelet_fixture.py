@@ -19,23 +19,33 @@ for face in ["U", "D", "R", "L", "F", "B"]:
 for ax in ["x", "y", "z"]:
     for suf in ["", "'", "2"]:
         ALL_MOVES.append(ax + suf)
+# Wide (WCA lowercase == magiccube "Rw") and slice moves, added 2026-10-04.
+WIDE = {"r": "Rw", "l": "Lw", "u": "Uw", "d": "Dw", "f": "Fw", "b": "Bw", "M": "M", "E": "E", "S": "S"}
+for ours in WIDE:
+    for suf in ["", "'", "2"]:
+        ALL_MOVES.append(ours + suf)
+
+
+def to_magiccube(move):
+    base = move.rstrip("'2")
+    return WIDE.get(base, base) + move[len(base):]
 
 
 def main():
     random.seed(20261003)
 
     cases = []
-    for _ in range(300):
+    for _ in range(500):
         length = random.randint(1, 30)
         moves = [random.choice(ALL_MOVES) for _ in range(length)]
         c = Cube(3)
-        c.rotate(" ".join(moves))
+        c.rotate(" ".join(to_magiccube(m) for m in moves))
         cases.append({"moves": moves, "facelets": c.get_kociemba_facelet_colors()})
 
     cases.append({"moves": [], "facelets": Cube(3).get_kociemba_facelet_colors()})
     for tok in ALL_MOVES:
         c = Cube(3)
-        c.rotate(tok)
+        c.rotate(to_magiccube(tok))
         cases.append({"moves": [tok], "facelets": c.get_kociemba_facelet_colors()})
 
     out_path = Path(__file__).resolve().parent / "test" / "facelet-fixture.json"

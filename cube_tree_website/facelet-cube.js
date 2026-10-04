@@ -64,6 +64,28 @@ function buildMoveTable() {
 
 const MOVE_TABLE = buildMoveTable();
 
+// Wide and slice moves, as compositions of the verified tables above. Each
+// decomposition was FOUND by exhaustive search over 1-3 token sequences of
+// the 27 base tokens against magiccube's Rw/Lw/Uw/Dw/Fw/Bw/M/E/S on 60 random
+// states each (the first, shortest hit is used), not written from memory;
+// test/facelet-fixture.json re-verifies them against magiccube directly.
+// Lowercase is WCA wide notation (r == Rw). Added 2026-10-04 so the
+// professional reference solves (pro_references.txt) can be replayed.
+const DERIVED_MOVES = {
+    r: ['L', 'x'], l: ['R', "x'"], u: ['D', 'y'], d: ['U', "y'"], f: ['B', 'z'], b: ['F', "z'"],
+    M: ['R', "L'", "x'"], E: ['U', "D'", "y'"], S: ["F'", 'B', 'z'],
+};
+for (const [name, parts] of Object.entries(DERIVED_MOVES)) {
+    const perm = parts.reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
+    MOVE_TABLE[name] = perm;
+    MOVE_TABLE[`${name}'`] = invertPerm(perm);
+    MOVE_TABLE[`${name}2`] = composePerm(perm, perm);
+}
+// "R2'" (common in human-written solves) is the same as "R2".
+for (const name of Object.keys(MOVE_TABLE)) {
+    if (name.endsWith('2')) MOVE_TABLE[`${name}'`] = MOVE_TABLE[name];
+}
+
 function applyPerm(facelets, perm) {
     let out = '';
     for (let i = 0; i < perm.length; i++) out += facelets[perm[i]];
@@ -75,10 +97,9 @@ function isMoveToken(token) {
 }
 
 // Applies a space-separated algorithm string (standard face turns plus
-// whole-cube x/y/z rotations) to a 54-char facelet string and returns the
-// resulting facelet string. Throws on any unrecognized token so a typo or
-// an unsupported move (slice/wide moves are not part of this project's
-// search move set) fails loudly instead of silently no-opping.
+// whole-cube x/y/z rotations, plus lowercase wide and M/E/S slice moves) to a
+// 54-char facelet string and returns the resulting facelet string. Throws on
+// any unrecognized token so a typo fails loudly instead of silently no-opping.
 function applyAlgorithm(facelets, algorithm) {
     const tokens = String(algorithm)
         .replace(/\bnone\b/gi, '')
@@ -95,6 +116,86 @@ function applyAlgorithm(facelets, algorithm) {
     return state;
 }
 
+// ---------------------------------------------------------------------------
+// Frame canonicalisation (2026-10-04, PROJECT_STATUS.md §4.19).
+//
+// The solver engines take a whole-cube `rotation` option plus a `postAlg`, and
+// require the centres to end where the rotation put them -- so a committed
+// path containing wide moves, slices or mid-solve rotations cannot be passed
+// as postAlg verbatim. canonicalizeForEngine(prefix, alg) returns
+// { rotation, moves } with
+//     state(prefix, alg) == state(rotation, moves)
+// where `moves` uses only the 18 face turns. Everything is done with the
+// verified permutations above (rotations are pushed to the front by
+// conjugation and each conjugated face move is identified by perm equality),
+// so no relabelling table is written by hand; test/facelet-cube.test.js
+// checks the identity on random mixed-notation sequences.
+const FACE_TURNS = [...'UDRLFB'].flatMap(f => [f, `${f}'`, `${f}2`]);
+const ROTATION_TOKENS = [...'xyz'].flatMap(a => [a, `${a}'`, `${a}2`]);
+const permKey = perm => perm.join(',');
+const FACE_TURN_BY_PERM = new Map(FACE_TURNS.map(t => [permKey(MOVE_TABLE[t]), t]));
+// Shortest rotation string for each of the 24 orientations; y-only and
+// x/z-then-y spellings are preferred so results read like this project's
+// usual "z2 y" style.
+const ROTATION_BY_PERM = new Map();
+{
+    const singles = ['', 'y', "y'", 'y2', 'z2', 'x', "x'", 'z', "z'", 'x2'];
+    for (const a of singles) {
+        for (const b of ['', 'y', "y'", 'y2']) {
+            const seq = [a, b].filter(Boolean);
+            const perm = seq.reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
+            if (!ROTATION_BY_PERM.has(permKey(perm))) ROTATION_BY_PERM.set(permKey(perm), seq.join(' '));
+        }
+    }
+    for (const a of ROTATION_TOKENS) {
+        for (const b of ROTATION_TOKENS) {
+            const perm = composePerm(MOVE_TABLE[a], MOVE_TABLE[b]);
+            if (!ROTATION_BY_PERM.has(permKey(perm))) ROTATION_BY_PERM.set(permKey(perm), `${a} ${b}`);
+        }
+    }
+}
+
+const invertToken = t => t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`;
+
+/** Expands a token into face turns and rotations only. */
+function primitiveTokens(token) {
+    const t = token.replace(/2'$/, '2');
+    const base = t.replace(/['2]$/, '');
+    const parts = DERIVED_MOVES[base];
+    if (!parts) return [t];
+    if (t.endsWith("'")) return parts.slice().reverse().map(invertToken);
+    if (t.endsWith('2')) return parts.concat(parts);
+    return parts.slice();
+}
+
+function canonicalizeForEngine(prefixRotation, alg) {
+    const tokens = [prefixRotation, alg].filter(Boolean).join(' ')
+        .replace(/\bnone\b/gi, '').trim().split(/\s+/).filter(Boolean);
+    // Pass 1: rewrite as "E then Q" with E in the starting frame.
+    let Q = IDENTITY_PERM;
+    const early = [];
+    for (const tok of tokens) {
+        if (!isMoveToken(tok)) throw new Error(`facelet-cube: unrecognized move token "${tok}"`);
+        for (const p of primitiveTokens(tok)) {
+            if (ROTATION_TOKENS.includes(p)) { Q = composePerm(Q, MOVE_TABLE[p]); continue; }
+            early.push(composePerm(composePerm(Q, MOVE_TABLE[p]), invertPerm(Q)));
+        }
+    }
+    // Pass 2: "E then Q" == "Q then (Q^-1 e Q for each e)".
+    const invQ = invertPerm(Q);
+    const moves = early.map(e => {
+        const name = FACE_TURN_BY_PERM.get(permKey(composePerm(composePerm(invQ, e), Q)));
+        if (!name) throw new Error('canonicalizeForEngine: conjugated move is not a face turn');
+        return name;
+    });
+    return { rotation: ROTATION_BY_PERM.get(permKey(Q)), moves: moves.join(' ') };
+}
+
+/** Net whole-cube rotation of an alg (as a rotation string, '' for none). */
+function netRotation(alg) {
+    return canonicalizeForEngine('', alg).rotation;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         FACE_ORDER,
@@ -106,5 +207,7 @@ if (typeof module !== 'undefined' && module.exports) {
         composePerm,
         invertPerm,
         IDENTITY_PERM,
+        canonicalizeForEngine,
+        netRotation,
     };
 }

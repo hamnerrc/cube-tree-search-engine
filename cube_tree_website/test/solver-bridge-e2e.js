@@ -7,11 +7,12 @@
  * completed session really is a solved Cross+F2L.
  *
  * Usage: node test/solver-bridge-e2e.js [--pseudo [--simplified]] [--advanced xcross,...]
- *          [--scrambles N] [--seed S] [--pick top|random|full] [--colors white,green]
+ *          [--scrambles N] [--seed S] [--pick top|random|full|wide] [--colors white,green]
  *
  * --pick full steers toward full-pseudo-only transitions (README "Pseudo
  * pairs", simplified pseudo off): a pseudo result when no mismatch exists
  * yet, then a non-repair transition out of each mismatched node.
+ * --pick wide prefers results containing wide/slice moves (cross_opt).
  *
  * Exits non-zero if any "claimed solved but not actually solved" warning
  * fires (a real solver/DAG/bridge bug, never mere luck), if a completed
@@ -91,6 +92,10 @@ function randomScramble(n) {
         }
       }
       let pool = results;
+      if (pick === 'wide') {
+        const wide = results.filter(r => r.coreAlg.split(' ').some(t => /^[rludfbMES]/.test(t)));
+        if (wide.length) pool = wide;
+      }
       if (pick === 'full') {
         const from = session.currentNodeId;
         const preferred = isMismatched(session.currentNode.state)
@@ -98,7 +103,7 @@ function randomScramble(n) {
           : results.filter(r => /pseudo/.test(r.type));
         if (preferred.length) pool = preferred;
       }
-      const c = pick === 'top' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
+      const c = pick === 'top' || pick === 'wide' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
       const wasFullOnly = fullOnly.has(`${session.currentNodeId}>${c.targetNodeId}`);
       if (wasFullOnly) fullOnlySteps++;
       const nPseudo = results.filter(r => /pseudo/.test(r.type)).length;

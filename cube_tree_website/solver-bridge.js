@@ -93,16 +93,12 @@
  *   by `session.crossOptEnabled` (set from the `cross_opt` advanced-option
  *   checkbox), it only applies to root, Cross-only (`pairCount === 0`)
  *   candidates, generating its own additional candidates alongside (not
- *   instead of) the normal ones. Two things to never get wrong again here
- *   (both caused real, only-visible-end-to-end bugs the first time):
- *   `optimizeCrossSolution`'s reported `rotation` is a TRAILING residual,
- *   not a leading one like `baseRotation`/altAlgs' `yToken` — it must
- *   never be prepended for a literal-replay check, only composed into the
- *   candidate's *reported* rotation (used for display/future dispatch);
- *   and any wide-move text reaching `checkCandidateAgainstRealCubeState`
- *   (directly, or via a committed `session.scoredPath`) must be expanded
- *   back to literal moves first — handled centrally inside that function
- *   via `expandWideMoves`, not just at the cross-optimisation call site.
+ *   instead of) the normal ones. Its results contain wide moves and end with
+ *   the cube rotated; the candidate's `rotation` stays the inspection
+ *   rotation and every later engine call uses SolveSession.engineFrame,
+ *   which converts the committed text into {net rotation, face turns}
+ *   (§4.19 -- composing the residual into `rotation` as well used to apply
+ *   it twice, and the old "d" notation was physically wrong).
  */
 'use strict';
 
@@ -197,9 +193,9 @@ const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
  * step's own luck check once committed.
  */
 function replayFacelets(scramble, rotation, priorPath, coreAlg) {
-  const rawTokens = [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' ').split(/\s+/);
-  const sequence = (typeof expandWideMoves === 'function' ? expandWideMoves(rawTokens) : rawTokens).join(' ');
-  return applyAlgorithm(SOLVED_FACELETS, sequence);
+  // facelet-cube.js replays wide/slice moves natively (magiccube-verified,
+  // §4.19), so the committed text is replayed exactly as a human reads it.
+  return applyAlgorithm(SOLVED_FACELETS, [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' '));
 }
 
 /**
@@ -325,6 +321,11 @@ class SolveSession {
   get currentNode() { return this.nodeMap.get(this.currentNodeId); }
   get rootNode() { return this.nodeMap.get(this.rootId); }
   get scoredPath() { return this.stepAlgs.join(' ').trim(); }
+  /**
+   * The committed path as the engine needs it: { rotation, moves } with
+   * `moves` face turns only, in the frame the cube is physically in now.
+   */
+  get engineFrame() { return canonicalizeForEngine(this.rotation, this.scoredPath); }
   get isComplete() {
     const s = this.currentNode.state;
     return s.cross_solved && (s.corners || []).length === 4 && (s.edges || []).length === 4;
@@ -450,15 +451,21 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       // already-rotated frame -- exactly what's needed here -- without any
       // further relabeling.
       const scramble = session.scramble;
-      const postAlgForCall = isRoot ? '' : session.scoredPath;
+      // The engine needs the committed path as face turns in the CURRENT
+      // frame, with the net rotation (inspection + any wide moves or
+      // mid-solve rotations) in its `rotation` option: it rejects a postAlg
+      // that leaves the centres rotated. See SolveSession.engineFrame / §4.19.
+      const frame = isRoot ? null : session.engineFrame;
+      const callRotation = isRoot ? baseRotation : frame.rotation;
+      const postAlgForCall = isRoot ? '' : frame.moves;
 
       if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
 
       let raw;
       try {
         raw = isPseudo
-          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, baseRotation, maxLength, postAlgForCall)
-          : await solverCallFor(helper, allCorners, scramble, baseRotation, maxLength, postAlgForCall);
+          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall)
+          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall);
       } catch (err) {
         console.error('Solver error', err);
         continue;
@@ -470,7 +477,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       // algorithms before altAlgs expansion — the solver commonly returns
       // the same algorithm multiple times across its maxSolutions results.
       const knownPrefixParts = [];
-      if (baseRotation) knownPrefixParts.push(baseRotation);
+      if (callRotation) knownPrefixParts.push(callRotation);
       if (postAlgForCall) knownPrefixParts.push(postAlgForCall);
       const knownPrefix = knownPrefixParts.join(' ');
 
@@ -501,21 +508,12 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
             const optAlg = opt.moves.join(' ');
             if (optAlg === coreAlg && !opt.rotation) continue; // identical to the unoptimized result below
 
-            // `opt.rotation` is NOT a leading/inspection rotation like
-            // `baseRotation` or altAlgs' yToken -- it's a TRAILING residual
-            // that accumulates DURING the algorithm from wide-move
-            // conversions (see cross-optimization.js's header comment: the
-            // optimized sequence is mathematically equal to "coreAlg,
-            // followed by opt.rotation", not "opt.rotation, followed by
-            // coreAlg"). It must never be prepended for literal replay.
-            // `optAlgExpanded` already correctly embeds it at the END
-            // (wide tokens expanded back to face-move+rotation pairs via
-            // cross-optimization.js's own equivalence table), so the
-            // replay below uses plain `baseRotation` up front, exactly
-            // like a normal (non-optimised) Cross candidate would.
-            const optAlgExpanded = expandWideMoves(opt.moves).join(' ');
+            // The optimised text equals "coreAlg, then opt.rotation": the
+            // residual rotation happens DURING the algorithm (inside its wide
+            // moves), so it is replayed as written after the inspection
+            // rotation, exactly like a plain Cross candidate.
             const optLuckCheck = checkCandidateAgainstRealCubeState(
-              session.scramble, baseRotation, session.scoredPath, optAlgExpanded, []
+              session.scramble, baseRotation, session.scoredPath, optAlg, []
             );
             if (!optLuckCheck.ok) {
               // Luck (an extra pair solved) is an expected discard, exactly as
@@ -526,16 +524,12 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
               continue;
             }
 
-            // For the CANDIDATE's reported `rotation` (used for display and,
-            // if committed, as session.rotation for all future dispatch),
-            // baseRotation and opt.rotation DO compose into one value --
-            // once the optimized algorithm has finished executing, the cube
-            // ends up rotated by their combination relative to the original
-            // un-rotated scramble, regardless of when during execution that
-            // rotation accumulated. The solver's `rotation` option (used by
-            // every subsequent search) only cares about the net result, not
-            // the timing -- see this file's header comment on `rotation`.
-            const optRotation = composeRotations(baseRotation, opt.rotation);
+            // The residual rotation happens DURING the algorithm (it is part
+            // of the wide moves), so the inspection rotation stays
+            // baseRotation; later steps derive the real frame from the
+            // committed text via SolveSession.engineFrame (§4.19). Composing
+            // it in here as well applied it twice.
+            const optRotation = baseRotation;
 
             const optScoredAlg = session.scoredPath ? session.scoredPath + ' ' + optAlg : optAlg;
             const optTpp = algSpeed(optScoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);

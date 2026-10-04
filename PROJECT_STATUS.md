@@ -579,7 +579,7 @@ DAG+solver+scoring wiring *can* work, but:
 | Luck filtering | **Done, verified.** A solver-probe approach was tried first and reverted as unreliable (§4.9); the real fix is a facelet-based real cube-state check (§4.12). |
 | Simplified pseudo vs. full pseudo as distinct modes | **Done (2026-10-04, seventh pass).** Superset DAG with a per-edge `full_pseudo_only` flag; "simplified pseudo" checkbox filters it in `pruneGraph`. See §4.15. |
 | Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
-| Cross optimisation (wide-move post-processing) | **Done, verified.** See §4.5/§4.13. One deliberate deviation from the README's literal notation (uses `d`/`d'`, not `u`/`u'`, for the D-layer wide move — see §4.13). |
+| Cross optimisation (wide-move post-processing) | **Done, verified** (§4.5/§4.13), with the §4.19 fixes: README notation (`u = D + y`), committed results with a residual rotation now work. |
 | Search limits matching the spec's table | **Working, verified** — see §4.6/§4.8 for the one place this needed to extend beyond the spec's literal numbers (later steps scale by total pairs, not a flat per-category number). |
 | WASM scramble search (matched + pseudo) | Matched: **integrated and verified end-to-end in the browser.** Pseudo: **wired in and verified** (§4.14), but slow (tables rebuilt per call). |
 
@@ -1298,6 +1298,10 @@ same way (real DAG + real solver + `facelet-cube.js`/`facelet-flags.js`, or
 
 ### 4.13 DONE (2026-10-04): Cross optimisation (README "Wide moves and Cross optimisation") implemented
 
+> **Correction (§4.19):** the "use `d`, not the README's `u`" deviation
+> described below was a mistake: `u` (= D + y) is correct and `d` is U + y'.
+> Committed results with a residual rotation were also broken. Fixed in §4.19.
+
 New file [cross-optimization.js](cube_tree_website/cross-optimization.js),
 wired into `searchCurrentNode` for root, Cross-only (`pairCount === 0`)
 candidates, gated by a new `cross_opt` entry in `SolveSession`'s
@@ -1578,6 +1582,45 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.19 FIXED (2026-10-04, eighth pass): committed Cross-optimised results with a residual rotation were dead ends; wide/slice moves now first-class
+
+**Found while starting on `pro_references.txt`** (user-provided professional
+solves using wide moves and mid-solve rotations).
+
+1. **Notation bug (§4.13's "deliberate deviation" was wrong).** Cross
+   optimisation emitted `d` for "D + y". Wide U (top two layers) *is* D + y,
+   so the README's `u = D + y` was right all along; `d` means U + y'.
+   Established three independent ways: automated search for each wide/slice
+   move's decomposition against magiccube (`r = L x`, `l = R x'`, `u = D y`,
+   `d = U y'`, `f = B z`, `b = F z'`, `M = R L' x'`, `E = U D' y'`,
+   `S = F' B z`), the engine itself (every cross solution returned after a
+   wide/slice `postAlg` physically solves the cross under those semantics),
+   and the facelet fixture. The old cross-opt test hid the bug with a
+   private expansion table that encoded the same mistake.
+2. **Double rotation.** The candidate's `rotation` also had the residual
+   composed in, and the wide text was passed to the engine as `postAlg`, so
+   the residual was applied twice; and the engine returns nothing when a
+   postAlg leaves the centres rotated. Measured: 12/12 committed cross-opt
+   results with a `y`/`y'` residual broke the cross and offered 0 next-step
+   candidates. (Earlier e2e runs never committed one.)
+
+**Fix:**
+- `facelet-cube.js` replays `r l u d f b M E S` (and `X2'`) natively;
+  derived perms, verified by the regenerated magiccube fixture (555 cases).
+- `canonicalizeForEngine(prefix, alg)` turns any committed text into
+  `{rotation, moves}` (net rotation + face turns in the current frame) by
+  conjugating with verified perms; 1000-sequence random identity test.
+- `SolveSession.engineFrame` feeds every later-step engine call; candidates'
+  `rotation` is the inspection rotation only; `replayFacelets` replays
+  committed text as written; cross-opt emits `u`/`u'`.
+- After: 12/12 with 76-80 next-step candidates; e2e `--pick wide` (new),
+  8/8 sessions over 4 colours physically solved, 0 frame failures. Smoke
+  test unchanged.
+
+This is also the groundwork for mid-solve rotations and wide-move search
+(pro_references.txt): any committed text, whatever its notation, now gives
+the engine the right frame.
 
 ### 4.18 FIXED (2026-10-04): mid-search scramble navigation broke the next search; results cache added
 

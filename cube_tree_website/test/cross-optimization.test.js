@@ -28,17 +28,12 @@ function test(name, fn) {
   }
 }
 
-// Expands wide tokens back to their literal definition, purely for
-// verifying physical equivalence -- facelet-cube.js deliberately has no
-// notion of wide moves at all (see cross-optimization.js's header comment
-// on why the ambiguous "u" naming is sidestepped this way).
-const WIDE_EXPANSION = {
-  r: 'L x', "r'": "L' x'", r2: 'L2 x2',
-  l: "R x'", "l'": "R' x", l2: 'R2 x2',
-  d: 'D y', "d'": "D' y'",
-};
+// Wide tokens are replayed by facelet-cube.js itself, whose wide moves are
+// verified against magiccube (test/facelet-fixture.json) -- an independent
+// check of this file's output notation, which a private expansion table
+// here could not provide (it once hid a "d" vs "u" notation bug, §4.19).
 function expand(tokens) {
-  return tokens.map(t => WIDE_EXPANSION[t] || t).join(' ');
+  return tokens.join(' ');
 }
 
 function assertAllVariantsPhysicallyCorrect(original) {
