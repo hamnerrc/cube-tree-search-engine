@@ -225,7 +225,7 @@ the wrong slot name even though the underlying DAG bookkeeping (and thus the
 actual solve) stays correct. Lower priority than the two fixes above since it
 doesn't produce an invalid solve — just a potentially-mislabeled display.
 
-Full test suite (9 fast suites) passes; run them before and after any change:
+Full test suite (10 fast suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
@@ -235,6 +235,7 @@ node cube_tree_website/test/facelet-cube.test.js
 node cube_tree_website/test/cross-optimization.test.js
 node cube_tree_website/test/browser-globals.test.js
 node cube_tree_website/test/random-state-scramble.test.js
+node cube_tree_website/test/pro-references.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 # very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
@@ -1582,6 +1583,47 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.20 IN PROGRESS (2026-10-04, eighth pass): professional reference solves (`pro_references.txt`)
+
+The user added `cube_tree_website/pro_references.txt`: 7 professional
+solves (scramble, inspection, xcross + 3 pairs) that the solver must be able
+to find "within its search tree, regardless of how the current scoring
+algorithm ranks them", plus two stated gaps: the search doesn't use the move
+subsets pros use, and rotations are not chosen during search ("mandatory").
+They also edited README's procedural-rotation paragraph (rotation variants
+are all valid results, the inspection rotation is free) and added
+`or18_solver_docs.html` (upstream engine docs: move restrict incl. wide
+moves/rotations, center restrict, max rotation count).
+
+**Tooling:** `pro-references.js` (parse, physical replay, DAG segmentation,
+goal-no-op detection), `test/pro-references.test.js` (fast), and
+`test/pro-references-e2e.js` (slow: per DAG segment, asks the engine for
+*all* solutions of that goal up to the pro's length with a given move-set
+config and checks the pro's alg is among them, modulo commuting turns).
+
+**Findings so far:**
+1. All 7 solves physically complete. Pros' step boundaries sometimes leave
+   the cross broken (#3, #4, #7); at DAG level those steps merge into one
+   transition (e.g. #7 xcross+2nd pair = an XXCross).
+2. **Bug, fixed:** the engine's move-adjacency pruning spans the postAlg
+   boundary, so a later step could never start on the face/axis the previous
+   step ended on (e.g. after "... R2" every R/L-first candidate was missing:
+   19 of 33 found on #5's 2nd pair). Every later-step call now appends a
+   neutral `y y'` (`POSTALG_BOUNDARY`); verified state-neutral, and e2e
+   matched (6/6) + pseudo (2/2) runs have 0 frame failures.
+3. **Membership, current config (18 face turns): 16/24 segments** (14 before
+   the fix). Of the 8 missing: wide moves (#2 xcross, #7 xcross+2nd),
+   mid-step rotations (#3 3rd+4th, #5 4th, #7 3rd+4th, #7 x), length over
+   the spec limit (#6 xcross: 15 > 11), non-standard inspection (#6/#7 use
+   `x'` then a wide move to bring white down), and moves that leave every
+   goal piece in place (#3 xcross, #3 2nd pair, #6 xcross), which the
+   engine prunes as redundant with no option to turn that off (needs a C++
+   change).
+4. **The per-call `maxSolutions` (20) hides almost all of them anyway:**
+   #1's xcross is 1 of 2744 solutions at its depth; with 2000 per call it
+   enters the pool (rank ~2500 of 39,832 by untuned TPP), with 20 never.
+   `SolveSession.maxSolutions` now overrides the default (still 20).
 
 ### 4.19 FIXED (2026-10-04, eighth pass): committed Cross-optimised results with a residual rotation were dead ends; wide/slice moves now first-class
 

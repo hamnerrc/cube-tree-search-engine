@@ -119,6 +119,13 @@ const COLOR_ROTATIONS = {
 
 const MOVE_RESTRICT = 'U_U2_U-_D_D2_D-_L_L2_L-_R_R2_R-_F_F2_F-_B_B2_B-';
 
+// Appended to every later-step postAlg; see searchCurrentNode.
+const POSTALG_BOUNDARY = "y y'";
+
+// Solutions requested per engine call (README: "as high as practical").
+// SolveSession.maxSolutions overrides it per session.
+const DEFAULT_MAX_SOLUTIONS = 20;
+
 // Distance-1 limits per README "Search limits" table, keyed by pair count.
 // XXXCross=13 is not spec'd; see PROJECT_STATUS §4.6.
 const DISTANCE1_LIMITS = { 0: 10, 1: 11, 2: 12, 3: 13 };
@@ -280,9 +287,9 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
 }
 
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
-function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg) {
+function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS) {
   const slots = corners.slice().sort().map(c => SLOT_INDICES[c]);
-  const opts = { maxSolutions: 20, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '' };
+  const opts = { maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '' };
   switch (slots.length) {
     case 0: return helper.solveCross(scramble, opts);
     case 1: return helper.solveXcross(scramble, slots[0], opts);
@@ -294,10 +301,10 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg) 
 }
 
 /** Pseudo-engine counterpart of solverCallFor: independent edge and corner home-slot lists. */
-function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg) {
+function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS) {
   const toLetters = list => list.slice().sort();
   return pseudoHelper.solvePseudo(scramble, toLetters(edges), toLetters(corners), {
-    maxSolutions: 20, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '',
+    maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '',
   });
 }
 
@@ -307,6 +314,7 @@ class SolveSession {
     this.tree = prunedTree;
     this.colors = colors; // checked color names, e.g. ['white']
     this.crossOptEnabled = (advancedOptions || []).includes('cross_opt');
+    this.maxSolutions = DEFAULT_MAX_SOLUTIONS;
     this.nodeMap = new Map(prunedTree.nodes.map(n => [n.id, n]));
     const unsolved = prunedTree.nodes.find(n => n.state.cross_solved === false);
     this.rootId = unsolved ? unsolved.id : prunedTree.nodes[0].id;
@@ -457,15 +465,22 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       // that leaves the centres rotated. See SolveSession.engineFrame / §4.19.
       const frame = isRoot ? null : session.engineFrame;
       const callRotation = isRoot ? baseRotation : frame.rotation;
-      const postAlgForCall = isRoot ? '' : frame.moves;
+      // The engine's move-adjacency pruning spans the postAlg boundary: a
+      // step could never start on the same face (or axis) the previous step
+      // ended on -- e.g. after "... R2", every R/L-first candidate was
+      // silently missing (19 of 33 found on pro reference #5's 2nd pair;
+      // PROJECT_STATUS.md §4.20). A cancelling rotation pair resets that
+      // without changing the state; postAlg rotations don't count toward
+      // maxRotCount.
+      const postAlgForCall = isRoot || !frame.moves ? '' : `${frame.moves} ${POSTALG_BOUNDARY}`;
 
       if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
 
       let raw;
       try {
         raw = isPseudo
-          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall)
-          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall);
+          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall, session.maxSolutions)
+          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall, session.maxSolutions);
       } catch (err) {
         console.error('Solver error', err);
         continue;
@@ -700,6 +715,6 @@ if (typeof module !== 'undefined' && module.exports) {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
     DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
-    relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels,
+    relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
   };
 }
