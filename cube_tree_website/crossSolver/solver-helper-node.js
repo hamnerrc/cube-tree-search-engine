@@ -395,6 +395,11 @@ class CrossSolverHelperNode {
         }
       };
       try {
+        // cube-tree modification: per-call no-op move set (solver.cpp
+        // setNoopMoves); always reset so settings never leak between calls.
+        if (this.Module && typeof this.Module.setNoopMoves === 'function') {
+          this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
+        }
         callFn();
       } catch (e) {
         globalThis.postMessage = origPostMessage;

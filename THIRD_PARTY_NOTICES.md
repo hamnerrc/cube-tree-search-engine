@@ -17,7 +17,14 @@ documentation `cube_tree_website/or18_solver_docs.html`.
 **Modifications** (GPL-3.0 §5a): files changed from the upstream copy are
 listed here with the date of the change.
 
-- *(none yet)*
+- **2026-10-04** `crossSolver/solver.cpp`: added `g_noop_allowed` and the
+  exported `setNoopMoves()`, and gated the 16 "move leaves every goal piece
+  unchanged ⇒ reject solution" checks on it (default: none allowed, i.e.
+  upstream behaviour). Rebuilt `crossSolver/solver.js` / `solver.wasm` with
+  `compile.sh` (emcc 6.0.11).
+- **2026-10-04** `crossSolver/worker-persistent.js`, `solver-helper.js`,
+  `solver-helper-node.js`: pass a `noopMoves` option through to
+  `setNoopMoves()` on every call.
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

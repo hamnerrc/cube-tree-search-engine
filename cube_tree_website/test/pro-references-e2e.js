@@ -23,7 +23,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const { loadProReferences, segmentProSolve } = require(path.join(root, 'pro-references.js'));
 const { canonicalizeForEngine, applyAlgorithm, SOLVED_FACELETS, commuteNormalize, rotationSpellings } = require(path.join(root, 'facelet-cube.js'));
-const { searchLimitFor, SLOT_INDICES, POSTALG_BOUNDARY } = require(path.join(root, 'solver-bridge.js'));
+const { searchLimitFor, SLOT_INDICES, POSTALG_BOUNDARY, NOOP_MOVES } = require(path.join(root, 'solver-bridge.js'));
 const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
 
 const args = process.argv.slice(2);
@@ -96,7 +96,7 @@ function call(h, pairs, scramble, o) {
       const t0 = Date.now();
       const sols = await call(h, seg.after.pairs, solve.scramble, {
         rotation: frame.rotation, postAlg, maxLength: segTokens.length - cut, maxSolutions,
-        allowedMoves: cfg.moves.join('_'), maxRotCount: cfg.maxRotCount, centerOffset,
+        allowedMoves: cfg.moves.join('_'), maxRotCount: cfg.maxRotCount, centerOffset, noopMoves: NOOP_MOVES,
       });
       const prefix = [frame.rotation, postAlg].filter(Boolean).join(' ');
       const raw = sols.map(s => s.trim().slice(prefix.length).trim());

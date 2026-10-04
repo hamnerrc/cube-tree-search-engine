@@ -142,6 +142,12 @@ function nodeByLabels(session, corners, edges) {
   return null;
 }
 
+// U-layer turns may leave every goal piece in place (positioning other
+// pieces, e.g. the U in "R' U R'" instead of "R2"); upstream engine rejected
+// such solutions, the patched engine accepts them for these moves
+// (crossSolver/solver.cpp setNoopMoves, PROJECT_STATUS.md §4.22).
+const NOOP_MOVES = "U U2 U'";
+
 // Appended to every later-step postAlg; see searchCurrentNode. "y2 y2", not
 // "y y'": once rotations are searchable the engine groups y with the U/D
 // axis, so a tail ending in y' blocked U/D-first candidates instead. y2 is
@@ -316,7 +322,7 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
 function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, extra = {}) {
   const slots = corners.slice().sort().map(c => SLOT_INDICES[c]);
-  const opts = { maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '', ...extra };
+  const opts = { maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '', noopMoves: NOOP_MOVES, ...extra };
   switch (slots.length) {
     case 0: return helper.solveCross(scramble, opts);
     case 1: return helper.solveXcross(scramble, slots[0], opts);
@@ -794,6 +800,6 @@ if (typeof module !== 'undefined' && module.exports) {
     DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
-    proEngineOptions, nodeByLabels,
+    proEngineOptions, nodeByLabels, NOOP_MOVES,
   };
 }

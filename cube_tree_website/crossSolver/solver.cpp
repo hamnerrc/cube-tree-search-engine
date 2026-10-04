@@ -235,6 +235,29 @@ std::vector<std::string> move_names = {"U", "U2", "U'", "D", "D2", "D'", "L", "L
 
 std::vector<std::string> rotation_names = {"x", "x2", "x'", "y", "y2", "y'", "z", "z2", "z'"};
 
+// cube-tree modification (2026-10-04, see THIRD_PARTY_NOTICES.md): moves that
+// may leave every goal piece unchanged. Upstream rejects any solution with
+// such a move as redundant; human solvers use them (e.g. the U in R' U R' to
+// position non-goal pieces). Empty by default = upstream behaviour.
+std::vector<bool> g_noop_allowed(54, false);
+
+void setNoopMoves(std::string moves)
+{
+    std::fill(g_noop_allowed.begin(), g_noop_allowed.end(), false);
+    for (char &ch : moves)
+    {
+        if (ch == '_') ch = ' ';
+        if (ch == '-') ch = '\'';
+    }
+    std::stringstream ss(moves);
+    std::string tok;
+    while (ss >> tok)
+    {
+        auto it = std::find(move_names.begin(), move_names.end(), tok);
+        if (it != move_names.end()) g_noop_allowed[std::distance(move_names.begin(), it)] = true;
+    }
+}
+
 std::string AlgToString(std::vector<int> &alg)
 {
     std::string result = "";
@@ -929,7 +952,7 @@ struct cross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = center_move_table[center_tmp][j];
-                        if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -1046,7 +1069,7 @@ struct cross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = center_move_table[center_tmp][j];
-                        if (index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -1448,7 +1471,7 @@ struct xcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == g_edge_move_table[index3_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == g_edge_move_table[index3_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -1569,7 +1592,7 @@ struct xcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == g_edge_move_table[index3_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == g_edge_move_table[index3_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -2012,7 +2035,7 @@ struct xxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == g_edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == g_edge_move_table[index6_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == g_edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == g_edge_move_table[index6_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -2146,7 +2169,7 @@ struct xxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == g_edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == g_edge_move_table[index6_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == g_edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == g_edge_move_table[index6_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -2653,7 +2676,7 @@ struct xxxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == g_edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == g_edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == g_edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == g_edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -2800,7 +2823,7 @@ struct xxxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == g_edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == g_edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == g_edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == g_edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -3363,7 +3386,7 @@ struct xxxxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -3523,7 +3546,7 @@ struct xxxxcross_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27)
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27)
                         {
                             valid = false;
                             break;
@@ -4133,7 +4156,7 @@ struct LL_substeps_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -4305,7 +4328,7 @@ struct LL_substeps_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -4947,7 +4970,7 @@ struct LL_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -5119,7 +5142,7 @@ struct LL_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -5753,7 +5776,7 @@ struct LL_AUF_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -5925,7 +5948,7 @@ struct LL_AUF_search
                         }
                         m_tmp = converter[rotationMapReverse[center_tmp][j]];
                         center_tmp = g_center_move_table[center_tmp][j];
-                        if (index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
+                        if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27 && index_cp_tmp2 == g_cp_move_table[index_cp_tmp2 + m_tmp] && index_ep_tmp2 == g_ep_move_table[index_ep_tmp2 + m_tmp])
                         {
                             valid = false;
                             break;
@@ -6962,6 +6985,7 @@ EMSCRIPTEN_BINDINGS(my_module)
 {
     emscripten::function("solve", &controller);
     emscripten::function("setCancelCheckMask", &setCancelCheckMask);
+    emscripten::function("setNoopMoves", &setNoopMoves);
 
     emscripten::class_<PersistentCrossSolver>("PersistentCrossSolver")
         .constructor<>()

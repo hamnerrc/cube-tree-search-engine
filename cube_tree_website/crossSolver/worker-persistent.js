@@ -227,6 +227,13 @@ self.onmessage = async function(event) {
         solver = _getSolver(wasmModule, solverType);
     }
 
+    // cube-tree modification: moves allowed to leave every goal piece in
+    // place (see solver.cpp setNoopMoves). Reset on every call so one
+    // search's setting never leaks into the next.
+    if (typeof wasmModule.setNoopMoves === 'function') {
+      wasmModule.setNoopMoves(data.noopMoves ? _restStr(data.noopMoves) : '');
+    }
+
     // Call solve() with the correct argument list
     if (solverType === 'LLSubsteps') {
       var ll = _llStr(data.ll);

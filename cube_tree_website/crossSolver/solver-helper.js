@@ -292,6 +292,7 @@ class CrossSolverHelper {
       maxRotCount = 0,
       moveAfterMove = '',
       moveCount = '',
+      noopMoves = '',
       onProgress = null,
       onSolution = null,
       onCancel = null,
@@ -318,6 +319,7 @@ class CrossSolverHelper {
         maxRotCount,
         moveAfterMove,
         moveCount,
+        noopMoves, // cube-tree modification, see worker-persistent.js
       });
     });
   }

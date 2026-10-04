@@ -1589,6 +1589,32 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.22 DONE (2026-10-04, ninth pass): Emscripten installed; engine patched to allow U-layer "positioning" moves
+
+User-authorised. emsdk installed at `~/emsdk` (emcc 6.0.11; `compile.sh`
+already sources it; nothing added to shell profiles). **Baseline first:**
+rebuilding the unmodified `solver.cpp` gives byte-identical output to the
+shipped `solver.wasm` on a 15-call / 1597-solution battery (Cross..XXCross,
+rotations, postAlg, wide/rotation move sets with centre offsets).
+
+**Patch** (recorded in THIRD_PARTY_NOTICES.md): when a candidate reaches the
+goal, the engine re-walks it and rejects it if any move leaves every tracked
+index unchanged (16 copies of this check, all classes). That rule is what
+excluded pro references #3 xcross / #3 2nd pair / #6 xcross (`R' U R'`
+instead of `R2`). Now gated by `g_noop_allowed`, set per call via the new
+exported `setNoopMoves()`; worker and both helpers pass a `noopMoves`
+option and reset it on every call. The "goal already reached at an earlier
+prefix" rule is kept (that one is genuinely redundant). With no moves
+allowed the patched engine is byte-identical to upstream on the battery.
+
+**Use:** `NOOP_MOVES = "U U2 U'"` for every matched search (U-layer turns
+are the general human positioning technique; allowing every face would
+mostly add idle B/F turns). Probe: #3 xcross found (2122 → 3295 solutions
+at its depth), #3 2nd pair found (46 → 70), 0 physically invalid. e2e
+default 6/6 (all colours), `--pro` 2/2, 0 warnings, 0 frame failures; smoke
+counts unchanged; slot-mapping/color-orientation pass on the new binary.
+The pseudo engine is not patched yet.
+
 ### 4.21 DONE (2026-10-04, ninth pass): every action has a cost, including x rotations
 
 User decision. Measured first: `x`/`x'` cost 0 alone (MCC models them as a
