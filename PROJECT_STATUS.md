@@ -1152,7 +1152,13 @@ went from 79 (only the identity-rotation variants surviving, confirming the
 bug) to 316 (≈4×, recovering the three previously-discarded rotation
 variants per solution) with **zero** false "claimed but not solved"
 warnings and zero display-label mismatches across all 316 when
-independently replayed.
+independently replayed. Re-ran the same check with XXCross and XXXCross
+also enabled (the relabeling logic applies per-slot, so it needed checking
+for multi-slot claims too, not just the single-slot XCross case above):
+1192 total root candidates (XCross 316, XXCross 480, XXXCross 316, Cross
+80), 1112 non-Cross candidates independently replayed and checked against
+their displayed claim — **zero mismatches and zero undetected over-solves**
+across all of them.
 
 Both the luck-filtering feature and the superset-safety fix are covered by
 new unit tests in
