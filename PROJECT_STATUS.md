@@ -1586,6 +1586,14 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.24 (2026-10-04, ninth pass): default solutions per search raised to 500
+
+User priority: accuracy over speed, maintain or increase solutions. Measured
+(Node, white+yellow, xcross+xxcross+multislotting): 100 → root 8768 cands /
+24.6 s (cold tables), step 2 2.3 s; 500 → root 43,084 / 21.9 s, step 2
+8.9 s; 1000 → 76,424 / 32.7 s, step 2 18.9 s. UI default is now 500 (field
+max 5000); the bridge's own default stays 20 so test baselines don't move.
+
 ### 4.23 DONE (2026-10-04, ninth pass): pseudo engine rebuilt — U-layer no-ops, tables built once
 
 No upstream build script; the flags were inferred from `pseudo.js`
