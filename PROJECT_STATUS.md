@@ -1447,9 +1447,15 @@ takes the edge home-slots and corner home-slots as two independent sets
   `--pick top|random`, `--colors`, `--maxsteps`. A run with pseudo produced
   fully verified solves (e.g. 4 steps, 2 of them pseudo, 0 warnings).
 
+**Broader verification (real WASM, random scrambles, random colors, `--pick random`):**
+two completed runs, 11/11 sessions solved to a physically verified Cross+F2L, 38
+steps (11 pseudo), 0 warnings, 0 bad finals. **In-browser** (the same scramble
+with xcross + pseudo F2L checked): 1164 candidates, ~50 s total, `worker3.js`
+loads, rows labelled `XCross (pseudo)`, top row is the real fixture alg.
+
 **Known gap, performance:** `pseudo.cpp` rebuilds its prune tables on every
 call (no persistent-table variant; porting it needs `emcc`, not available
-here). A pseudo root step takes roughly 15-80 s in Node (an XCross pseudo
+here). A pseudo root step takes roughly 15-80 s in Node (about 12 distinct solver calls of ~2-3 s each for XCross; ~50 s in the browser) (an XCross pseudo
 search with ~1700 pseudo candidates measured at ~79 s). Pseudo is off by
 default in the UI; making it practical needs persistent tables or a
 per-step candidate cap, see §5.
