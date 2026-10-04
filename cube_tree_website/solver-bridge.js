@@ -84,6 +84,22 @@
  *   loaded as bare globals (plain <script> tags, before this file, same as
  *   script.js's algSpeed/isPseudoState/altAlgs) in the browser; Node tests
  *   require() them and assign onto `global`, same pattern as script.js.
+ * - Cross optimisation (README "Wide moves and Cross optimisation") IS
+ *   implemented, as of 2026-10-04 — see PROJECT_STATUS.md §4.5/§4.13 and
+ *   cross-optimization.js's own header comment for the derivation. Gated
+ *   by `session.crossOptEnabled` (set from the `cross_opt` advanced-option
+ *   checkbox), it only applies to root, Cross-only (`pairCount === 0`)
+ *   candidates, generating its own additional candidates alongside (not
+ *   instead of) the normal ones. Two things to never get wrong again here
+ *   (both caused real, only-visible-end-to-end bugs the first time):
+ *   `optimizeCrossSolution`'s reported `rotation` is a TRAILING residual,
+ *   not a leading one like `baseRotation`/altAlgs' `yToken` — it must
+ *   never be prepended for a literal-replay check, only composed into the
+ *   candidate's *reported* rotation (used for display/future dispatch);
+ *   and any wide-move text reaching `checkCandidateAgainstRealCubeState`
+ *   (directly, or via a committed `session.scoredPath`) must be expanded
+ *   back to literal moves first — handled centrally inside that function
+ *   via `expandWideMoves`, not just at the cross-optimisation call site.
  */
 'use strict';
 
@@ -171,9 +187,19 @@ const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
  * `claimedCorners` (plus cross, always claimed) — no more, no less. Returns
  * { ok: true } or { ok: false, reason }. See this file's header comment for
  * why this exact replay order is correct and where it's verified.
+ *
+ * `priorPath` can contain wide-move tokens if an earlier step was a
+ * committed Cross-optimisation result (README "Wide moves and Cross
+ * optimisation") -- facelet-cube.js deliberately has no notion of wide
+ * moves (see cross-optimization.js's header comment), so they're expanded
+ * back to their literal face-move+rotation definition before replay. This
+ * must happen here, not just at the point a cross-opt candidate is itself
+ * being checked, since the SAME priorPath text is reused by every later
+ * step's own luck check once committed.
  */
 function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners) {
-  const sequence = [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' ');
+  const rawTokens = [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' ').split(/\s+/);
+  const sequence = (typeof expandWideMoves === 'function' ? expandWideMoves(rawTokens) : rawTokens).join(' ');
   const facelets = applyAlgorithm(SOLVED_FACELETS, sequence);
   const actual = solvedFlags(facelets);
   const claimed = new Set(claimedCorners || []);
@@ -211,10 +237,11 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg) 
 }
 
 class SolveSession {
-  constructor(scramble, prunedTree, colors) {
+  constructor(scramble, prunedTree, colors, advancedOptions) {
     this.scramble = scramble;
     this.tree = prunedTree;
     this.colors = colors; // checked color names, e.g. ['white']
+    this.crossOptEnabled = (advancedOptions || []).includes('cross_opt');
     this.nodeMap = new Map(prunedTree.nodes.map(n => [n.id, n]));
     const unsolved = prunedTree.nodes.find(n => n.state.cross_solved === false);
     this.rootId = unsolved ? unsolved.id : prunedTree.nodes[0].id;
@@ -384,6 +411,69 @@ async function searchCurrentNode(session, helper, onStatus) {
       }
 
       for (const coreAlg of uniqueCoreAlgs) {
+        // Cross optimisation (README "Wide moves and Cross optimisation") --
+        // a first-step-only, Cross-only (pairCount=0) post-process, kept
+        // independent of altAlgs below (its own rotation search already
+        // explores reorientation; combining both was judged unnecessary
+        // added complexity -- see PROJECT_STATUS.md §4.5/§4.13). Every
+        // variant it returns is mathematically equal to "the raw coreAlg,
+        // followed by a pure y-rotation" (see cross-optimization.js's
+        // header comment for the proof), so a plain luck-check call below
+        // is a cheap safety net, not load-bearing.
+        if (isRoot && pairCount === 0 && session.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
+          const optimized = optimizeCrossSolution(coreAlg.trim().split(/\s+/));
+          for (const opt of optimized) {
+            const optAlg = opt.moves.join(' ');
+            if (optAlg === coreAlg && !opt.rotation) continue; // identical to the unoptimized result below
+
+            // `opt.rotation` is NOT a leading/inspection rotation like
+            // `baseRotation` or altAlgs' yToken -- it's a TRAILING residual
+            // that accumulates DURING the algorithm from wide-move
+            // conversions (see cross-optimization.js's header comment: the
+            // optimized sequence is mathematically equal to "coreAlg,
+            // followed by opt.rotation", not "opt.rotation, followed by
+            // coreAlg"). It must never be prepended for literal replay.
+            // `optAlgExpanded` already correctly embeds it at the END
+            // (wide tokens expanded back to face-move+rotation pairs via
+            // cross-optimization.js's own equivalence table), so the
+            // replay below uses plain `baseRotation` up front, exactly
+            // like a normal (non-optimised) Cross candidate would.
+            const optAlgExpanded = expandWideMoves(opt.moves).join(' ');
+            const optLuckCheck = checkCandidateAgainstRealCubeState(
+              session.scramble, baseRotation, session.scoredPath, optAlgExpanded, []
+            );
+            if (!optLuckCheck.ok) {
+              console.warn(`Discarding cross-optimised candidate: ${optLuckCheck.reason}`, { coreAlg: optAlg, rotation: baseRotation });
+              continue;
+            }
+
+            // For the CANDIDATE's reported `rotation` (used for display and,
+            // if committed, as session.rotation for all future dispatch),
+            // baseRotation and opt.rotation DO compose into one value --
+            // once the optimized algorithm has finished executing, the cube
+            // ends up rotated by their combination relative to the original
+            // un-rotated scramble, regardless of when during execution that
+            // rotation accumulated. The solver's `rotation` option (used by
+            // every subsequent search) only cares about the net result, not
+            // the timing -- see this file's header comment on `rotation`.
+            const optRotation = composeRotations(baseRotation, opt.rotation);
+
+            const optScoredAlg = session.scoredPath ? session.scoredPath + ' ' + optAlg : optAlg;
+            const optTpp = algSpeed(optScoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+
+            candidates.push({
+              color,
+              type: edgeTypeLabel(pairCount, isRoot),
+              rotation: optRotation,
+              edges: [],
+              corners: [],
+              coreAlg: optAlg,
+              tpp: Number.isFinite(optTpp) ? optTpp : Infinity,
+              targetNodeId: edge.target,
+            });
+          }
+        }
+
         const variants = isRoot && typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
 
         for (const variant of variants) {

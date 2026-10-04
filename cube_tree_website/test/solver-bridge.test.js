@@ -18,6 +18,7 @@ const scriptExports = require(path.join(__dirname, '..', 'script.js'));
 Object.assign(global, scriptExports);
 Object.assign(global, require(path.join(__dirname, '..', 'facelet-cube.js')));
 Object.assign(global, require(path.join(__dirname, '..', 'facelet-flags.js')));
+Object.assign(global, require(path.join(__dirname, '..', 'cross-optimization.js')));
 
 const {
   SolveSession,

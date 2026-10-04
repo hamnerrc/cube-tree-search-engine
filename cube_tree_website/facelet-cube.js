@@ -103,5 +103,8 @@ if (typeof module !== 'undefined' && module.exports) {
         MOVE_TABLE,
         isMoveToken,
         applyAlgorithm,
+        composePerm,
+        invertPerm,
+        IDENTITY_PERM,
     };
 }

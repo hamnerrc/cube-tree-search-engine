@@ -96,6 +96,37 @@ section. Summary:
    79 → 316 (≈4×) after the fix, with zero false warnings and zero
    label/replay mismatches.
 
+**2026-10-04 (fourth pass, same day): Cross optimisation (README "Wide
+moves and Cross optimisation") implemented — the last unimplemented item
+from §0's original spec-alignment review.** Full writeup in §4.13. Summary:
+6. New [cross-optimization.js](cube_tree_website/cross-optimization.js)
+   explores rewriting a Cross solution's `L`/`R`/`D` (and primes/doubles,
+   `D2` excluded) moves into wide-move form, tracking the cumulative
+   rotation each substitution implies and keeping only combinations that
+   leave cross on the bottom face. Both the six README equivalences and
+   the move-relabeling rule they require were verified against
+   `magiccube`/brute-force search, not hand-derived.
+7. **Deliberately deviates from the README's literal `u = D + y` notation**
+   — the real solver engine's own `"u"` means conventional wide-U, not
+   wide-D (confirmed by reading `solver.cpp`'s axis-grouping table); using
+   the README's literal letter would have silently corrupted any later
+   step once a Cross-optimised result got committed. Uses `d`/`d'` instead
+   (same underlying equivalence, different output letter) — see §4.13 for
+   the full justification.
+8. **Two integration bugs were found and fixed while verifying this
+   end-to-end against the real solver**, both invisible from isolated unit
+   tests: (a) the reported residual rotation was wrongly also prepended as
+   a *leading* rotation for the safety-net luck check, when it's actually
+   a *trailing* one — produced dozens of false "not actually solved"
+   discards per scramble until fixed; (b) wide-move text in a committed
+   path crashed every later step's own luck check, since
+   `applyAlgorithm`/facelet-cube.js has no notion of wide moves by design —
+   fixed centrally inside `checkCandidateAgainstRealCubeState` so every
+   future caller is protected, not just the one call site that first hit
+   it. Verified across 4 real scrambles: a cross-optimised result was the
+   single top-ranked Cross candidate in 3 of 4, and a full 5-step solve
+   chain reached independently-verified completion.
+
 **2026-10-04 (first pass): the developer note below ("later steps don't generate valid
 solutions, and all searches create many duplicate solutions") was
 investigated, root-caused, fixed, and verified — see §4.10 for the full
@@ -129,13 +160,14 @@ the wrong slot name even though the underlying DAG bookkeeping (and thus the
 actual solve) stays correct. Lower priority than the two fixes above since it
 doesn't produce an invalid solve — just a potentially-mislabeled display.
 
-Full test suite (6 suites) passes; run them before and after any change:
+Full test suite (7 suites) passes; run them before and after any change:
 
 ```
 python3 cube_tree_website/test_tree_gen.py
 node cube_tree_website/test/script.test.js
 node cube_tree_website/test/solver-bridge.test.js
 node cube_tree_website/test/facelet-cube.test.js
+node cube_tree_website/test/cross-optimization.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 ```
@@ -149,24 +181,28 @@ as the §4.12 superset-safety fix — both confirmed, not just counted, by
 replaying the full committed path through `facelet-cube.js`/`facelet-flags.js`
 and checking every claimed slot against the real resulting cube state). The
 full chain for this scramble reaches a genuine, independently-verified
-complete Cross+F2L solve in 5 steps (Cross + 4 single pairs).
+complete Cross+F2L solve in 5 steps (Cross + 4 single pairs). With
+`advanced: ['cross_opt']` also enabled on this same scramble, step 1 gains
+9 additional cross-optimised candidates (89 total) — all independently
+verified to still solve cross — though for this specific scramble the plain
+(unconverted) result still happens to win on TPP; see §4.13 for scrambles
+where the optimised variant wins outright.
 
-**Two reasonable next tasks** (pick one, don't block on the other):
-1. Implement Cross optimisation (README "Wide moves and Cross optimisation",
-   §4.5) — a net-new feature (wide-move rewrite + rotation-tracking tree
-   search + orientation filter + re-score), not yet started.
-2. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
+**One remaining reasonable next task:**
+1. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
    untouched. Given how many rotation-labeling traps have turned up in the
-   matched-pair path (§4.7/§4.10/§4.11/§4.12), budget time for an equivalent
-   empirical pass once pseudo dispatch exists — nothing about it has been
-   verified against the real solver yet.
-3. §4.11/§4.12's display-label findings are now fixed (`relabelSlotsForRotation`
-   + the non-root set-difference fix) and the luck check itself was
-   corrected to use the same rotation-aware claim — see §4.12's final
-   section. Nothing outstanding here, but if label/replay mismatches ever
-   reappear, re-derive the mapping the same way (multiple independent
-   triggers + `facelet-cube.js`/`facelet-flags.js`), don't assume the
-   existing table still holds after a DAG or `altAlgs` change.
+   matched-pair path (§4.7/§4.10/§4.11/§4.12/§4.13), budget time for an
+   equivalent empirical pass once pseudo dispatch exists — nothing about it
+   has been verified against the real solver yet.
+
+Everything else from the original §0 spec-alignment review is now
+implemented and verified: luck filtering (§4.3/§4.12), the §4.11/§4.12
+display-label findings (`relabelSlotsForRotation` + the non-root
+set-difference fix), and Cross optimisation (§4.5/§4.13). If any of these
+ever regress (label/replay mismatches, a candidate that doesn't solve what
+it claims, etc.), re-derive/re-verify the same way each was built — real
+DAG + real solver + `facelet-cube.js`/`facelet-flags.js` — never by
+re-deriving rotation algebra by hand.
 
 **Traps already discovered the hard way — don't rediscover these:**
 - A whole-cube rotation must go through the solver's `rotation` *option* on
@@ -461,7 +497,7 @@ DAG+solver+scoring wiring *can* work, but:
 | Luck filtering | **Done, verified.** A solver-probe approach was tried first and reverted as unreliable (§4.9); the real fix is a facelet-based real cube-state check (§4.12). |
 | Simplified pseudo vs. full pseudo as distinct modes | **DAG only supports simplified pseudo today; pseudo dispatch not wired up at all yet.** See §4.1 and §5 step 3. |
 | Procedural (distance-1-only) inspection rotations | **Working, verified** — `altAlgs` now correctly scoped to distance-1 only. See §4.4/§5 step 3. |
-| Cross optimisation (wide-move post-processing) | **Not built at all.** See §4.5. |
+| Cross optimisation (wide-move post-processing) | **Done, verified.** See §4.5/§4.13. One deliberate deviation from the README's literal notation (uses `d`/`d'`, not `u`/`u'`, for the D-layer wide move — see §4.13). |
 | Search limits matching the spec's table | **Working, verified** — see §4.6/§4.8 for the one place this needed to extend beyond the spec's literal numbers (later steps scale by total pairs, not a flat per-category number). |
 | WASM scramble search (matched + pseudo) | Matched: **integrated and verified end-to-end in the browser.** Pseudo: still solver-only, not wired into the website UI. |
 
@@ -471,10 +507,11 @@ non-pseudo subset of the product, verified against both a Node harness and
 a live click-through session with matching results, and now also with luck
 filtering (§4.12) protecting every result against over-solving, silently
 disturbing an already-committed pair, and (both found and fixed in the same
-investigation) a mislabeled "corners"/"edges" display column. The remaining
-gaps are specific and bounded: pseudo dispatch, simplified-pseudo DAG
-support, cross optimisation, multi-scramble verification, and the
-Xxxxcross cold-start latency.
+investigation) a mislabeled "corners"/"edges" display column, and now also
+with Cross optimisation (§4.13) offering wide-move rewrites of Cross
+results where they genuinely score better. The remaining gaps are specific
+and bounded: pseudo dispatch, simplified-pseudo DAG support, multi-scramble
+verification, and the Xxxxcross cold-start latency.
 
 ---
 
@@ -653,7 +690,10 @@ is already fixed by the committed path.
 **Implication for §5 step 3:** scope `altAlgs`-style rotation expansion to
 distance-1 candidates only.
 
-### 4.5 Cross optimisation / wide-move post-processing does not exist
+### 4.5 FIXED (2026-10-04): Cross optimisation / wide-move post-processing now exists
+
+**Implemented and verified — see §4.13 for the full writeup.** Kept below
+as the original problem statement.
 
 No code anywhere implements the `r/l/u`-wide rewrite, rotation-state
 tracking, orientation-discard, or re-scoring described in the spec's "Wide
@@ -1172,6 +1212,127 @@ solved state) was done with scratch Node scripts, not committed — re-run the
 same way (real DAG + real solver + `facelet-cube.js`/`facelet-flags.js`, or
 `magiccube`) if this area regresses again.
 
+### 4.13 DONE (2026-10-04): Cross optimisation (README "Wide moves and Cross optimisation") implemented
+
+New file [cross-optimization.js](cube_tree_website/cross-optimization.js),
+wired into `searchCurrentNode` for root, Cross-only (`pairCount === 0`)
+candidates, gated by a new `cross_opt` entry in `SolveSession`'s
+`advancedOptions` (4th constructor arg; `solver-ui.js` now passes
+`criteria.advanced` through when creating a session). Covered by
+[test/cross-optimization.test.js](cube_tree_website/test/cross-optimization.test.js).
+
+**The core mechanism, derived and verified empirically (never hand-derived
+— see §1.2/§4.9/§4.10's standing rule, which this feature needed twice
+over):**
+
+1. **The six equivalences** the README states (`r=L+x`, `r'=L'+x'`,
+   `l=R+x'`, `l'=R'+x`, and the D-layer pair, discussed separately below)
+   were checked against `magiccube`'s own wide-move notation (`Rw`, `Lw`,
+   `Uw`) for 20 random pre-scrambles each — not assumed from the README's
+   prose, and not just checked from a solved cube. All six (plus the
+   doubles, `Rw2=L2x2` etc.) held exactly.
+2. **The relabeling rule**: converting one move (say `L`) to its wide form
+   (`r`) doesn't just drop a redundant rotation — `r` is *defined* as
+   "`L` then `x`", so the substitution secretly performs an `x` rotation
+   the original algorithm never accounted for. Every move after that point
+   must be relabeled to keep referring to the same physical layer. Solving
+   "what should I type now, given a pending rotation `rho`, to achieve what
+   the original move `M` intended" required a small equation
+   (`compose(rho, M') == compose(M, rho)`); the closed-form solution
+   (`M' = composePerm(invertPerm(rho), composePerm(M, rho))`) was verified
+   by brute-force search over all 18 face turns (not assumed), for both a
+   single generator (`rho=x`) and a composed one (`rho = x then y`), and
+   shown to always yield a legitimate face-turn permutation.
+3. **A short inductive argument** (by construction of the relabeling above)
+   shows the whole rewritten sequence is exactly equal to "the original
+   algorithm, followed by the final accumulated rotation" — which is why
+   the orientation filter (keep only results whose final accumulated
+   rotation leaves D mapped to D) is sufficient and correct: cross was
+   already solved on D by the original algorithm, and appending a pure
+   y-rotation can't move it off D, while any x/z component can and does.
+   `optimizeCrossSolution` explores the full `2^k` subset space (k =
+   algorithm length) of which eligible moves to convert, relabeling as it
+   goes, and keeps only (deduplicated) combinations that survive the
+   filter.
+4. **`y2` is never used as a conversion's rotation increment** — `D2`'s
+   only wide form would need one, and the README explicitly forbids y2 as
+   a mid-algorithm move. `D2` is simply absent from the convertible set.
+
+**Deliberate deviation from the README's literal notation (flagged, not
+silently applied):** the README writes the D-layer equivalence as
+`u = D + y`. Taken literally, this collides with this project's own solver
+engine — `crossSolver/solver.cpp`'s move table groups `"u"` with the
+U/E/y axis (`y_axis_order = {U:0, D:1, E:2, u:3, d:4, y:5}`), i.e. the
+*engine's* `"u"` means conventional wide-U (top two layers), not wide-D;
+`script.js`'s `algSpeed` likewise has a separate, distinct branch for `"d"`
+with its own grip logic. Using the README's literal `"u"` would mean a
+Cross-optimised result, once committed, gets silently misinterpreted as a
+wide-U move the moment its text is fed back into the solver as `postAlg`
+for a later step (or mis-scored by `algSpeed`) — a real correctness bug,
+not a style question. This implementation emits the conventionally-correct,
+solver-and-algSpeed-recognized `d`/`d'` instead; the underlying equivalence
+(`D+y` / `D'+y'`) is unchanged, only the output letter differs from the
+README's prose. Worth the user's attention since it's a deviation from the
+literal spec text, even though it's clearly a bug-avoidance fix rather than
+a product decision.
+
+**Two integration bugs were found and fixed while verifying this
+end-to-end against the real solver** (not just the isolated unit tests
+above) — both are exactly the kind of mistake this project's "verify
+empirically" rule exists to catch, and both would have been invisible from
+unit tests alone since they only manifest once a cross-optimised result is
+actually committed and chained into further dispatch:
+
+- **Bug 1 — the reported `rotation` was wrongly also used as a literal
+  leading rotation for the safety-net luck check.** `opt.rotation`
+  (the residual rotation `optimizeCrossSolution` reports) is a *trailing*
+  rotation that accumulates *during* the algorithm from wide-move
+  conversions — unlike `baseRotation` (the genuine upfront inspection
+  rotation) or `altAlgs`' `yToken` (also genuinely leading, stripped from
+  the front of the variant text), it must never be prepended for literal
+  replay. Composing it into the leading `rotation` parameter for the
+  safety-net `checkCandidateAgainstRealCubeState` call corrupted the
+  replay for almost every combination — confirmed directly: re-running
+  3 real scrambles with `cross_opt` enabled before this fix produced
+  dozens of false "claimed solved but is not actually solved" discards per
+  scramble; after the fix, zero. The reported `rotation` field itself
+  (`composeRotations(baseRotation, opt.rotation)`) was and remains correct
+  for *display* and for *future dispatch* (once committed, the solver's
+  `rotation` option only cares about the net accumulated rotation, not
+  when during execution it happened) — only the literal-replay check
+  needed the fix, using plain `baseRotation` paired with the already-fully
+  -expanded algorithm text instead.
+- **Bug 2 — wide-move text in a committed path crashed every later step's
+  own luck check.** Once a cross-optimised result is committed,
+  `session.scoredPath` (the running committed-path text) contains wide
+  tokens (`r`, `l`, `d`, …) — but `checkCandidateAgainstRealCubeState`
+  (used by *every* later step's own luck-filtering, not just
+  cross-optimised candidates) passed that text straight to
+  `applyAlgorithm`, which has no notion of wide moves by design and throws
+  on an unrecognized token. Confirmed directly: committing a winning
+  cross-optimised Cross result and then running the next (single-pair)
+  search crashed immediately. Fixed centrally, in
+  `checkCandidateAgainstRealCubeState` itself (not just at the
+  cross-optimisation call site), by expanding any wide-move tokens in the
+  *full* replay sequence back to their literal face-move+rotation
+  definition (`cross-optimization.js`'s new `expandWideMoves`) before
+  calling `applyAlgorithm` — this way every future caller is protected,
+  not just the one call site that happened to trigger the crash first.
+  Re-verified: committing a cross-optimised Cross result, then running the
+  next step, then independently replaying the *entire* committed path
+  (scramble + rotation + both committed steps, wide tokens expanded) now
+  correctly shows cross **and** the newly-committed pair solved, matching
+  the next step's own claim exactly.
+
+**Does it actually help?** Across 4 real scrambles tested end-to-end
+(real DAG + real solver, `cross_opt` enabled), a cross-optimised variant
+was the single top-ranked (lowest-TPP) Cross result for 3 of the 4 — not
+just a valid-but-worse alternative sitting in the list. A full 5-step
+solve chain (Cross optimised + 4 single pairs) was carried through to
+`isComplete: true` and independently re-verified against the real
+committed path (wide tokens expanded), confirming cross and all 4 pairs
+genuinely solved.
+
 ---
 
 ## 5. Actionable Roadmap
@@ -1305,7 +1466,7 @@ be done in parallel.
    - [ ] **Simplified-pseudo checkbox** doesn't exist in the UI yet, and
      per §4.1 the DAG itself doesn't yet support a "full pseudo" mode to
      distinguish from.
-   - [ ] **Cross optimisation** (§4.5) — not implemented.
+   - [x] **Cross optimisation** (§4.5) — **done (2026-10-04), see §4.13.**
    - [x] **Multiple scrambles — verified in-browser (2026-10-03).** Set up
      two scrambles, searched and committed a step on scramble 1, navigated
      to scramble 2 (fresh search, empty solution box, independent results
@@ -1406,10 +1567,13 @@ blocking ambiguities in the spec itself:
 1. **DAG nodes for simplified vs. full pseudo** — **answered**, see §4.1.
 2. **UI/control mechanism for depth-N look-ahead** — deferred; single-step
    search is the correct default for the §5 step 3 build, per spec.
-3. **Performance strategy for first-step wide-move generation** (every
-   first-step result vs. top-N only) — not yet decided; defer until
-   cross-optimisation (§4.5/§5 step 3) is actually being built and real
-   first-step result counts are known.
+3. **Performance strategy for first-step wide-move generation** — **decided
+   (2026-10-04, see §4.13):** every unique raw Cross solution gets the full
+   `optimizeCrossSolution` treatment (not just the top-N), since the `2^k`
+   subset search (k = algorithm length, capped at the Cross search limit of
+   10) stayed fast enough in practice not to need throttling. Revisit if
+   real usage with `maxSolutions` raised well beyond today's default shows
+   otherwise.
 4. **Concrete `maxSolutions`/time-budget defaults** — a placeholder
    `maxSolutions: 20` is hardcoded in `solver-bridge.js`'s `solverCallFor`
    now that the loop exists and can be observed; not yet tuned against real

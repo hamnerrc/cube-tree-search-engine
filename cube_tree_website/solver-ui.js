@@ -44,7 +44,7 @@
     if (!sessions.has(index)) {
       const raw = scrambleController.sequenceList[index];
       const scramble = cleanScramble(raw || '');
-      sessions.set(index, new SolveSession(scramble, prunedTree, getCheckedColors()));
+      sessions.set(index, new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []));
     }
     return sessions.get(index);
   }
