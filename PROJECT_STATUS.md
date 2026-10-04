@@ -261,11 +261,9 @@ verified to still solve cross — though for this specific scramble the plain
 where the optimised variant wins outright.
 
 **Reasonable next tasks (as of the eighth pass):**
-0. pro_references.txt gaps (§4.20): post-hoc rotation spellings for all
-   steps (inserting y/y' and relabelling the rest with
-   `relabelAlgForRotation`, scored by alg_speed), non-cross-on-D inspection
-   orientations, and raising `maxSolutions` with a display cap so solutions
-   actually reach the ranking.
+0. pro_references.txt gaps (§4.20): non-cross-on-D inspection orientations
+   (#6/#7), and raising `maxSolutions` with a display cap so solutions
+   actually reach the ranking. Goal-no-op moves need an engine change (emcc).
 
 **Earlier list (seventh pass):**
 1. Pseudo performance (§5 step 4): persistent pseudo tables need `emcc`
@@ -1658,6 +1656,22 @@ config and checks the pro's alg is among them, modulo commuting turns).
    xcross+2nd (`x'` inspection + `r2 … x`). The harness normalises any run
    of same-axis moves (faces, wide, slices, the matching rotation) and
    never splits inside one; both were needed to avoid false misses.
+6b. **Rotation spellings (closes the #5 4th-pair gap):** with the pro move
+   set, every matched result also gets its rotation spellings
+   (`rotationSpellings`: insert y/y' at each split point and relabel the rest
+   mechanically; physically "alg, then that rotation", so validity carries
+   over and only the end frame -- hence the node, read physically -- changes;
+   at most one rotation per step, none leading at the root). Final dedupe
+   now sorts by TPP first and keys on `commuteNormalize`d text, so `y U'` and
+   `U' y` collapse to the better-scoring spelling. Membership with the pro
+   move set: **20/24**. e2e `--pro` 3/3 (rotated spellings committed), 0
+   warnings, 0 frame failures; headless Chrome fine (2976 root rows, 2792
+   with rotations/wide). Remaining 4: goal-no-op moves (#3 xcross, #3 2nd
+   pair; engine change), #6 xcross (15 moves, goal-no-op, `x'` inspection),
+   #7 xcross+2nd (`x'` inspection).
+   Note: `alg_speed` (MCC) treats `x` as a free wrist re-grip but charges
+   3.5 for `y`/`z`, so x-rotation spellings rank high; faithful to the
+   model, left untuned per spec.
 7. README now documents these gaps ("Professional reference solves and known
    gaps") and the pro move set (as requested in pro_references.txt). The
    user's README edit (all inspection-rotation variants are valid results) is

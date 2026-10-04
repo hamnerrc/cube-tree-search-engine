@@ -214,6 +214,44 @@ function relabelAlgForRotation(alg, rotation) {
     }).join(' ');
 }
 
+// Every move about one axis commutes (faces, wide moves, slices and the
+// rotation about that axis), so runs of same-axis tokens can be put in a
+// fixed order to compare spellings of the same algorithm.
+const AXIS_RANK = {};
+[['U', 'D', 'u', 'd', 'E', 'y'], ['R', 'L', 'r', 'l', 'M', 'x'], ['F', 'B', 'f', 'b', 'S', 'z']]
+    .forEach((group, axis) => group.forEach((m, rank) => { AXIS_RANK[m] = { axis, rank }; }));
+function commuteNormalize(alg) {
+    const t = String(alg).split(/\s+/).filter(Boolean);
+    for (let changed = true; changed;) {
+        changed = false;
+        for (let i = 0; i + 1 < t.length; i++) {
+            const a = AXIS_RANK[t[i][0]], b = AXIS_RANK[t[i + 1][0]];
+            if (a && b && a.axis === b.axis && (a.rank > b.rank || (a.rank === b.rank && t[i] > t[i + 1]))) {
+                [t[i], t[i + 1]] = [t[i + 1], t[i]];
+                changed = true;
+            }
+        }
+    }
+    return t.join(' ');
+}
+
+/**
+ * Rotation spellings of `alg` (README "Professional reference solves": rotations
+ * chosen during solving): for each split point, insert y or y' and relabel the
+ * rest so the result is physically "alg, then that rotation". Skips a trailing
+ * rotation (pointless) and, unless allowLeading, a leading one.
+ */
+function rotationSpellings(alg, allowLeading = true) {
+    const t = String(alg).split(/\s+/).filter(Boolean);
+    const out = [];
+    for (let k = allowLeading ? 0 : 1; k < t.length; k++) {
+        for (const r of ['y', "y'"]) {
+            out.push([...t.slice(0, k), r, relabelAlgForRotation(t.slice(k).join(' '), r)].join(' '));
+        }
+    }
+    return out;
+}
+
 /** The rotation string that undoes `rotation` ('' for none). */
 function inverseRotation(rotation) {
     const perm = String(rotation || '').split(/\s+/).filter(Boolean)
@@ -241,5 +279,7 @@ if (typeof module !== 'undefined' && module.exports) {
         netRotation,
         inverseRotation,
         relabelAlgForRotation,
+        commuteNormalize,
+        rotationSpellings,
     };
 }

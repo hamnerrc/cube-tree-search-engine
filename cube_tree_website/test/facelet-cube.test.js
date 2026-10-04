@@ -111,6 +111,23 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
         applyAlgorithm(SOLVED_FACELETS, [r, inverseRotation(r)].filter(Boolean).join(' ')) === SOLVED_FACELETS));
 }
 
+{
+    const { rotationSpellings, commuteNormalize, netRotation, inverseRotation, relabelAlgForRotation } = require('../facelet-cube.js');
+    const start = applyAlgorithm(SOLVED_FACELETS, "R U F' D2 B L");
+    const alg = "U R' U' R U' B U B'";
+    const sp = rotationSpellings(alg);
+    check('rotationSpellings: every spelling is physically "alg, then its rotation"', sp.every(x =>
+        applyAlgorithm(start, `${x} ${inverseRotation(netRotation(x))}`) === applyAlgorithm(start, alg)));
+    check('rotationSpellings: includes the pro spelling "U R\' U\' R y U\' R U R\'"',
+        sp.some(x => commuteNormalize(x) === commuteNormalize("U R' U' R y U' R U R'")));
+    check('rotationSpellings(alg, false) never starts with a rotation', rotationSpellings(alg, false).every(x => !/^[xyz]/.test(x)));
+    check('commuteNormalize: same-axis runs (incl. rotations/wide) are ordered, others untouched',
+        commuteNormalize("y U' R") === "U' y R" && commuteNormalize("D U R") === 'U D R' && commuteNormalize('R U') === 'R U'
+        && commuteNormalize('x l R') === 'R l x');
+    check('relabelAlgForRotation agrees with the y-variant convention: y + relabel(R) is R then y',
+        applyAlgorithm(start, `y ${relabelAlgForRotation('R', 'y')}`) === applyAlgorithm(start, 'R y'));
+}
+
 if (process.exitCode) {
     console.error(`\n${passCount}/${cases.length + 8} checks passed.`);
 } else {

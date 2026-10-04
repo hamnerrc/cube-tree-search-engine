@@ -22,7 +22,7 @@
 const path = require('path');
 const root = path.join(__dirname, '..');
 const { loadProReferences, segmentProSolve } = require(path.join(root, 'pro-references.js'));
-const { canonicalizeForEngine, applyAlgorithm, SOLVED_FACELETS } = require(path.join(root, 'facelet-cube.js'));
+const { canonicalizeForEngine, applyAlgorithm, SOLVED_FACELETS, commuteNormalize, rotationSpellings } = require(path.join(root, 'facelet-cube.js'));
 const { searchLimitFor, SLOT_INDICES, POSTALG_BOUNDARY } = require(path.join(root, 'solver-bridge.js'));
 const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
 
@@ -43,6 +43,7 @@ const CONFIGS = {
     moves: FACE.concat(['r', 'r2', 'r-', 'l', 'l2', 'l-', 'y', 'y-', 'x', 'x-']),
     maxRotCount: 1,
     centerOffset: 'keep-cross-on-D',
+    spellings: true,
   },
 };
 
@@ -54,26 +55,7 @@ function offsetsKeepingCrossDown(rotation, crossColorFacelet) {
   return CENTER_OFFSETS.filter(o => applyAlgorithm(SOLVED_FACELETS, [rotation, o].filter(Boolean).join(' '))[31] === crossColorFacelet);
 }
 
-// Every move about the same axis commutes (faces, wide moves, slices and the
-// whole-cube rotation about that axis), so sort each run of same-axis tokens
-// into a fixed order before comparing with the engine's canonical output.
-const AXIS_OF = {};
-[['U', 'D', 'u', 'd', 'E', 'y'], ['R', 'L', 'r', 'l', 'M', 'x'], ['F', 'B', 'f', 'b', 'S', 'z']]
-  .forEach((group, axis) => group.forEach((m, i) => { AXIS_OF[m] = { axis, rank: i }; }));
-const axisOf = tok => AXIS_OF[tok[0]];
-function commuteNormalize(alg) {
-  const t = alg.split(' ').filter(Boolean);
-  for (let changed = true; changed;) {
-    changed = false;
-    for (let i = 0; i + 1 < t.length; i++) {
-      const a = axisOf(t[i]), b = axisOf(t[i + 1]);
-      if (a && b && a.axis === b.axis && (a.rank > b.rank || (a.rank === b.rank && t[i] > t[i + 1]))) {
-        [t[i], t[i + 1]] = [t[i + 1], t[i]]; changed = true;
-      }
-    }
-  }
-  return t.join(' ');
-}
+const axisOf = tok => ({ U: 0, D: 0, u: 0, d: 0, E: 0, y: 0, R: 1, L: 1, r: 1, l: 1, M: 1, x: 1, F: 2, B: 2, f: 2, b: 2, S: 2, z: 2 })[tok[0]];
 
 function call(h, pairs, scramble, o) {
   const slots = pairs.slice().sort().map(p => SLOT_INDICES[p]);
@@ -107,7 +89,7 @@ function call(h, pairs, scramble, o) {
       // Never cut inside a run of same-axis moves: the engine's axis-order
       // pruning would apply across the fixed prefix and hide the suffix.
       let cut = split && segTokens.length > split ? segTokens.length - split : 0;
-      while (cut > 0 && axisOf(segTokens[cut - 1]).axis === axisOf(segTokens[cut]).axis) cut--;
+      while (cut > 0 && axisOf(segTokens[cut - 1]) === axisOf(segTokens[cut])) cut--;
       const fixed = segTokens.slice(0, cut).join(' ');
       const target = segTokens.slice(cut).join(' ');
       const postAlg = [frame.moves && `${frame.moves} ${POSTALG_BOUNDARY}`, fixed].filter(Boolean).join(' ');
@@ -117,7 +99,15 @@ function call(h, pairs, scramble, o) {
         allowedMoves: cfg.moves.join('_'), maxRotCount: cfg.maxRotCount, centerOffset,
       });
       const prefix = [frame.rotation, postAlg].filter(Boolean).join(' ');
-      const cores = new Set(sols.map(s => commuteNormalize(s.trim().slice(prefix.length).trim())));
+      const raw = sols.map(s => s.trim().slice(prefix.length).trim());
+      const cores = new Set(raw.map(commuteNormalize));
+      // With the pro move set the bridge also offers rotation spellings of
+      // every result (at most one rotation per step; none leading at the root).
+      if (cfg.spellings && !cut) {
+        for (const c of raw) for (const sp of rotationSpellings(c, !seg.isRoot)) {
+          if (sp.split(' ').filter(t => /^[xyz]/.test(t)).length <= 1) cores.add(commuteNormalize(sp));
+        }
+      }
       const hit = cores.has(commuteNormalize(target));
       total++; if (hit) found++;
       console.log(`#${i + 1} ${seg.labels.join('+').padEnd(18)} ${hit ? (cut ? 'FOUND(suffix)' : 'FOUND        ') : 'missing      '} depth ${String(depth).padStart(2)} (limit ${limit}) ${sols.length} sols${sols.length >= maxSolutions ? ' (CAPPED)' : ''} ${Date.now() - t0}ms  ${seg.alg}`);

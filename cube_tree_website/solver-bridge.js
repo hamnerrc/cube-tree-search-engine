@@ -706,7 +706,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
             ? relabelSlotsForRotation(newEdges, yToken)
             : (targetNode.state.edges || []).filter(e => !(session.currentNode.state.edges || []).includes(e));
 
-          candidates.push({
+          const candidate = {
             color: isRoot ? color : (session.committedRows[0] ? session.committedRows[0].color : ''),
             type: edgeTypeLabel(pairCount, isRoot, isPseudo),
             rotation: fullRotation,
@@ -715,24 +715,47 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
             coreAlg: finalCoreAlg,
             tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
             targetNodeId: reachedNodeId,
-          });
+          };
+          candidates.push(candidate);
+
+          // Rotation spellings (pro move set; README "Professional reference
+          // solves"): the engine often returns the un-rotated spelling
+          // ("U' B U B'") of what a human does with a rotation ("y U' R U R'").
+          // Each spelling is physically "this alg, then y/y'", so it solves the
+          // same pieces; only the frame it ends in (hence the node labels)
+          // changes, read off the physical result as above. At most one
+          // rotation per step, as in the pro move set; never a leading one at
+          // the root (that is an inspection variant). §4.20.
+          if (session.proMoves && !isPseudo && typeof rotationSpellings === 'function') {
+            for (const spelling of rotationSpellings(finalCoreAlg, !isRoot)) {
+              if (spelling.split(' ').filter(t => /^[xyz]/.test(t)).length > 1) continue;
+              const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, spelling));
+              const pairs = F2L_SLOTS.filter(sl => after[sl]);
+              const nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
+              if (!nodeId) continue;
+              const spTpp = algSpeed(session.scoredPath ? `${session.scoredPath} ${spelling}` : spelling, false, false)
+                / calculateSolvedPieces(session.rootNode, targetNode);
+              candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
+            }
+          }
         }
       }
     }
   }
 
   // D-alignment (pseudo) can collapse two distinct raw solver results into
-  // the same final algorithm.
+  // the same final algorithm, and rotation spellings can differ only in the
+  // order of commuting same-axis moves ("y U'" vs "U' y"). Sort first so the
+  // best-scoring spelling of each is the one kept.
+  candidates.sort((a, b) => a.tpp - b.tpp);
+  const normalize = typeof commuteNormalize === 'function' ? commuteNormalize : (x => x);
   const seenCandidates = new Set();
-  const unique = candidates.filter(c => {
-    const key = `${c.targetNodeId}|${c.rotation}|${c.coreAlg}`;
+  return candidates.filter(c => {
+    const key = `${c.targetNodeId}|${c.rotation}|${normalize(c.coreAlg)}`;
     if (seenCandidates.has(key)) return false;
     seenCandidates.add(key);
     return true;
   });
-
-  unique.sort((a, b) => a.tpp - b.tpp);
-  return unique;
 }
 
 /**

@@ -256,9 +256,10 @@ search; current measurements are in PROJECT_STATUS.md):
   (`y' R U R' …`) and even mid-step (`U R' U' R y U' R U R'`), favouring
   "spammable" `R`/`U`-heavy solutions that ease lookahead. Including rotation
   choices in solution finding is a **mandatory requirement**; the pro move set
-  does this for one rotation per step, but the engine sometimes returns the
-  equivalent un-rotated spelling instead (`U' B U B'` for `y U' R U R'`), so
-  rotated spellings still need a post-hoc rewrite to be found exactly.
+  does this for one rotation per step. Because the engine often returns the
+  equivalent un-rotated spelling (`U' B U B'` for `y U' R U R'`), every
+  result is also offered in its rotated spellings, which `alg_speed` then
+  ranks like any other result.
 - **Inspection orientations off the cross colour.** Some professionals inspect
   with the cross on a side (e.g. `x'`) and bring it to the bottom with a wide
   move during the XCross. Root searches currently start only from
