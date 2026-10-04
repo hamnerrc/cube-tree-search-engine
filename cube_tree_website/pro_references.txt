@@ -1,0 +1,69 @@
+    This document contains benchmark solves from professional cubers.
+The solver must be capable of processing these scrambles and finding
+the exact same solutions within its search tree, regardless of how
+the current scoring algorithm ranks them.
+
+    Currently, the primary
+limitation is that the solver does not search using the specific
+move subsets that professionals rely on. Furthermore, the solver does
+not currently evaluate rotations during the search process. This results
+in solutions that are often non-ergonomic. Even the fastest solvers
+in the world prioritize "spammable" solutions because they facilitate
+easier lookahead, even if they require cube rotations. Including
+rotation choices within the DAG during solution finding is a mandatory
+requirement for the solver.
+
+    The README should be updated to document
+these gaps. The examples below serve as validation tests to ensure
+the solver's output remains sensible. Each entry provides a scramble
+followed by the professional solution, with all current examples
+focusing on a white or yellow cross start:
+
+B R' F2 U L2 D' R2 D2 F2 U' B2 F2 R2 U2 R' D' F D U' F L2
+z2 y // inspection
+D' U' L F' U R' U2' R U L2' // xcross
+R U' R' L' U L // 2nd pair
+R U2' R' U R U R' // 3rd pair
+U' R' U R U R' U R U' R' U R // 4th pair
+
+D R2 D' R2 D L2 D2 U' L2 U' F2 U2 R' F L2 B' L2 U2 F' R'
+z2 y // inspection
+R2' U' R F R U' l U' l' // xcross
+U' L U L' // 2nd pair
+U' L' U L R' U R // 3rd pair
+U L' U2 L U L' U' L // 4th pair
+
+R F2 R D L2 F2 U' B' L2 U' R2 U2 D R2 F2 B2 D F2 D' B2 F
+z2 y // inspection
+U' L' U L D' U' R' U R' // xcross
+D' U' R U R' U' D // 2nd pair
+y' R U R' U2 R U' R2' // 3rd pair
+U R U2 R' U' R // 4th pair
+
+B2 U' F D2 L B' R' U' R B2 R2 D B2 R2 B2 U D' F2 D F2
+x2 y // inspection
+L F2' D' L U L' R' F // xcross
+U R U' R2' U' R // 2nd pair
+U' R' F R2 // 3rd pair
+U R' U2' F' // 4th pair
+
+B2 R2 D F2 D U R2 U L2 U' B2 L' F2 U B' R' D' L' U
+z2 y // inspection
+D U' R B' R' F' D2 U' R2' // xcross
+R U' R' // 2nd pair
+L' U L U' L' U L // 3rd pair
+U R' U' R y U' R U R' // 4th pair
+
+L' D' L' F' D2 R U' L' U' L2 D2 B' R2 U2 B' R2 U2 B2 D2 B2 U'
+x' // inspection
+l L' U L' B L R' U R U R' F R U' D // xcross
+R U' R' U2 R' U R // 2nd pair
+U R U2 R' U2 L' U' L // 3rd pair
+U R' F R F' R U' R' // 4th pair
+
+D2 B R' F2 U L D L' F L2 F2 U2 R2 L2 F' D2 F U2 B L2
+x' // inspection
+r2' U' D' x D' U' F R' U' R2' // xcross
+U' R // 2nd pair
+y' U R' U' R2 // 3rd pair
+U' R' // 4th pair

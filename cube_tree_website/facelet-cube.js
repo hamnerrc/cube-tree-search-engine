@@ -191,6 +191,36 @@ function canonicalizeForEngine(prefixRotation, alg) {
     return { rotation: ROTATION_BY_PERM.get(permKey(Q)), moves: moves.join(' ') };
 }
 
+// Every single token by permutation (face turns first, so they win ties).
+const TOKEN_BY_PERM = new Map();
+for (const t of [...FACE_TURNS, ...ROTATION_TOKENS, ...Object.keys(DERIVED_MOVES).flatMap(n => [n, `${n}'`, `${n}2`])]) {
+    if (!TOKEN_BY_PERM.has(permKey(MOVE_TABLE[t]))) TOKEN_BY_PERM.set(permKey(MOVE_TABLE[t]), t);
+}
+
+/**
+ * Rewrites `alg` so that "rotation + result" has the same physical effect as
+ * "alg + rotation" (each token conjugated by the rotation and identified by
+ * permutation equality) -- the mechanical form of script.js's altAlgs
+ * relabelling, valid for wide moves, slices and rotations too.
+ */
+function relabelAlgForRotation(alg, rotation) {
+    const r = String(rotation || '').split(/\s+/).filter(Boolean)
+        .reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
+    const inv = invertPerm(r);
+    return String(alg).split(/\s+/).filter(Boolean).map(t => {
+        const name = TOKEN_BY_PERM.get(permKey(composePerm(composePerm(inv, MOVE_TABLE[t]), r)));
+        if (!name) throw new Error(`relabelAlgForRotation: no single token for ${t} under ${rotation}`);
+        return name;
+    }).join(' ');
+}
+
+/** The rotation string that undoes `rotation` ('' for none). */
+function inverseRotation(rotation) {
+    const perm = String(rotation || '').split(/\s+/).filter(Boolean)
+        .reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
+    return ROTATION_BY_PERM.get(permKey(invertPerm(perm)));
+}
+
 /** Net whole-cube rotation of an alg (as a rotation string, '' for none). */
 function netRotation(alg) {
     return canonicalizeForEngine('', alg).rotation;
@@ -209,5 +239,7 @@ if (typeof module !== 'undefined' && module.exports) {
         IDENTITY_PERM,
         canonicalizeForEngine,
         netRotation,
+        inverseRotation,
+        relabelAlgForRotation,
     };
 }

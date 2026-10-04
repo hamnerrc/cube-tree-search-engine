@@ -260,7 +260,14 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**Reasonable next tasks (as of the seventh pass):**
+**Reasonable next tasks (as of the eighth pass):**
+0. pro_references.txt gaps (§4.20): post-hoc rotation spellings for all
+   steps (inserting y/y' and relabelling the rest with
+   `relabelAlgForRotation`, scored by alg_speed), non-cross-on-D inspection
+   orientations, and raising `maxSolutions` with a display cap so solutions
+   actually reach the ranking.
+
+**Earlier list (seventh pass):**
 1. Pseudo performance (§5 step 4): persistent pseudo tables need `emcc`
    (not installed; installing a toolchain is the user's call), or a
    stopgap such as a per-step pseudo candidate cap. Full pseudo makes this
@@ -1620,7 +1627,44 @@ config and checks the pro's alg is among them, modulo commuting turns).
    goal piece in place (#3 xcross, #3 2nd pair, #6 xcross), which the
    engine prunes as redundant with no option to turn that off (needs a C++
    change).
-4. **The per-call `maxSolutions` (20) hides almost all of them anyway:**
+4. **Boundary refined:** once rotations are searchable the engine groups `y`
+   with the U/D axis, so a `y y'` tail blocked U/D-first candidates. The
+   boundary is now `y2 y2` (y2 is never searchable): measured a superset of
+   both `y y'` and no tail, in both move sets.
+5. **"pro move set" option (new, opt-in, matched searches only):**
+   `pro_moves` adds wide `r`/`l` and one mid-step `y`/`y'`/`x`/`x'`
+   (`maxRotCount` 1, never y2) with the centre offsets that keep the cross
+   colour on D (`proEngineOptions`). Bridge support: luck check in the
+   step's starting frame (the candidate's own net rotation undone); the
+   committed node is read off the physical result in the final frame
+   (`nodeByLabels`, same lesson as §4.16); root results that *start* with a
+   rotation are dropped (they duplicate free inspection variants); root
+   inspection variants use the new mechanical `relabelAlgForRotation`
+   (agrees with `altAlgs` on 900/900 face algs, physically exact on 1500/1500
+   wide/slice/rotation algs). **Bug found on the way:** the variant loop
+   stripped a *leading* rotation from every candidate, root or not, so a
+   later step's `y' R U R'` became `R U R'` (33 false "not solved" warnings
+   in one run, 0 after the fix). Verified: e2e `--pro --pick rot` 3/3
+   sessions physically solved with `x`, `x'`, `y'`, `r`, `l` inside steps,
+   0 warnings, 0 frame failures; headless Chrome: 176/392 root rows use
+   rotations/wide moves, commit + re-search fine, no console errors. Cost:
+   later single-pair searches can take 60-80 s in Node.
+6. **Membership after all fixes:** current 16/24; extended (pro move set)
+   **19/24** (wide-move #2 xcross, rotation #3 3rd+4th and #7 3rd+4th now
+   found). Still missing: #3 xcross and #3 2nd pair (goal-no-op moves; engine
+   change needed), #5 4th pair (the engine emits the un-rotated spelling
+   `U' B U B'` for `y U' R U R'` -- a post-hoc rotation-spelling rewrite would
+   close it), #6 xcross (15 > 11 moves, goal-no-op, `x'` inspection) and #7
+   xcross+2nd (`x'` inspection + `r2 … x`). The harness normalises any run
+   of same-axis moves (faces, wide, slices, the matching rotation) and
+   never splits inside one; both were needed to avoid false misses.
+7. README now documents these gaps ("Professional reference solves and known
+   gaps") and the pro move set (as requested in pro_references.txt). The
+   user's README edit (all inspection-rotation variants are valid results) is
+   already what the code does: variants are deduped by rotation + alg, so all
+   four are kept. `alg_speed` quirk noted: a bare `x` scores 0 (untuned model,
+   left as is per spec).
+8. **The per-call `maxSolutions` (20) hides almost all of them anyway:**
    #1's xcross is 1 of 2744 solutions at its depth; with 2000 per call it
    enters the pool (rank ~2500 of 39,832 by untuned TPP), with 20 never.
    `SolveSession.maxSolutions` now overrides the default (still 20).

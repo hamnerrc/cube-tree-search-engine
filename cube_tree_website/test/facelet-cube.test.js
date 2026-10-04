@@ -104,6 +104,13 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
     check('canonicalizeForEngine: "u" is D + y', canonicalizeForEngine('', 'u').rotation === 'y' && canonicalizeForEngine('', 'u').moves === 'D');
 }
 
+{
+    const { inverseRotation } = require('../facelet-cube.js');
+    const rots = ['', 'y', "y'", 'y2', 'x', 'z2 y', "x' y2", "z y'"];
+    check('inverseRotation undoes every tested rotation', rots.every(r =>
+        applyAlgorithm(SOLVED_FACELETS, [r, inverseRotation(r)].filter(Boolean).join(' ')) === SOLVED_FACELETS));
+}
+
 if (process.exitCode) {
     console.error(`\n${passCount}/${cases.length + 8} checks passed.`);
 } else {

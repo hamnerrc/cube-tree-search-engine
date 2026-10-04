@@ -7,7 +7,7 @@
  * completed session really is a solved Cross+F2L.
  *
  * Usage: node test/solver-bridge-e2e.js [--pseudo [--simplified]] [--advanced xcross,...]
- *          [--scrambles N] [--seed S] [--pick top|random|full|wide] [--colors white,green]
+ *          [--scrambles N] [--seed S] [--pick top|random|full|wide|rot] [--pro] [--colors white,green]
  *
  * --pick full steers toward full-pseudo-only transitions (README "Pseudo
  * pairs", simplified pseudo off): a pseudo result when no mismatch exists
@@ -40,6 +40,7 @@ const withPseudo = args.includes('--pseudo');
 const advanced = (opt('advanced', '') || '').split(',').filter(Boolean);
 if (withPseudo) advanced.push('full_pseudo');
 if (args.includes('--simplified')) advanced.push('simplified_pseudo');
+if (args.includes('--pro')) advanced.push('pro_moves');
 const nScrambles = parseInt(opt('scrambles', '3'), 10);
 let seed = parseInt(opt('seed', '1'), 10);
 const pick = opt('pick', 'top');
@@ -84,7 +85,9 @@ function randomScramble(n) {
       if (!results.length) { trace.push('NO RESULTS'); break; }
       const cur = session.currentNode.state;
       for (const r of results) {
-        const after = pieces(scramble, r.rotation, session.scoredPath, r.coreAlg);
+        // In the step's starting frame: undo the candidate's own net rotation.
+        const net = netRotation(r.coreAlg);
+        const after = pieces(scramble, r.rotation, session.scoredPath, net ? `${r.coreAlg} ${inverseRotation(net)}` : r.coreAlg);
         const lost = (cur.corners || []).filter(sl => !after.cornerAt[sl]).concat((cur.edges || []).filter(sl => !after.edgeAt[sl]));
         if (lost.length) {
           frameFailures++;
@@ -92,6 +95,10 @@ function randomScramble(n) {
         }
       }
       let pool = results;
+      if (pick === 'rot') {
+        const rot = results.filter(r => r.coreAlg.split(' ').some(t => /^[xyzrl]/.test(t)));
+        if (rot.length) pool = rot;
+      }
       if (pick === 'wide') {
         const wide = results.filter(r => r.coreAlg.split(' ').some(t => /^[rludfbMES]/.test(t)));
         if (wide.length) pool = wide;
@@ -103,7 +110,7 @@ function randomScramble(n) {
           : results.filter(r => /pseudo/.test(r.type));
         if (preferred.length) pool = preferred;
       }
-      const c = pick === 'top' || pick === 'wide' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
+      const c = pick === 'top' || pick === 'wide' || pick === 'rot' ? pool[0] : pool[Math.floor(rnd() * pool.length)];
       const wasFullOnly = fullOnly.has(`${session.currentNodeId}>${c.targetNodeId}`);
       if (wasFullOnly) fullOnlySteps++;
       const nPseudo = results.filter(r => /pseudo/.test(r.type)).length;

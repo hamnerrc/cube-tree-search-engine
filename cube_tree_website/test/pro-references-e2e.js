@@ -37,11 +37,11 @@ const FACE = [...'UDLRFB'].flatMap(f => [f, f + '2', f + '-']);
 const CONFIGS = {
   // What solver-bridge.js searches today.
   current: { moves: FACE, maxRotCount: 0, centerOffset: null },
-  // Pro move subsets: wide r/l, mid-step y/y'/x/x' (never y2 -- README),
+  // Pro move subsets: wide r/l, one mid-step y/y'/x/x' (never y2 -- README),
   // any final orientation that keeps the cross colour on D.
   extended: {
     moves: FACE.concat(['r', 'r2', 'r-', 'l', 'l2', 'l-', 'y', 'y-', 'x', 'x-']),
-    maxRotCount: 2,
+    maxRotCount: 1,
     centerOffset: 'keep-cross-on-D',
   },
 };
@@ -54,16 +54,20 @@ function offsetsKeepingCrossDown(rotation, crossColorFacelet) {
   return CENTER_OFFSETS.filter(o => applyAlgorithm(SOLVED_FACELETS, [rotation, o].filter(Boolean).join(' '))[31] === crossColorFacelet);
 }
 
-// Same-axis faces commute; put each run of same-axis turns in a fixed order.
-const AXIS = { U: 0, D: 0, R: 1, L: 1, F: 2, B: 2 };
-const ORDER = 'UDRLFB';
+// Every move about the same axis commutes (faces, wide moves, slices and the
+// whole-cube rotation about that axis), so sort each run of same-axis tokens
+// into a fixed order before comparing with the engine's canonical output.
+const AXIS_OF = {};
+[['U', 'D', 'u', 'd', 'E', 'y'], ['R', 'L', 'r', 'l', 'M', 'x'], ['F', 'B', 'f', 'b', 'S', 'z']]
+  .forEach((group, axis) => group.forEach((m, i) => { AXIS_OF[m] = { axis, rank: i }; }));
+const axisOf = tok => AXIS_OF[tok[0]];
 function commuteNormalize(alg) {
   const t = alg.split(' ').filter(Boolean);
   for (let changed = true; changed;) {
     changed = false;
     for (let i = 0; i + 1 < t.length; i++) {
-      const a = t[i][0], b = t[i + 1][0];
-      if (a in AXIS && b in AXIS && a !== b && AXIS[a] === AXIS[b] && ORDER.indexOf(a) > ORDER.indexOf(b)) {
+      const a = axisOf(t[i]), b = axisOf(t[i + 1]);
+      if (a && b && a.axis === b.axis && (a.rank > b.rank || (a.rank === b.rank && t[i] > t[i + 1]))) {
         [t[i], t[i + 1]] = [t[i + 1], t[i]]; changed = true;
       }
     }
@@ -100,7 +104,10 @@ function call(h, pairs, scramble, o) {
         : '';
       // Same neutral boundary as solver-bridge.js (§4.20).
       const segTokens = seg.alg.split(' ');
-      const cut = split && segTokens.length > split ? segTokens.length - split : 0;
+      // Never cut inside a run of same-axis moves: the engine's axis-order
+      // pruning would apply across the fixed prefix and hide the suffix.
+      let cut = split && segTokens.length > split ? segTokens.length - split : 0;
+      while (cut > 0 && axisOf(segTokens[cut - 1]).axis === axisOf(segTokens[cut]).axis) cut--;
       const fixed = segTokens.slice(0, cut).join(' ');
       const target = segTokens.slice(cut).join(' ');
       const postAlg = [frame.moves && `${frame.moves} ${POSTALG_BOUNDARY}`, fixed].filter(Boolean).join(' ');

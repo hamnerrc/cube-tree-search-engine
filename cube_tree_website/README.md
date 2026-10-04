@@ -187,11 +187,13 @@ A single null-rotation (no pre-rotation) search at distance-1 is enough to
 derive every equivalent rotated variant of a Cross/XCross/XXCross/XXXCross
 result — rotated variants are **not** independently re-searched. For example,
 a Cross solution of `F` mechanically produces the equivalent rotated
-variants `y L`, `y2 B`, and `y' R`: the same move sequence up to a whole-cube
-rotation is a duplicate and only shown once. Rotation variants that lead to
-genuinely different follow-up paths (because they leave the cube in a
-different orientation for the next step) remain distinct results, since the
-choice of rotation is itself part of the committed path.
+variants `y L`, `y2 B`, and `y' R`: these should all be considered valid solutions
+since some may be faster to execute. For instance, doing a `y'` in inspection
+that doesn't count for the speed score, followed by a `R` for the cross is
+much faster than the F move cross from the original orientation. Rotation
+variants that lead to genuinely different follow-up paths
+(because they leave the cube in a different orientation for the next step)
+remain distinct results, since the choice of rotation is itself part of the committed path.
 
 ## Wide moves and Cross optimisation
 
@@ -218,9 +220,59 @@ wide-move search mode and does not apply to later steps.
 ## Move set
 
 Ordinary search uses the 18 standard face turns (`U U' U2 D D' D2 R R' R2
-L L' L2 F F' F2 B B' B2`) plus whole-cube rotations where relevant. Slice
-moves and wide moves are not part of the search move set — wide moves exist
-only as the post-hoc Cross-optimisation transform described above.
+L L' L2 F F' F2 B B' B2`) plus whole-cube rotations where relevant. By
+default, slice moves and wide moves are not part of the search move set —
+wide moves exist only as the post-hoc Cross-optimisation transform described
+above.
+
+The optional **pro move set** (an advanced checkbox) widens the search to
+the move subsets professionals actually use: wide `r`/`l` and at most one
+mid-step `y`, `y'`, `x` or `x'` rotation (never `y2`), with the cross still
+required to finish on the bottom. It is slower, and it applies to matched
+(non-pseudo) searches.
+
+## Professional reference solves and known gaps
+
+[pro_references.txt](pro_references.txt) contains benchmark solves from
+professional cubers. **The solver must be capable of processing these
+scrambles and finding the exact same solutions within its search tree,
+regardless of how the current scoring algorithm ranks them.** They are the
+validation set for search coverage: `test/pro-references.test.js` checks the
+reference data itself, and `test/pro-references-e2e.js` measures, for every
+step, whether the professional's exact algorithm is in the search tree.
+
+Professional step boundaries do not always land on a DAG node (a cross edge
+is sometimes parked in a side layer until the next step), so the reference
+solves are compared at DAG-transition granularity: such steps count as one
+transition (e.g. "xcross + 2nd pair" as one XXCross).
+
+**Known gaps** (what still keeps some reference solutions out of the
+search; current measurements are in PROJECT_STATUS.md):
+
+- **Move subsets.** Professionals rely on wide moves (`r`, `l`) and slice-like
+  combinations (`l L'`) inside steps, not only in the cross. The default
+  search does not use them; the pro move set covers `r`/`l`.
+- **Rotations chosen during search.** Professionals rotate mid-solve
+  (`y' R U R' …`) and even mid-step (`U R' U' R y U' R U R'`), favouring
+  "spammable" `R`/`U`-heavy solutions that ease lookahead. Including rotation
+  choices in solution finding is a **mandatory requirement**; the pro move set
+  does this for one rotation per step, but the engine sometimes returns the
+  equivalent un-rotated spelling instead (`U' B U B'` for `y U' R U R'`), so
+  rotated spellings still need a post-hoc rewrite to be found exactly.
+- **Inspection orientations off the cross colour.** Some professionals inspect
+  with the cross on a side (e.g. `x'`) and bring it to the bottom with a wide
+  move during the XCross. Root searches currently start only from
+  cross-on-bottom orientations.
+- **Moves that do not touch any goal piece.** Professionals use moves like the
+  `U` in `… R' U R'` (instead of `R2`) to position other pieces. The vendored
+  engine prunes any solution containing a move that leaves every goal piece
+  in place, and has no option to turn that off (needs an engine change).
+- **Step length.** Some professional steps exceed the search limits above
+  (e.g. a 15-move XCross against the 11-move limit).
+- **Solutions per search.** Even when a professional solution is in the
+  search tree, it can be one of thousands of equally long solutions; with
+  a small per-search solution cap it is never generated, so it never
+  reaches the ranking.
 
 ## Results table
 
