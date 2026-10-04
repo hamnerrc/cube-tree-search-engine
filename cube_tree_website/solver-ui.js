@@ -65,7 +65,9 @@
     if (!sessions.has(index)) {
       const raw = scrambleController.sequenceList[index];
       const scramble = cleanScramble(raw || '');
-      sessions.set(index, new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []));
+      const session = new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []);
+      if (criteria && criteria.maxSolutions > 0) session.maxSolutions = criteria.maxSolutions;
+      sessions.set(index, session);
     }
     return sessions.get(index);
   }
@@ -77,12 +79,16 @@
     ta.value = session.rotation ? `[${session.rotation}]  ` + parts.join(' ') : parts.join(' ');
   }
 
+  // Rendering tens of thousands of rows freezes the page; the ranking still
+  // runs over every result, only the table is capped.
+  const MAX_ROWS = 500;
+
   function renderResults(results) {
     const tbody = document.getElementById('results-body');
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    results.forEach((r, i) => {
+    results.slice(0, MAX_ROWS).forEach((r, i) => {
       const tr = document.createElement('tr');
       const cells = [
         String(i + 1),
@@ -170,7 +176,7 @@
 
     renderResults(results);
     setStatus(results.length
-      ? `${results.length} result(s).`
+      ? (results.length > MAX_ROWS ? `${results.length} result(s); showing the top ${MAX_ROWS}.` : `${results.length} result(s).`)
       : 'No results found for the current filters at this step.');
   }
 

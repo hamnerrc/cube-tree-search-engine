@@ -60,7 +60,7 @@ function persistAndNavigate() {
 
     const scrambles = rawContent
         ? rawContent.split('\n').map(line => line.trim()).filter(Boolean)
-        : [generateScramble()];
+        : [typeof generateRandomStateScramble === 'function' ? generateRandomStateScramble() : generateScramble()];
 
     const getCheckedValues = (selector) =>
         Array.from(document.querySelectorAll(selector), cb => cb.value);
@@ -68,6 +68,9 @@ function persistAndNavigate() {
     const searchCriteria = {
         colors: getCheckedValues('#colors-group input[type="checkbox"]:checked'),
         advanced: getCheckedValues('#advanced-group input[type="checkbox"]:checked'),
+        // Solutions requested per engine call (README "Search limits":
+        // as high as practical); blank/invalid falls back to the default.
+        maxSolutions: parseInt(document.getElementById('max-solutions')?.value, 10) || undefined,
         scrambles
     };
 
@@ -79,7 +82,9 @@ function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [] } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions } = JSON.parse(rawState);
+    const maxSolutionsInput = document.getElementById('max-solutions');
+    if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
 
     const checkMatching = (selector, values) => {
         document.querySelectorAll(selector).forEach(cb => {

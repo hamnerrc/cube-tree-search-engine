@@ -262,8 +262,8 @@ where the optimised variant wins outright.
 
 **Reasonable next tasks (as of the eighth pass):**
 0. pro_references.txt gaps (§4.20): non-cross-on-D inspection orientations
-   (#6/#7), and raising `maxSolutions` with a display cap so solutions
-   actually reach the ranking. Goal-no-op moves need an engine change (emcc).
+   (#6/#7). Goal-no-op moves need an engine change (emcc). Tune the default
+   solutions-per-search (100) against real timing data.
 
 **Earlier list (seventh pass):**
 1. Pseudo performance (§5 step 4): persistent pseudo tables need `emcc`
@@ -1672,6 +1672,13 @@ config and checks the pro's alg is among them, modulo commuting turns).
    Note: `alg_speed` (MCC) treats `x` as a free wrist re-grip but charges
    3.5 for `y`/`z`, so x-rotation spellings rank high; faithful to the
    model, left untuned per spec.
+6c. **Solutions per search (UI):** index.html has a "solutions per search"
+   field (default 100; the bridge's own default stays 20 so tests/smoke
+   baselines are unchanged), saved with the criteria and applied as
+   `SolveSession.maxSolutions`. The results table renders the top 500 rows
+   only ("N result(s); showing the top 500"); ranking still covers every
+   result. Headless Chrome: 8748 results, 500 rows, commit fine, no errors.
+   Also: SEARCH with an empty scramble box now uses a random-state scramble.
 7. README now documents these gaps ("Professional reference solves and known
    gaps") and the pro move set (as requested in pro_references.txt). The
    user's README edit (all inspection-rotation variants are valid results) is

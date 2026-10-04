@@ -38,6 +38,14 @@
             </fieldset>
         </div>
 
+        <fieldset class="option-group" id="search-group">
+            <legend>search</legend>
+            <label title="Solutions requested per solver call before ranking. Higher finds more (including professional-style) solutions but is slower.">
+                solutions per search
+                <input type="number" id="max-solutions" value="100" min="1" max="5000">
+            </label>
+        </fieldset>
+
         <fieldset class="scramble-section">
             <legend>Scramble</legend>
             <textarea id="scramble-input" placeholder="one scramble per line" rows="6"></textarea>
@@ -57,9 +65,9 @@
         </div>
     </div>
 
-    <script src="facelet-cube.js?v=20261004k"></script>
-    <script src="random-state-scramble.js?v=20261004k"></script>
-    <script src="script.js?v=20261004k"></script>
+    <script src="facelet-cube.js?v=20261004l"></script>
+    <script src="random-state-scramble.js?v=20261004l"></script>
+    <script src="script.js?v=20261004l"></script>
 </body>
 
 </html>
