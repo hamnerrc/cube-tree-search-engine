@@ -29,6 +29,7 @@ const {
   SLOT_INDICES,
   COLOR_ROTATIONS,
   checkCandidateAgainstRealCubeState,
+  relabelSlotsForRotation,
 } = require(path.join(__dirname, '..', 'solver-bridge.js'));
 
 let failures = 0;
@@ -236,6 +237,52 @@ test('checkCandidateAgainstRealCubeState: priorPath is included in the replay', 
     "R U R' U'", '', 'U', "R U' R'", ['BL', 'BR', 'FL', 'FR']
   );
   assert.strictEqual(result.ok, true);
+});
+
+// ---------------------------------------------------------------------
+// relabelSlotsForRotation (PROJECT_STATUS.md §4.11/§4.12 finding #3)
+//
+// Self-verifying against ground truth rather than a hardcoded table: for
+// several different single-pair-disturbing trigger algorithms, compute
+// altAlgs' y/y2/y' variants, determine which slot each variant ACTUALLY
+// disturbs via facelet-cube.js/facelet-flags.js, and confirm
+// relabelSlotsForRotation predicts that same slot from the unrotated
+// (original) claim. This is exactly how the mapping was derived in the
+// first place -- see PROJECT_STATUS.md §4.12.
+// ---------------------------------------------------------------------
+
+function actuallyDisturbedSlot(algorithm) {
+  const facelets = applyAlgorithm(SOLVED_FACELETS, algorithm);
+  const flags = solvedFlags(facelets);
+  const disturbed = ['BL', 'BR', 'FR', 'FL'].filter(slot => !flags[slot]);
+  assert.strictEqual(disturbed.length, 1, `expected exactly one disturbed slot for "${algorithm}", got ${disturbed}`);
+  return disturbed[0];
+}
+
+test('relabelSlotsForRotation: predicts the actually-disturbed slot for every altAlgs variant, across several triggers', () => {
+  for (const trigger of ["R U R' U'", "L' U' L U", "B' U' B U", "F' U F U'"]) {
+    const variants = altAlgs([trigger]);
+    const originalSlot = actuallyDisturbedSlot(variants[0]); // unrotated variant, no token to strip
+    for (const variant of variants) {
+      const { token: yToken } = stripLeadingRotation(variant);
+      const actualSlot = actuallyDisturbedSlot(variant);
+      const [predictedSlot] = relabelSlotsForRotation([originalSlot], yToken);
+      assert.strictEqual(
+        predictedSlot, actualSlot,
+        `trigger "${trigger}", token "${yToken}": predicted ${predictedSlot}, actually disturbed ${actualSlot}`
+      );
+    }
+  }
+});
+
+test('relabelSlotsForRotation: empty rotation token is a no-op', () => {
+  assert.deepStrictEqual(relabelSlotsForRotation(['FR', 'BL'], ''), ['FR', 'BL']);
+});
+
+test('relabelSlotsForRotation: four y-rotations is the identity', () => {
+  let slots = ['FR', 'FL', 'BL', 'BR'];
+  for (let i = 0; i < 4; i++) slots = relabelSlotsForRotation(slots, 'y');
+  assert.deepStrictEqual(slots, ['FR', 'FL', 'BL', 'BR']);
 });
 
 // ---------------------------------------------------------------------

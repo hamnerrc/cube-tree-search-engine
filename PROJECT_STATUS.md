@@ -67,8 +67,34 @@ for the full writeup.** Summary:
    candidate's `targetNodeId`, and therefore dispatch and the final solve,
    stay correct; only the UI-facing "corners"/"edges" column can be
    mislabeled). This is the non-root analogue of the already-documented
-   §4.11 finding; **not fixed**, same reasoning as §4.11 for why it isn't a
-   quick fix. See §4.12's final paragraph.
+   §4.11 finding.
+
+**2026-10-04 (third pass, same day): §4.11 and finding #3 above are now
+FIXED, and fixing them surfaced a fourth bug — this one inside luck
+filtering itself, caught before it was ever exercised against a
+non-trivial checkbox configuration.** Full writeup in §4.12's final
+section. Summary:
+4. The root (§4.11) and non-root (finding #3) display-label mismatches are
+   fixed: a `y`/`y2`/`y'` rotation cycles F2L slot names through a fixed,
+   empirically-derived order (`relabelSlotsForRotation`, derived the same
+   "never hand-derive" way as every other rotation fact in this document —
+   four different trigger algorithms, all agreeing, and matching §4.11's own
+   prior data point exactly). Non-root display now uses a simpler, more
+   robust fix needing no rotation algebra at all: the set difference
+   between the target's full (already-trustworthy) claim and the current
+   node's own corners/edges.
+5. **While wiring the root fix in, found that `checkCandidateAgainstRealCubeState`
+   (the luck check itself) had been comparing every root candidate's real
+   outcome against the UNROTATED label** — meaning it would have wrongly
+   discarded 3 of every 4 rotation variants of any XCross/XXCross/XXXCross
+   result as a "solver/DAG bug" (the exact opposite of what luck filtering
+   is for). This went undetected because this session's own smoke-test
+   verification of luck filtering used `advanced: []` (XCross never ran).
+   Re-running with `advanced: ['xcross']` surfaced hundreds of false
+   warnings immediately; fixed by feeding the luck check the same
+   rotation-corrected claim used for display. XCross candidate count went
+   79 → 316 (≈4×) after the fix, with zero false warnings and zero
+   label/replay mismatches.
 
 **2026-10-04 (first pass): the developer note below ("later steps don't generate valid
 solutions, and all searches create many duplicate solutions") was
@@ -129,15 +155,18 @@ complete Cross+F2L solve in 5 steps (Cross + 4 single pairs).
 1. Implement Cross optimisation (README "Wide moves and Cross optimisation",
    §4.5) — a net-new feature (wide-move rewrite + rotation-tracking tree
    search + orientation filter + re-score), not yet started.
-2. Investigate/fix the §4.11 rotation-variant labeling finding (now also
-   confirmed to have a non-root analogue, §4.12's finding #3) — needs the
-   same "verify empirically, don't hand-derive" discipline as §4.9/§1.2's
-   color-orientation finding, since it's rotation algebra. Worth doing both
-   instances (root altAlgs-variant and non-root mid-solve-rotation-variant)
-   together, since they're likely the same underlying fix (relabel
-   `newCorners`/`newEdges` by whichever rotation was actually applied).
-3. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
-   untouched.
+2. Wire up pseudo-pair dispatch (§4.1/§5 step 3's open pseudo items) — still
+   untouched. Given how many rotation-labeling traps have turned up in the
+   matched-pair path (§4.7/§4.10/§4.11/§4.12), budget time for an equivalent
+   empirical pass once pseudo dispatch exists — nothing about it has been
+   verified against the real solver yet.
+3. §4.11/§4.12's display-label findings are now fixed (`relabelSlotsForRotation`
+   + the non-root set-difference fix) and the luck check itself was
+   corrected to use the same rotation-aware claim — see §4.12's final
+   section. Nothing outstanding here, but if label/replay mismatches ever
+   reappear, re-derive the mapping the same way (multiple independent
+   triggers + `facelet-cube.js`/`facelet-flags.js`), don't assume the
+   existing table still holds after a DAG or `altAlgs` change.
 
 **Traps already discovered the hard way — don't rediscover these:**
 - A whole-cube rotation must go through the solver's `rotation` *option* on
@@ -440,12 +469,12 @@ DAG+solver+scoring wiring *can* work, but:
 missing before — now works end-to-end in the actual browser for the
 non-pseudo subset of the product, verified against both a Node harness and
 a live click-through session with matching results, and now also with luck
-filtering (§4.12) protecting every result against both over-solving and
-(a newly-discovered, now-fixed issue found while building it) silently
-disturbing an already-committed pair. The remaining gaps are specific and
-bounded: pseudo dispatch, simplified-pseudo DAG support, cross optimisation,
-the §4.11/§4.12 display-label rotation mismatch, multi-scramble
-verification, and the Xxxxcross cold-start latency.
+filtering (§4.12) protecting every result against over-solving, silently
+disturbing an already-committed pair, and (both found and fixed in the same
+investigation) a mislabeled "corners"/"edges" display column. The remaining
+gaps are specific and bounded: pseudo dispatch, simplified-pseudo DAG
+support, cross optimisation, multi-scramble verification, and the
+Xxxxcross cold-start latency.
 
 ---
 
@@ -903,7 +932,11 @@ committed. If this area regresses again, re-verify the same way (real DAG +
 real solver + `magiccube`), not by reasoning about the rotation algebra by
 hand — see §4.11 for why that's a trap.
 
-### 4.11 NOT YET FIXED: a distance-1 rotation-variant result can display the wrong slot name
+### 4.11 FIXED (2026-10-04): a distance-1 rotation-variant result could display the wrong slot name
+
+**Fixed — see §4.12's final section for the implementation
+(`relabelSlotsForRotation`) and the empirical derivation.** Kept below as
+the original finding.
 
 Found while verifying §4.10's fix, and *not* one of the two bugs the
 developer note flagged — recorded separately because it's lower severity
@@ -1066,6 +1099,60 @@ instead of a root `altAlgs` variant — strongly suggesting both should be
 fixed together (likely the same underlying "relabel the display slot names
 by whichever rotation was actually applied" fix), per the same
 "verify-empirically-first" discipline §4.11 already called for.
+
+**Update, same day: §4.11 and finding #3 above are now FIXED, and fixing
+them surfaced a fourth, more serious issue in luck filtering itself — caught
+before it was ever exercised against a non-trivial checkbox configuration.**
+The relabeling rule was derived the same way every other rotation-algebra
+fact in this document has been (never hand-derived): four different
+single-pair-disturbing trigger algorithms (`R U R' U'` and its three mirror
+analogues) were each expanded via `altAlgs`, and for each of the resulting
+16 variants, `facelet-cube.js`/`facelet-flags.js` determined which slot was
+*actually* disturbed. All four triggers agreed on the same cycle,
+independent of the trigger's own original slot:
+`CORNER_CYCLE = ['FR', 'FL', 'BL', 'BR']`, with a `y`/`y2`/`y'` token
+advancing a slot 1/2/3 steps through that cycle. This exactly reproduces
+§4.11's own prior empirical data point (claimed `FR`, `y'` variant actually
+`BR`: index of `FR` is 0, `y'` is +3 steps, `CORNER_CYCLE[3]` is `BR`) — strong
+independent confirmation the rule is right, not just internally consistent.
+Implemented as `relabelSlotsForRotation` in `solver-bridge.js`, covered by a
+self-verifying unit test in `test/solver-bridge.test.js` that re-derives and
+checks the same mapping against `facelet-cube.js` rather than a hardcoded
+table. For a root candidate, the display `corners`/`edges` are now this
+relabeled set; for a non-root candidate (no `altAlgs`, no `yToken` — finding
+#3 above), display is the set difference between the target's full claim
+and the current node's own corners/edges, which needs no rotation algebra
+at all.
+
+**While wiring this in, re-examining `checkCandidateAgainstRealCubeState`'s
+own call site surfaced the fourth issue: the luck check itself was built and
+tested (above) using only the Cross-only/no-advanced-options smoke test,
+which never exercises a root candidate with `pairCount >= 1` — so it was
+never exercised against a non-identity `altAlgs` variant at all.** The luck
+check was passing the *unrotated* `allCorners` label as the claim for every
+candidate, root included — but per the finding above, a non-identity-rotation
+root variant's real physical outcome matches the *relabeled* slot, not the
+unrotated one. Left as originally written, the luck check would have
+compared "physically solves `BR`" against "claims `FR`" for every such
+variant and wrongly discarded it as a solver/DAG bug (the
+"claimed solved but is not actually solved" branch) — silently throwing away
+3 of every 4 candidate rotation variants for any root result with
+`pairCount >= 1` (i.e. essentially all of XCross/XXCross/XXXCross), the
+exact opposite of what luck filtering is supposed to do. **Caught before
+this was ever exercised with a non-trivial checkbox configuration** — this
+session's own earlier smoke-test verification (120→86→60, the §4.12 writeup
+above) used `advanced: []`, so XCross never ran. Running the identical
+scramble with `advanced: ['xcross']` surfaced hundreds of these false
+"claimed solved but is not actually solved" warnings immediately. Fixed by
+computing the claim once, correctly, as
+`isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners`, and
+using that single corrected value for both the luck check and the display
+label. Re-verified on the same XCross-enabled run: XCross candidate count
+went from 79 (only the identity-rotation variants surviving, confirming the
+bug) to 316 (≈4×, recovering the three previously-discarded rotation
+variants per solution) with **zero** false "claimed but not solved"
+warnings and zero display-label mismatches across all 316 when
+independently replayed.
 
 Both the luck-filtering feature and the superset-safety fix are covered by
 new unit tests in

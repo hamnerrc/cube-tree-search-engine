@@ -128,6 +128,26 @@ function searchLimitFor(pairCount, isRoot, totalPairsInGoal) {
   return LATER_LIMITS_BY_TOTAL[totalPairsInGoal];
 }
 
+// Empirically derived (not hand-derived -- see PROJECT_STATUS.md §4.11/§4.12
+// and test/solver-bridge.test.js): a y-rotation prefix cycles F2L slot
+// names in this fixed order, independent of which slot or algorithm it's
+// applied to. Confirmed directly via facelet-cube.js/facelet-flags.js with
+// four different single-pair-disturbing trigger algorithms, and matches
+// §4.11's own prior finding (claimed FR, y' variant actually solves BR:
+// CORNER_CYCLE.indexOf('FR')=0, steps['y\'']=3, CORNER_CYCLE[3]='BR').
+const CORNER_CYCLE = ['FR', 'FL', 'BL', 'BR'];
+const ROTATION_STEPS = { '': 0, y: 1, y2: 2, "y'": 3 };
+
+/** Relabel F2L slot names for the whole-cube y-rotation `yToken` ('', 'y', 'y2', or "y'"). */
+function relabelSlotsForRotation(slots, yToken) {
+  const steps = ROTATION_STEPS[yToken] ?? 0;
+  if (!steps) return slots;
+  return slots.map(slot => {
+    const idx = CORNER_CYCLE.indexOf(slot);
+    return idx === -1 ? slot : CORNER_CYCLE[(idx + steps) % 4];
+  });
+}
+
 const ROTATION_TOKEN_RE = /^(x2|y2|z2|x'|y'|z'|x|y|z)(?=\s|$)/;
 
 /** Strip a single leading rotation token (if present) from an alg string. */
@@ -372,17 +392,34 @@ async function searchCurrentNode(session, helper, onStatus) {
 
           if (!finalCoreAlg) continue; // shouldn't happen, but guard
 
+          // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
+          // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
+          // /newEdges here, since the root's current node has none solved
+          // yet) are the DAG edge's UNROTATED labels -- but a non-identity
+          // altAlgs variant physically solves a y/y2/y'-cycled slot, not the
+          // unrotated one (confirmed empirically, see relabelSlotsForRotation
+          // and test/solver-bridge.test.js). The luck check below MUST use
+          // this corrected claim, not the raw label -- using the raw label
+          // made every non-identity-rotation root candidate with
+          // pairCount>=1 look like it "failed to solve what it claims" and
+          // get wrongly discarded as a bug, which is not what's happening.
+          // For a non-root candidate there is no yToken (altAlgs isn't
+          // applied there) and §4.12's superset filter already makes
+          // `allCorners` trustworthy, so it's used unchanged.
+          const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
+
           // Luck filtering (README "Luck filtering") -- discard any
-          // candidate that doesn't solve EXACTLY `allCorners` (this edge's
-          // full claimed target, old+new pairs) when physically replayed.
-          // See this file's header comment and PROJECT_STATUS.md §4.3/§4.9
-          // for why a real cube-state check, not a solver probe, is needed.
+          // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
+          // edge's full claimed target, old+new pairs, rotation-corrected)
+          // when physically replayed. See this file's header comment and
+          // PROJECT_STATUS.md §4.3/§4.9 for why a real cube-state check, not
+          // a solver probe, is needed.
           const luckCheck = checkCandidateAgainstRealCubeState(
-            session.scramble, fullRotation, session.scoredPath, finalCoreAlg, allCorners
+            session.scramble, fullRotation, session.scoredPath, finalCoreAlg, trueClaimedCorners
           );
           if (!luckCheck.ok) {
             if (luckCheck.reason.includes('claimed solved but is not actually solved')) {
-              console.warn(`Discarding candidate: ${luckCheck.reason}`, { coreAlg: finalCoreAlg, rotation: fullRotation, allCorners });
+              console.warn(`Discarding candidate: ${luckCheck.reason}`, { coreAlg: finalCoreAlg, rotation: fullRotation, trueClaimedCorners });
             }
             continue;
           }
@@ -392,12 +429,28 @@ async function searchCurrentNode(session, helper, onStatus) {
             : finalCoreAlg;
           const tppScore = algSpeed(scoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
 
+          // Display label ("corners"/"edges" columns: what's NEWLY solved
+          // by this step specifically, not the full cumulative claim used
+          // above). Root: `trueClaimedCorners` already IS just the new
+          // slots, rotation-corrected (root's current node has none solved
+          // yet). Non-root: take the set difference between the target's
+          // full (trustworthy, superset-checked) claim and the current
+          // node's own corners/edges -- simpler and more robust than any
+          // rotation algebra, since it only depends on fields already known
+          // to be correct (§4.12 finding #3's fix).
+          const displayCorners = isRoot
+            ? trueClaimedCorners
+            : allCorners.filter(c => !(session.currentNode.state.corners || []).includes(c));
+          const displayEdges = isRoot
+            ? relabelSlotsForRotation(newEdges, yToken)
+            : (targetNode.state.edges || []).filter(e => !(session.currentNode.state.edges || []).includes(e));
+
           candidates.push({
             color: isRoot ? color : (session.committedRows[0] ? session.committedRows[0].color : ''),
             type: edgeTypeLabel(pairCount, isRoot),
             rotation: fullRotation,
-            edges: newEdges,
-            corners: newCorners,
+            edges: displayEdges,
+            corners: displayCorners,
             coreAlg: finalCoreAlg,
             tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
             targetNodeId: edge.target,
@@ -427,5 +480,6 @@ if (typeof module !== 'undefined' && module.exports) {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
     DISTANCE1_LIMITS, LATER_LIMITS_BY_TOTAL, searchLimitFor,
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
+    relabelSlotsForRotation, CORNER_CYCLE,
   };
 }
