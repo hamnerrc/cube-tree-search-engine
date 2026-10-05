@@ -19,6 +19,12 @@
  *
  * Usage: node tools/worst-case-bench.js [--scrambles 2] [--seed 1] [--depth 5] [--breadth 5]
  *        [--workers 3] [--max 500] [--no-pseudo] [--colors white,yellow] [--steps 1] [--budget 60]
+ *        [--advanced xcross,xxcross] [--post 3]
+ *
+ * --post: post-process each engine call's solutions on a pool of this many
+ * worker threads (the page's post-processing workers, §4.40; default none).
+ * --advanced: run a smaller config instead of "all settings" (cross_opt and
+ * pro_moves are always added, as in the app; '' = the app's default config).
  *
  * --budget: the per-search time budget in seconds (SolveSession.timeBudgetMs,
  * the app's "search time limit"; default 60, 0 = none).
@@ -32,6 +38,7 @@ const js = path.join(root, 'js');
 for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js', 'random-state-scramble.js']) Object.assign(global, require(path.join(js, f)));
 const { SolveSession, searchWithLookahead } = require(path.join(js, 'solver-bridge.js'));
 const { createEnginePool } = require('./node-engine-pool.js');
+const { createPostProcessPool } = require('./node-postprocess-pool.js');
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i === -1 ? d : args[i + 1]; };
@@ -45,7 +52,9 @@ const maxSteps = +opt('steps', '99');
 const colors = opt('colors', 'white,yellow,green,blue,red,orange').split(',');
 const pseudo = !args.includes('--no-pseudo');
 const budget = +opt('budget', '60');
-const advanced = ['xcross', 'xxcross', 'xxxcross', 'multislotting', 'cross_opt', 'pro_moves', ...(pseudo ? ['full_pseudo'] : [])];
+const advanced = args.includes('--advanced')
+  ? ['cross_opt', 'pro_moves', ...opt('advanced', '').split(',').filter(Boolean)]
+  : ['xcross', 'xxcross', 'xxxcross', 'multislotting', 'cross_opt', 'pro_moves', ...(pseudo ? ['full_pseudo'] : [])];
 
 const FIXED = ["R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2"];
 function scrambles() {
@@ -62,6 +71,7 @@ function scrambles() {
   const t0 = Date.now();
   const h = await createEnginePool('cross', workers);
   const ph = pseudo ? await createEnginePool('pseudo', workers) : null;
+  const post = +opt('post', '0') > 0 ? await createPostProcessPool(+opt('post', '0')) : null;
   console.log(`config: ${colors.length} colours, [${advanced.join(', ')}], ${maxSolutions}/call, look-ahead depth ${depth} breadth ${breadth}, ${workers} engine workers, budget ${budget || 'none'} s`);
   const all = [];
   let first = true;
@@ -72,6 +82,7 @@ function scrambles() {
       const s = new SolveSession(scramble, pruned, colors, advanced);
       s.maxSolutions = maxSolutions;
       s.timeBudgetMs = budget * 1000;
+      if (post) s.postProcessor = post.process;
       for (const c of committed) s.commit(c);
       if (s.isComplete) break;
       const t = Date.now();
@@ -93,5 +104,5 @@ function scrambles() {
   }
   all.sort((a, b) => a - b);
   console.log(`\nwarm searches: ${all.length}, worst ${(all[all.length - 1] / 1000).toFixed(1)} s, median ${(all[all.length >> 1] / 1000).toFixed(1)} s; total ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  await h.terminate(); if (ph) await ph.terminate();
+  await h.terminate(); if (ph) await ph.terminate(); if (post) await post.terminate();
 })().catch(e => { console.error(e); process.exit(2); });

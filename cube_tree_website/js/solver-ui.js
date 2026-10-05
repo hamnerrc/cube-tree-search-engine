@@ -29,7 +29,12 @@
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261005-deadline1';
+const ENGINE_VERSION = '20261005-tables1';
+
+// The cache-buster this script was loaded with (solver.html's ?v=...), passed
+// on to the post-processing workers so they load the same script versions.
+const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src)
+  ? new URL(document.currentScript.src).search : '';
 
 // SESSION_STATE_KEY is declared once, in script.js (loaded before this file
 // on solver.html, and needed standalone by index.html's clearScrambleData)
@@ -66,9 +71,81 @@ const ENGINE_VERSION = '20261005-deadline1';
   // is left for the page itself; each worker holds its own tables (~100 MB).
   const ENGINE_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
 
+  // Prune-table sharing (PROJECT_STATUS.md §4.40). Every engine worker used
+  // to build the same "cross + corner/edge" tables itself (~0.4 s per 4.5 MB
+  // table, up to 8 per move list), on every page load. Now a table one worker
+  // has built is handed to the others, and kept in IndexedDB (per
+  // ENGINE_VERSION), so a later page load starts with the tables in place.
+  // A table depends only on its key (the engine checks key and size), so the
+  // results are the same. Anything failing here only costs the old rebuild.
+  const TABLE_DB = 'cubetree-engine-tables';
+  const knownTables = new Set();
+  function tableDb() {
+    return new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') { reject(new Error('no IndexedDB')); return; }
+      const req = indexedDB.open(TABLE_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('tables');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function loadStoredTables() {
+    try {
+      const db = await tableDb();
+      const prefix = `${ENGINE_VERSION}|`;
+      const tables = await new Promise((resolve, reject) => {
+        const out = [];
+        const store = db.transaction('tables', 'readwrite').objectStore('tables');
+        const req = store.openCursor();
+        req.onsuccess = () => {
+          const cur = req.result;
+          if (!cur) { resolve(out); return; }
+          if (String(cur.key).startsWith(prefix)) out.push({ key: String(cur.key).slice(prefix.length), data: cur.value });
+          else cur.delete(); // another engine version's tables
+          cur.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+      db.close();
+      return tables;
+    } catch (err) {
+      return [];
+    }
+  }
+  async function storeTables(tables) {
+    try {
+      const db = await tableDb();
+      const tx = db.transaction('tables', 'readwrite');
+      for (const t of tables) tx.objectStore('tables').put(t.data, `${ENGINE_VERSION}|${t.key}`);
+      await new Promise((resolve) => { tx.oncomplete = tx.onerror = tx.onabort = resolve; });
+      db.close();
+    } catch (err) { /* storage unavailable or full: tables are rebuilt next time */ }
+  }
+  // After a worker finishes a call: tables it built that the others lack.
+  const tableSyncs = new Map();
+  function syncTablesFrom(h, pool) {
+    if (typeof h.tableKeys !== 'function') return;
+    if (tableSyncs.get(h)) { tableSyncs.set(h, 'again'); return; }
+    tableSyncs.set(h, 'running');
+    (async () => {
+      do {
+        tableSyncs.set(h, 'running');
+        const fresh = (await h.tableKeys()).filter(k => !knownTables.has(k));
+        if (!fresh.length) continue;
+        for (const k of fresh) knownTables.add(k);
+        const tables = await h.getTables(fresh);
+        if (!tables.length) continue;
+        for (const other of pool) if (other !== h) other.putTables(tables);
+        storeTables(tables);
+      } while (tableSyncs.get(h) === 'again');
+    })().catch(err => console.error('Table sharing failed', err))
+      .finally(() => tableSyncs.delete(h));
+  }
+
   async function ensureHelper() {
     if (!helper) {
       helper = (async () => {
+        const stored = loadStoredTables();
         const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
           const h = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}`);
           await h.init();
@@ -77,6 +154,17 @@ const ENGINE_VERSION = '20261005-deadline1';
         const settled = await Promise.allSettled(started);
         const pool = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         if (!pool.length) throw settled[0].reason;
+        const tables = await stored;
+        if (tables.length && typeof pool[0].putTables === 'function') {
+          for (const t of tables) knownTables.add(t.key);
+          await Promise.all(pool.map(h => h.putTables(tables)));
+        }
+        for (const h of pool) {
+          for (const m of ['solveCross', 'solveXcross', 'solveXxcross', 'solveXxxcross', 'solveXxxxcross']) {
+            const solve = h[m].bind(h);
+            h[m] = (...args) => solve(...args).finally(() => syncTablesFrom(h, pool));
+          }
+        }
         return pool;
       })();
       helper.catch(() => { helper = null; });
@@ -112,11 +200,70 @@ const ENGINE_VERSION = '20261005-deadline1';
     return pseudoHelper;
   }
 
+  // Post-processing workers (PROJECT_STATUS.md §4.40): each engine call's
+  // solutions are turned into ranked candidates (luck filter, spellings, TPP)
+  // by solver-bridge.js's postProcessCall on a small worker pool instead of
+  // the page's main thread, which used to be the bottleneck of root searches
+  // and look-ahead. Same function, same output; any worker failure falls back
+  // to running that call's post-processing here.
+  // Sized to the cores the engine pool leaves (at least one, at most 4): on
+  // a 2-core/4-thread machine one worker (warm depth-5 look-ahead ~12% faster,
+  // and the page stays responsive); more only where cores are free.
+  const POST_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1 - ENGINE_POOL_SIZE));
+  let postPool = null;
+  function postProcessor() {
+    if (postPool === false) return null;
+    if (!postPool) {
+      try {
+        if (typeof Worker === 'undefined') throw new Error('no Worker');
+        const jobs = new Map();
+        let nextId = 0;
+        const workers = Array.from({ length: POST_POOL_SIZE }, () => {
+          const w = new Worker(`js/postprocess-worker.js${UI_SCRIPT_QUERY}`);
+          w.pending = new Set();
+          w.onmessage = (e) => {
+            const { id, candidates, error } = e.data;
+            const job = jobs.get(id);
+            if (!job) return;
+            jobs.delete(id);
+            w.pending.delete(id);
+            if (error) job.reject(new Error(error)); else job.resolve(candidates);
+          };
+          w.onerror = (e) => {
+            console.error('Post-processing worker failed; using the main thread', e.message || e);
+            w.broken = true;
+            for (const id of w.pending) { const job = jobs.get(id); jobs.delete(id); if (job) job.reject(new Error('worker failed')); }
+            w.pending.clear();
+          };
+          return w;
+        });
+        const send = (ctx, job, cores) => new Promise((resolve, reject) => {
+          const live = workers.filter(w => !w.broken);
+          if (!live.length) { reject(new Error('no post-processing worker')); return; }
+          const w = live.reduce((a, b) => (b.pending.size < a.pending.size ? b : a));
+          const id = nextId++;
+          jobs.set(id, { resolve, reject });
+          w.pending.add(id);
+          w.postMessage({ id, ctx, job, cores });
+        });
+        postPool = (ctx, job, cores) => send(ctx, job, cores)
+          .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
+      } catch (err) {
+        console.error('Post-processing workers unavailable; using the main thread', err);
+        postPool = false;
+        return null;
+      }
+    }
+    return postPool;
+  }
+
   function getOrCreateSession(index) {
     if (!sessions.has(index)) {
       const raw = scrambleController.sequenceList[index];
       const scramble = cleanScramble(raw || '');
       const session = new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []);
+      const post = postProcessor();
+      if (post) session.postProcessor = post;
       if (criteria && criteria.maxSolutions > 0) session.maxSolutions = criteria.maxSolutions;
       if (criteria && criteria.searchConfig) session.searchConfig = criteria.searchConfig;
       // README "Performance goal": each step's search stops after the time

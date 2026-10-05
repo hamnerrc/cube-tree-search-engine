@@ -1008,6 +1008,103 @@ const unsigned char *pair_prune_table(const std::vector<int> &pieces, const std:
     return stored.data();
 }
 
+// cube⑂tree modification (PROJECT_STATUS.md §4.40): the three shared prune
+// table caches above only depend on their keys, so a page can build each
+// table once and hand it to its other engine workers (and keep it across page
+// loads) instead of every worker building it again (~0.4 s per 4.5 MB table).
+// Keys: "c|<corner>|<moves>", "e|<edge>|<moves>", "p|<pieces>|<faces>" with
+// comma-separated ints exactly as cached. A table handed in is only stored if
+// its key is not cached yet and its size is right; nothing else changes.
+static std::string join_ints(const std::vector<int> &v)
+{
+    std::string out;
+    for (size_t i = 0; i < v.size(); ++i)
+    {
+        if (i) out += ',';
+        out += std::to_string(v[i]);
+    }
+    return out;
+}
+static bool split_ints(const std::string &s, std::vector<int> &out)
+{
+    out.clear();
+    if (s.empty()) return true;
+    size_t start = 0;
+    while (start <= s.size())
+    {
+        size_t end = s.find(',', start);
+        if (end == std::string::npos) end = s.size();
+        if (end == start) return false;
+        for (size_t i = start; i < end; ++i)
+        {
+            if (s[i] < '0' || s[i] > '9') return false;
+        }
+        out.push_back(std::stoi(s.substr(start, end - start)));
+        start = end + 1;
+    }
+    return true;
+}
+static bool parse_table_key(const std::string &key, char &kind, std::vector<int> &a, std::vector<int> &moves)
+{
+    if (key.size() < 4 || key[1] != '|') return false;
+    kind = key[0];
+    size_t bar = key.find('|', 2);
+    if (bar == std::string::npos) return false;
+    return split_ints(key.substr(2, bar - 2), a) && split_ints(key.substr(bar + 1), moves)
+        && ((kind == 'c' || kind == 'e') ? a.size() == 1 : (kind == 'p' && !a.empty() && a.size() <= 4));
+}
+std::string tableCacheKeys()
+{
+    std::string out;
+    for (const auto &kv : g_corner_prune_cache) out += "c|" + std::to_string(kv.first.first) + "|" + join_ints(kv.first.second) + "\n";
+    for (const auto &kv : g_edge_prune_cache) out += "e|" + std::to_string(kv.first.first) + "|" + join_ints(kv.first.second) + "\n";
+    for (const auto &kv : g_pair_prune_cache) out += "p|" + join_ints(kv.first.first) + "|" + join_ints(kv.first.second) + "\n";
+    return out;
+}
+static std::vector<unsigned char> *find_table(const std::string &key, bool create, size_t &expected)
+{
+    char kind;
+    std::vector<int> a, moves;
+    if (!parse_table_key(key, kind, a, moves)) return nullptr;
+    if (kind == 'c' || kind == 'e')
+    {
+        expected = 24 * 22 * 20 * 18 * 24;
+        auto &cache = kind == 'c' ? g_corner_prune_cache : g_edge_prune_cache;
+        auto k = std::make_pair(a[0], moves);
+        auto it = cache.find(k);
+        if (it != cache.end()) return create ? nullptr : &it->second;
+        return create ? &cache[k] : nullptr;
+    }
+    expected = 1;
+    for (size_t i = 0; i < a.size(); ++i) expected *= 24;
+    auto k = std::make_pair(a, moves);
+    auto it = g_pair_prune_cache.find(k);
+    if (it != g_pair_prune_cache.end()) return create ? nullptr : &it->second;
+    return create ? &g_pair_prune_cache[k] : nullptr;
+}
+emscripten::val tableCacheGet(std::string key)
+{
+    size_t expected = 0;
+    std::vector<unsigned char> *t = find_table(key, false, expected);
+    if (!t || t->size() != expected) return emscripten::val::null();
+    return emscripten::val(emscripten::typed_memory_view(t->size(), t->data()));
+}
+bool tableCachePut(std::string key, emscripten::val data)
+{
+    size_t expected = 0;
+    {
+        std::vector<unsigned char> *existing = find_table(key, false, expected);
+        if (existing || expected == 0) return false;
+    }
+    if (data["length"].as<size_t>() != expected) return false;
+    std::vector<unsigned char> table = emscripten::convertJSArrayToNumberVector<unsigned char>(data);
+    if (table.size() != expected) return false;
+    std::vector<unsigned char> *slot = find_table(key, true, expected);
+    if (!slot) return false;
+    *slot = std::move(table);
+    return true;
+}
+
 std::vector<bool> create_ma_table()
 {
     std::vector<bool> ma(28 * 27, false);
@@ -7240,6 +7337,9 @@ EMSCRIPTEN_BINDINGS(my_module)
     emscripten::function("setDeadlineCheck", &setDeadlineCheck);
     emscripten::function("deadlineHit", &deadlineHit);
     emscripten::function("setNoopMoves", &setNoopMoves);
+    emscripten::function("tableCacheKeys", &tableCacheKeys);
+    emscripten::function("tableCacheGet", &tableCacheGet);
+    emscripten::function("tableCachePut", &tableCachePut);
 
     emscripten::class_<PersistentCrossSolver>("PersistentCrossSolver")
         .constructor<>()

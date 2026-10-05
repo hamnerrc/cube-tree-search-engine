@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-05 (sixteenth pass).*
+*Last updated 2026-10-05 (seventeenth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,35 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-05, after the sixteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-05, after the seventeenth pass):** read this first.
+- Seventeenth pass (user task: make the solver dramatically faster, exact
+  output). Writeup: §4.40. Every change was checked byte-identical (engine
+  batteries, full result lists of recorded searches, browser row hashes).
+  1. **Engine: Asyncify was instrumenting the recursive searches.** Only the
+     once-per-depth `solver_yield` needs it; `ASYNCIFY_REMOVE` for
+     `depth_limited_search`/`create_prune_table` (build flag only, source
+     unchanged) makes every matched-engine search ~25-30% faster (battery
+     65.8 → 52 s; multislot look-ahead calls 93 → 66 s serial).
+  2. **Prune-table sharing + persistence:** new engine API
+     (`tableCacheKeys/Get/Put`), worker messages and helper methods; the page
+     hands a table one worker built to the others and keeps tables in
+     IndexedDB per `ENGINE_VERSION`. Browser, xcross+xxcross root: first list
+     on a repeat page load **3.6-3.9 s (HEAD) → 1.6 s**; later steps that
+     needed new tables 1.6-3.1 s → 0.3 s. First-ever load unchanged (~5 s).
+  3. **Post-processing off the main thread:** `processCall`'s per-candidate
+     work is now a pure `postProcessCall(ctx, job, cores)`; the page runs it
+     on a small worker pool (`js/postprocess-worker.js`), Node harnesses can
+     too (`tools/node-postprocess-pool.js`, `worst-case-bench.js --post N`).
+  4. **JS per candidate** (exact): interned MCC move strings (MCC 11.9 → 9.1
+     µs/call), `applyAlgorithm` on typed buffers (one string per alg, not per
+     move), cached wide-move lookups, cheaper splits. Root post-processing
+     2.2-2.4 → 1.6-1.7 s on a recorded xcross+xxcross search.
+  5. **Measured and not kept:** "cross + edge" bound in xxcross (warm -23% but
+     +1.5 s on every cold page load, before table persistence) and in
+     xxxxcross (no gain); MCC round tracing for rotation spellings (5% fewer
+     grip simulations); scalar finger state in MCC (3%); LTO (0%).
+
+**Previous handoff (2026-10-05, after the sixteenth pass):**
 - Sixteenth pass (user task list: look-ahead speed, multislot as a results-page
   toggle, a "no r2/l2 after step 1" option, blank = no time limit, other
   concrete bugs). Writeup: §4.39. Summary:
@@ -408,6 +436,8 @@ node cube_tree_website/test/search-scheduler.test.js
 node cube_tree_website/test/search-budget.test.js
 # slow-ish, real WASM (~35 s): node cube_tree_website/test/progressive-e2e.js
 # slow-ish, real WASM (~25 s): node cube_tree_website/test/search-options-e2e.js
+# slow-ish, real WASM (~1.5 min): node cube_tree_website/test/offload-e2e.js
+#   (post-processing workers == in-thread; shared prune tables == own tables)
 # engine rebuilds: node cube_tree_website/tools/engine-battery.js [--pseudo] --solver <old solver.js> --out old.json,
 #   then the same without --solver and with --compare old.json (must say "all calls identical")
 # worst case: node cube_tree_website/tools/worst-case-bench.js --scrambles 2 --depth 1|5
@@ -435,6 +465,17 @@ complete Cross+F2L solve in 5 steps (Cross + 4 single pairs). With
 verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
+
+**Reasonable next tasks (as of the seventeenth pass):**
+1. First-ever page load still builds every table in every worker (~5 s to
+   the first xcross+xxcross list here). Building each table once (one worker
+   per table, then sharing) or a "build this key" engine call would cut it.
+2. With tables shared, the "cross + edge" bound in xxcross (warm -23%, §4.40)
+   costs nothing after the first load: worth re-measuring and adopting.
+3. Later-step pro-move-set searches (xxxcross 1-3 s per call warm) are the
+   remaining engine cost; the rotation branches of `depth_limited_search`
+   are never pruned (§4.40 notes), but their output must stay identical.
+4. The pseudo engine still rebuilds per worker; same sharing would apply.
 
 **Reasonable next tasks (as of the sixteenth pass):**
 1. Multislot look-ahead is engine-bound: "last two pairs" multislot calls
@@ -581,7 +622,9 @@ re-deriving rotation algebra by hand.
   `cross_xcross.js`, `pro-references.js`, `tree_gen.py`, `test_tree_gen.py`,
   `gen_facelet_fixture.py`, plus the new shared `harness.js`; twelfth pass:
   `pro-search.js`, the engine side of the pro harnesses, and `pro-ranking.js`,
-  the alg_speed benchmark; `js/search-scheduler.js` is the search queue); upstream docs
+  the alg_speed benchmark; `js/search-scheduler.js` is the search queue;
+  seventeenth pass: `js/postprocess-worker.js` and its Node twin
+  `tools/node-postprocess-pool.js`, §4.40); upstream docs
   are in `docs/`. `index.html`, `solver.html`, `f2l_table_inspector.html`,
   `styles.css` stay at the site root, as do the vendored `crossSolver/` and
   `pseudoCrossSolver/` engines (untouched — `THIRD_PARTY_NOTICES.md`
@@ -1859,6 +1902,109 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.40 DONE (2026-10-05, seventeenth pass): solver performance -- Asyncify, shared prune tables, post-processing workers
+
+**Measuring first.** Main-thread CPU profiles (inspector API, so the WASM
+workers are not slowed by the profiler) and a record/replay harness (engine
+calls recorded once, replayed without WASM) separated JS from engine time:
+an xcross+xxcross root search was ~2.5 s of main-thread JS (MCC ~50%, facelet
+replays ~17%, dedupe keys ~10%) next to ~2.4 s of engine CPU; later steps and
+multislot look-ahead were engine-bound; and a cold search (fresh page) paid
+~2.5-3 s of prune-table builds *per engine worker* (`create_prune_table`,
+~0.4 s per 4.5 MB "cross + corner/edge" table).
+
+**1. Asyncify (engine build).** `ASYNCIFY_ADVISE` showed every
+`depth_limited_search` instrumented (it reaches imports through string and
+vector code), though only `start_search_persistent`'s once-per-depth
+`solver_yield()` and the two table builders' yield ever unwind.
+`-s ASYNCIFY_REMOVE=["*depth_limited_search*","create_prune_table*"]` in
+`crossSolver/compile.sh`; source unchanged. A build with Asyncify off
+entirely is no faster, so this recovers all of it. Battery
+(`tools/engine-battery.js --compare`): all calls identical, 65.8 → 52.0 s;
+the heaviest pro xxxcross 41.5 → 31.7 s. The 68 engine calls of a multislot
+depth-3 look-ahead, serial on one warm engine: 93.1 → 65.8 s (xxxxcross 58.0
+→ 42.1 s). The rebuild from the committed source reproduces the binary
+byte for byte. Tried and not kept: `ma2` as bytes instead of
+`vector<bool>` (no change), `-flto` (no change).
+
+**2. Prune-table sharing and persistence.** Engine API (`solver.cpp`,
+THIRD_PARTY_NOTICES): `tableCacheKeys()` lists the shared corner / edge /
+pair tables by key ("c|corner|moves", "e|edge|moves", "p|pieces|faces"),
+`tableCacheGet(key)` returns a view of one, `tableCachePut(key, bytes)`
+stores a table built elsewhere only if the key is new and the size right.
+`worker-persistent.js` answers `tableKeys` / `getTables` / `putTables`
+messages (queued while a solve runs: the engine must not be re-entered while
+a search is paused at an Asyncify yield) and `solver-helper.js` has
+`tableKeys()`, `getTables()`, `putTables()`. `solver-ui.js`: after a worker
+finishes a call, tables it has that the page has not seen are copied to the
+other workers and stored in IndexedDB (`cubetree-engine-tables`, keyed by
+`ENGINE_VERSION`, other versions deleted on load); a new page puts the
+stored tables into every worker before its first search. About 36 MB per
+engine move list (pro set; "no r2/l2" is a second list). Failures (no
+IndexedDB, quota) only cost the old rebuild.
+- Node: 19 tables from one engine imported into a fresh one in 76 ms; that
+  engine's output on 18 recorded calls identical, and it runs at warm speed
+  (8.8 s vs 11.7 s cold). `test/offload-e2e.js` checks identity and refusal
+  of wrong keys/sizes.
+- Browser (headless Chrome, same profile, xcross+xxcross, white): first list
+  on a repeat load 3.6-3.9 s at HEAD → 1.6-1.7 s; a session flow (commit,
+  no r2/l2, multislot, depth 3, commit) gives the same page-1 row hashes as
+  HEAD at every step, 0 console errors; commit 1.6 → 0.3 s, switching on
+  no r2/l2 3.1 → 0.3 s (its tables were stored by an earlier load).
+  First-ever load: 5.0-5.4 s, unchanged.
+
+**3. Post-processing workers.** `searchCurrentNode`'s per-call loop (luck
+filter, inspection variants, cross optimisation, rotation spellings,
+side-cross variants, TPP) became the pure `postProcessCall(ctx, job, cores)`
+(`postProcessContext` / `postProcessJob` build its plain-data inputs;
+`stepsPathCost` is shared with `SolveSession.pathCost`). With
+`session.postProcessor` set it runs elsewhere: the page uses a pool of
+`js/postprocess-worker.js` (cores left after the engine pool, 1-4; any
+worker failure falls back to the main thread). Same function, so the same
+output (`test/offload-e2e.js`: root with pseudo, later step, depth-2
+look-ahead, no r2/l2 + multislot). On this 2-core machine the gain is
+modest because the CPU is shared with the engines: warm depth-5 look-ahead
+root 6.3-6.7 → 5.6-5.8 s with 1-2 post workers; more cores, more gain. The
+main thread is mostly idle during searches now (profiled: 64% idle).
+
+**4. Per-candidate JS** (each change verified on 81k recorded MCC inputs
+and full replayed result lists):
+- MCC's upper-cased move tokens are interned (an object key), so its string
+  `switch` and `==` against literals compare pointers: 11.9 → 9.1 µs/call
+  (with a loop instead of `forEach` in `stepPenalty`, the rotation-type
+  check hoisted out of the regrip loop).
+- `applyAlgorithm` permutes two reused char-code buffers and builds one
+  string per call instead of one per move (no regex unless "none" appears).
+- `inspectionWideVariants` caches the (token, rotation) → wide-token lookup
+  (its permutation key was ~8% of a root search).
+- Recorded xcross+xxcross root, JS only: 2.2-2.4 → 1.6-1.7 s; later steps
+  25-40% less.
+
+**End to end (Node, `worst-case-bench.js`, 3 engine workers, warm, 500
+solutions/call):** xcross+xxcross root 3.7 → 2.6 s and its later steps
+1.5-1.9 → 0.2-0.3 s; default config look-ahead depth 5 root 8.4 → 6.8 s
+(5.6-5.8 s with a post worker); default depth 1 roughly unchanged (it was
+already 0.1-2 s per step). Same results throughout.
+
+**Measured and not kept:**
+- "Cross + one edge" bound in xxcross: warm root xxcross calls -23%, but
+  every worker then built four more 4.5 MB tables on the root search
+  (browser cold first list 5.0 → 6.5 s, before table persistence existed).
+  In xxxxcross: no gain (42.1 vs 41.5 s). With persistence this trade
+  should be re-measured.
+- MCC round tracing (a rotation spelling resumes the grip search from the
+  last round that cannot see the inserted rotation): exact, but only 5%
+  fewer grip simulations, since the first round usually reaches past the
+  insertion point.
+- Finger state as scalars in MCC's `test()`: 3%.
+
+**Notes for later engine work:** in the pro move set every node also
+expands 4 rotations (maxRotCount 1) whose subtrees are never pruned (a
+rotation does not change the state, so the parent's bound already holds);
+most of a later-step search is these rotated subtrees. Their solutions are
+part of the required output, so any change there must keep the output
+byte-identical.
 
 ### 4.39 DONE (2026-10-05, sixteenth pass): look-ahead speed, results-page search options, blank time limit
 

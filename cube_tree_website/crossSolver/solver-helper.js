@@ -329,8 +329,39 @@ class CrossSolverHelper {
     });
   }
 
+  // cube-tree modification (PROJECT_STATUS.md §4.40): prune-table sharing,
+  // see worker-persistent.js. These requests can be made while a solve runs
+  // (the worker answers between search depths).
+  /** @returns {Promise<string[]>} keys of the tables the engine has built or received */
+  tableKeys() {
+    return this._tableRequest({ type: 'tableKeys' }).then(s => String(s || '').split('\n').filter(Boolean));
+  }
+  /** @returns {Promise<{key: string, data: Uint8Array}[]>} copies of those tables */
+  getTables(keys) {
+    return this._tableRequest({ type: 'getTables', keys });
+  }
+  /** Hands tables to the engine; resolves with how many it kept. */
+  putTables(tables) {
+    return this._tableRequest({ type: 'putTables', tables });
+  }
+  /** @private */
+  _tableRequest(msg) {
+    this._assertReady();
+    if (!this._tableRequests) { this._tableRequests = new Map(); this._tableRequestId = 0; }
+    const id = ++this._tableRequestId;
+    return new Promise((resolve) => {
+      this._tableRequests.set(id, resolve);
+      this._worker.postMessage({ ...msg, id });
+    });
+  }
+
   /** @private Dispatch incoming worker messages. */
   _handleMessage(msg, initResolve, initReject) {
+    if (msg.type === 'tableKeys' || msg.type === 'tables' || msg.type === 'tablesPut') {
+      const done = this._tableRequests && this._tableRequests.get(msg.id);
+      if (done) { this._tableRequests.delete(msg.id); done(msg.data); }
+      return;
+    }
     if (msg.type === 'ready') {
       this._ready = true;
       if (initResolve) initResolve();

@@ -14,6 +14,10 @@
 
 set -e
 
+# ASYNCIFY_REMOVE (cube⑂tree, PROJECT_STATUS.md §4.40): only the once-per-depth
+# solver_yield() and the table builders' yield need Asyncify; instrumenting
+# the recursive searches (which never yield) cost ~25-30% of search time.
+
 echo "=== Compiling crossSolver with MODULARIZE ==="
 
 # Load Emscripten environment
@@ -29,6 +33,7 @@ echo "Compiling solver.cpp..."
 em++ solver.cpp -o solver.js \
   -O3 -msimd128 \
   -s ASYNCIFY=1 \
+  -s 'ASYNCIFY_REMOVE=["*depth_limited_search*","create_prune_table*"]' \
   -s INITIAL_MEMORY=50MB \
   -s ALLOW_MEMORY_GROWTH=1 \
   -s WASM=1 \

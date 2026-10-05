@@ -105,20 +105,31 @@ function isMoveToken(token) {
 // whole-cube x/y/z rotations, plus lowercase wide and M/E/S slice moves) to a
 // 54-char facelet string and returns the resulting facelet string. Throws on
 // any unrecognized token so a typo fails loudly instead of silently no-opping.
+// The tokens are applied to two char-code buffers in turn and the string is
+// built once at the end (one string per token before; every candidate of every
+// search is replayed through here, PROJECT_STATUS.md §4.40).
+const ALG_BUF_A = new Uint16Array(54);
+const ALG_BUF_B = new Uint16Array(54);
 function applyAlgorithm(facelets, algorithm) {
-    const tokens = String(algorithm)
-        .replace(/\bnone\b/gi, '')
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-    let state = facelets;
+    let text = String(algorithm);
+    if (/none/i.test(text)) text = text.replace(/\bnone\b/gi, '');
+    const tokens = text.trim().split(/\s+/);
+    let cur = null;
+    let next = ALG_BUF_B;
     for (const token of tokens) {
-        if (!isMoveToken(token)) {
+        if (!token) continue;
+        const perm = MOVE_PERMS.get(token);
+        if (perm === undefined) {
             throw new Error(`facelet-cube: unrecognized move token "${token}"`);
         }
-        state = applyPerm(state, MOVE_TABLE[token]);
+        if (cur === null) {
+            cur = ALG_BUF_A;
+            for (let i = 0; i < 54; i++) cur[i] = facelets.charCodeAt(i);
+        }
+        for (let i = 0; i < 54; i++) next[i] = cur[perm[i]];
+        const t = cur; cur = next; next = t;
     }
-    return state;
+    return cur === null ? facelets : String.fromCharCode.apply(null, cur);
 }
 
 // ---------------------------------------------------------------------------
@@ -347,13 +358,25 @@ function rotationSpellingParts(alg, allowLeading = true) {
  * `maxPos` turns are converted -- that is where solvers use this ("inspect
  * with the cross on a side, bring it down with a wide move").
  */
+// The single token equal to "token, then rho" (or undefined), cached: it
+// only depends on the pair, and inspectionWideVariants runs for every root
+// candidate (the permutation key was ~8% of a root search, §4.40).
+const WIDE_TOKEN_CACHE = new Map();
+function wideTokenFor(token, rho) {
+    const key = `${token} ${rho}`;
+    if (!WIDE_TOKEN_CACHE.has(key)) {
+        WIDE_TOKEN_CACHE.set(key, TOKEN_BY_PERM.get(permKey(composePerm(MOVE_TABLE[token], MOVE_TABLE[rho]))));
+    }
+    return WIDE_TOKEN_CACHE.get(key);
+}
+
 function inspectionWideVariants(alg, maxPos = 2) {
     const t = String(alg).split(/\s+/).filter(Boolean);
     const out = [];
     for (let k = 0; k < Math.min(maxPos, t.length); k++) {
         if (!/^[LR]/.test(t[k])) continue;
         for (const rho of ['x', "x'", 'x2']) {
-            const w = TOKEN_BY_PERM.get(permKey(composePerm(MOVE_TABLE[t[k]], MOVE_TABLE[rho])));  // at most 2 per alg
+            const w = wideTokenFor(t[k], rho);  // at most 2 per alg
             if (!w || !/^[rl]/.test(w)) continue;
             // t[:k] w relabel(t[k+1:], rho) == alg then rho
             const spelled = [...t.slice(0, k), w, relabelAlgForRotation(t.slice(k + 1).join(' '), rho)].join(' ').trim();

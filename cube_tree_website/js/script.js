@@ -393,7 +393,13 @@ const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideOther: 3.3
 /** Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum over its steps. */
 function stepPenalty(alg) {
     let total = 0;
-    String(alg || '').split(/\s+/).filter(Boolean).forEach((t, i) => {
+    // (A plain loop: this runs for every candidate of every search.)
+    const text = String(alg || '');
+    // Plain single spaces (every generated alg) split without a regex.
+    const tokens = /[^\S ]/.test(text) ? text.split(/\s+/) : text.split(' ');
+    let i = 0;
+    for (const t of tokens) {
+        if (!t) continue;
         const c = t[0];
         if (c === 'D') total += STEP_PENALTIES.D;
         else if (c === 'F') total += STEP_PENALTIES.F;
@@ -401,16 +407,20 @@ function stepPenalty(alg) {
         else if (c === 'r' || c === 'l') total += STEP_PENALTIES.wideRL;
         else if ('fbudMES'.includes(c)) total += STEP_PENALTIES.wideOther;
         else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
-    });
+        i++;
+    }
     return total;
 }
 
 // Upper-cased move tokens, cached (algSpeed upper-cases every move it looks at).
+// Interned (read back as an object key), so algSpeed's string switch and its
+// == comparisons with literals are pointer checks instead of content compares
+// (a toUpperCase result is a fresh string; ~20% of algSpeed, §4.40).
 const MCC_UPPER = new Map();
 function mccUpper(t) {
     let u = MCC_UPPER.get(t);
     if (u === undefined) {
-        u = t.toUpperCase();
+        u = Object.keys({ [t.toUpperCase()]: 0 })[0];
         if (MCC_UPPER.size < 4096) MCC_UPPER.set(t, u);
     }
     return u;
@@ -1142,11 +1152,12 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
             doubleRegrip = true;
         }
 
+        const prevIsRotation = prevMoveType === "X" || prevMoveType === "x" || prevMoveType === "Y" || prevMoveType === "y" || prevMoveType === "Z" || prevMoveType === "z";
         for (let leftWrist = -1; leftWrist < 2; leftWrist++) {
             for (let rightWrist = -1; rightWrist < 2; rightWrist++) {
                 let leftMatch = (bestTest[2] == leftWrist);
                 let rightMatch = (bestTest[3] == rightWrist);
-                if (["X", "x", "Y", "y", "Z", "z"].includes(prevMoveType)) {
+                if (prevIsRotation) {
                     starts.push([leftWrist, rightWrist, bestTest[1]]);
                 }
                 else {

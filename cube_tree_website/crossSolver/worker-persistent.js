@@ -61,8 +61,22 @@ const _solvers = {};   // keyed by "Type:slot1:slot2:..."
 // ---- Intercept postMessage from C++ -------------------------------------
 const originalPostMessage = self.postMessage.bind(self);
 
+// cube-tree modification (§4.40): a solve is running from its 'solve' message
+// until the engine reports how it ended; table requests wait for that (the
+// engine must not be re-entered while a search is paused at a yield).
+let _solveBusy = false;
+const _tableQueue = [];
+function _solveEnded() {
+  _solveBusy = false;
+  // After the engine call has fully returned (this runs inside it).
+  setTimeout(function() { while (!_solveBusy && _tableQueue.length) _handleTables(_tableQueue.shift()); }, 0);
+}
+
 globalThis.postMessage = function(message) {
   if (typeof message !== 'string') return;
+  if (message === 'Search finished.' || message === 'Search cancelled.' || message === 'Already solved.' || message.startsWith('Error')) {
+    _solveEnded();
+  }
   if (message === 'Search finished.') {
     originalPostMessage({ type: 'done', data: null });
   } else if (message === 'Search cancelled.') {
@@ -165,6 +179,28 @@ function _llStr(ll) {
 
 // ---- Message handler -----------------------------------------------------
 
+/** Answers one table request (see the 'tableKeys' message above). */
+function _handleTables(data) {
+  var M = wasmModule;
+
+  var has = M && typeof M.tableCacheKeys === 'function';
+  if (data.type === 'tableKeys') {
+    originalPostMessage({ type: 'tableKeys', id: data.id, data: has ? M.tableCacheKeys() : '' });
+  } else if (data.type === 'getTables') {
+    var out = [];
+    var buffers = [];
+    (has ? data.keys || [] : []).forEach(function(key) {
+      var view = M.tableCacheGet(key);
+      if (view) { var copy = view.slice(); out.push({ key: key, data: copy }); buffers.push(copy.buffer); }
+    });
+    originalPostMessage({ type: 'tables', id: data.id, data: out }, buffers);
+  } else {
+    var put = 0;
+    (has ? data.tables || [] : []).forEach(function(t) { if (M.tableCachePut(t.key, t.data)) put++; });
+    originalPostMessage({ type: 'tablesPut', id: data.id, data: put });
+  }
+}
+
 self.onmessage = async function(event) {
   try {
     var data = event.data;
@@ -175,6 +211,16 @@ self.onmessage = async function(event) {
       if (wasmModule) {
         wasmModule._cancelRequested = true;
       }
+      return;
+    }
+
+    // cube-tree modification (PROJECT_STATUS.md §4.40): prune-table sharing.
+    // tableKeys -> the engine's cached table keys; getTables {keys} -> copies
+    // of those tables; putTables {tables} -> hand in tables built elsewhere
+    // (the engine keeps only new keys of the right size). Replies carry the
+    // request's id; an engine without the API answers with nothing.
+    if (data.type === 'tableKeys' || data.type === 'getTables' || data.type === 'putTables') {
+      if (_solveBusy) _tableQueue.push(data); else _handleTables(data);
       return;
     }
 
@@ -245,6 +291,7 @@ self.onmessage = async function(event) {
     }
 
     // Call solve() with the correct argument list
+    _solveBusy = true;
     if (solverType === 'LLSubsteps') {
       var ll = _llStr(data.ll);
       solver.solve(
@@ -259,6 +306,7 @@ self.onmessage = async function(event) {
     }
 
   } catch (e) {
+    if (_solveBusy) _solveEnded();
     originalPostMessage({ type: 'error', data: e.message || 'Unknown worker error' });
   }
 };

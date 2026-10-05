@@ -62,6 +62,19 @@ listed here with the date of the change.
   `solver-helper-node.js`, `pseudoCrossSolver/worker3.js`, `solver-helper.js`,
   `solver-helper-node.js`: pass the `deadline` option to the engine, and skip
   (resolve with no solutions) a call that starts after its deadline.
+- **2026-10-05** `crossSolver/compile.sh`: `ASYNCIFY_REMOVE` for the
+  recursive searches and `create_prune_table`, which never yield, so Asyncify
+  no longer instruments them (searches ~25-30% faster).
+  `crossSolver/solver.cpp`: `tableCacheKeys()`, `tableCacheGet()` and
+  `tableCachePut()` export and import the shared corner / edge / pair prune
+  tables (a table is only accepted under a new key with the right size), so
+  a page can build each table once and reuse it in its other workers and
+  across page loads. `crossSolver/worker-persistent.js`: `tableKeys`,
+  `getTables`, `putTables` messages (queued while a solve runs);
+  `crossSolver/solver-helper.js`: matching `tableKeys()`, `getTables()`,
+  `putTables()`. Search outputs verified byte-identical to the previous
+  binary on the call battery (`tools/engine-battery.js`), and with imported
+  tables (`test/offload-e2e.js`).
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 
