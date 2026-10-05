@@ -10,9 +10,13 @@ permissions:
   pages: write
   id-token: write
 
+# A new push supersedes any older deploy that is still queued or running:
+# with "cancel-in-progress: false" a run stuck in the queue (2026-10-05:
+# c3e8eca waited hours for a runner) held the group and blocked every later
+# deploy. The group name changed so new runs no longer wait on that stuck run.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -20,6 +24,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
