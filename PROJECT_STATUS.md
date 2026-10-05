@@ -17,6 +17,27 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
+**2026-10-04 (thirteenth pass): performance, root search 100 s → 5 s in the
+browser, identical results.** Writeup in §4.34. The user also confirmed pro
+solve #10's 4th pair on a physical cube: `y U2' L' U L U' L' U L`, which is
+what the file already says since the twelfth pass (the uncommitted copy had
+`L2`). The simulator agrees, so no simulator bug.
+1. Engine (`crossSolver/solver.cpp`, rebuilt, `ENGINE_VERSION` 20261004-pairs1):
+   shared "cross + corner" prune tables (up to 32 builds became ≤ 4 per move
+   list), an admissible pairs-only bound in every F2L class, and a 5× faster
+   table builder. Raw engine output is byte-identical to the previous binary on
+   an 11-call battery.
+2. Bridge: each search plans and starts all of its engine calls at once, then
+   post-processes in plan order; `solver-ui.js` runs them on a pool of
+   `cores − 1` (≤ 4) engine workers via the per-engine gates in
+   `search-scheduler.js`. Look-ahead explores its candidates in parallel.
+3. JS: table-driven rotation helpers in `facelet-cube.js` (5.0 s → ~0.4-2 s
+   of post-processing per root search).
+4. **Found:** the upstream engine's rotation-branch pruning uses `h >= depth`
+   where a rotation consumes no move (needs `h > depth`), so it can drop valid
+   mid-step-rotation solutions in pro mode. Not changed in this commit, because
+   fixing it changes (adds) results; see §4.34.
+
 **2026-10-04 (twelfth pass): dynamic search priority, look-ahead depth, and
 `alg_speed` tuned against the pro references; plus 4 new reference solves
 (one typo fixed) and a segmenter frame bug.** Full writeups in §4.30-§4.33.
@@ -1671,6 +1692,77 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.34 DONE (2026-10-04, thirteenth pass): search performance
+
+User priority: "identify and implement every possible optimization to speed
+up the search engine". Profiling (Node, one pro-move-set root search, white,
+xcross+xxcross, 500 solutions per call): 121 s total = 99 s engine (11 calls) +
+22 s JS. Cold engine calls were dominated by prune-table builds (1-15 s per
+solver instance and slot); warm XXCross calls by weak pruning (the pair
+edges were only checked at the leaves).
+
+**Engine** (THIRD_PARTY_NOTICES.md; output verified byte-identical with an
+11-call battery covering every F2L class, face and pro move sets, rotations,
+postAlg, repeated calls and a move-set switch in one process):
+- `corner_prune_table()`: every F2L class prunes on the same "cross + one
+  corner" tables. They are now cached per (corner, exact move list) and shared:
+  up to 32 builds (~145 MB) became at most 4 per move list. Keying on the move
+  list also fixes a latent bug: a persistent solver reused its first table
+  even after a call with a different move set.
+- `pair_prune_table()`: an extra admissible bound, the distance to solve the
+  target pairs' corners and edges alone (24^2 or 24^4 states, BFS in the
+  centre-relative frame; all 18 faces when wide moves or rotations are
+  allowed, so it is a superset and still a lower bound). It is checked in
+  xcross (1 pair), xxcross (1 table), xxxcross (3) and xxxxcross (6).
+  **Lesson:** a rotation consumes no move, so after a rotation the check must
+  be `h > depth`. The first version used `>= depth` like the upstream code
+  and dropped 3 valid pro solutions (caught by the battery, traced with a
+  temporary debug export that replayed the path through the engine's indices).
+- `create_prune_table()`: per centre state, the ordered list of distinct base
+  moves is precomputed (first-occurrence order kept, so the table is
+  identical), instead of trying every move × rotation per cell. Pro tables
+  build ~5× faster.
+
+**Upstream bug found, not yet fixed:** the original rotation branches prune
+with `prune >= depth` on their own tables too, so they can drop valid
+solutions in which a rotation comes at a point where the cross+corner
+distance equals the remaining moves. That hurts pro-mode coverage of
+mid-step rotations. Fixing it adds results (changes output), so it is a
+separate, measured change.
+
+**Bridge / UI:** `searchCurrentNode` now plans every call, starts them all,
+then post-processes in plan order (output identical: three steps of a
+pro-move-set session compared field-by-field). `serialEngine` chains calls
+for a plain helper (the Node harnesses); `solver-ui.js` creates a pool of
+`max(1, min(4, cores - 1))` engine workers, and `search-scheduler.js` gates are
+per engine with one slot per worker (priority rules unchanged; new pool
+tests). Look-ahead runs its candidates' continuations in parallel and picks
+them in rank order (same ties).
+
+**JS:** `canonicalizeForEngine`, `relabelAlgForRotation` and
+`inverseRotation` use an index over the 24 orientations (multiplication table
+plus a cached token-conjugation table) instead of string-keying 54-element
+permutations per token; a new test checks them against the permutation
+reference on 3000 random mixed-notation algs.
+
+**Results** (same scramble/config throughout):
+
+| measurement | before | after |
+|---|---|---|
+| Node, cold root, pro moves, 100/call (serial engine) | 90.7 s | 6.3 s |
+| Node, warm root, same | ~30 s | 2.5-3.7 s |
+| Node, step 2 (later single pair) | 49.0 s | < 1 s |
+| Browser, cold root, pro moves, 100/call | 100.1 s | 5.1 s |
+| Browser, step 2 after click | 36.3 s | 0.2 s |
+| Browser, cold root, 500/call | ~121 s (Node) | 12.6 s |
+| warm XCross ×6 / XXCross ×6 (face) | 1.5 s / 9.1 s | 0.13 s / 3.6 s |
+
+Result counts were identical in every comparison (e.g. 13742 / 496 / 57100).
+All fast suites, slot-mapping, colour-orientation, `lookahead-e2e.js` and three
+`solver-bridge-e2e.js` configurations (pro; pseudo + full pseudo; xxxcross +
+cross_opt, white+yellow) pass with 0 warnings and 0 frame failures. Remaining
+slow spot: root XXXCross (13 moves, 3 pairs; ~11 s per call, off by default).
 
 ### 4.33 (2026-10-04, twelfth pass): reference solves #8-#11, one typo fixed, segmenter frame bug
 

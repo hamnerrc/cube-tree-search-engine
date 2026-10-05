@@ -477,6 +477,32 @@ class SolveSession {
   }
 }
 
+// A helper that runs one solve at a time (the plain Node/browser helpers reject
+// a second concurrent call) gets its calls chained; a scheduler-gated helper
+// (search-scheduler.js, `__gated`) already queues and may run several at once.
+const serialChains = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+function serialEngine(helper) {
+  if (!helper || helper.__gated || !serialChains) return helper;
+  if (!serialChains.has(helper)) {
+    let chain = Promise.resolve();
+    serialChains.set(helper, new Proxy(helper, {
+      get(target, prop) {
+        const value = target[prop];
+        if (typeof value !== 'function') return value;
+        if (typeof prop === 'string' && prop.startsWith('solve')) {
+          return (...args) => {
+            const run = chain.then(() => value.apply(target, args));
+            chain = run.catch(() => {});
+            return run;
+          };
+        }
+        return value.bind(target);
+      },
+    }));
+  }
+  return serialChains.get(helper);
+}
+
 /**
  * Search every outgoing edge of session's current node, dispatch to the
  * appropriate solver, and return a TPP-ranked array of candidate results.
@@ -557,6 +583,8 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
 
   const colorList = isRoot ? session.colors : [null];
 
+  // Pass 1: plan every engine call of this search (one per edge and colour).
+  const plan = [];
   for (const edge of edges) {
     const targetNode = session.nodeMap.get(edge.target);
     const isPseudo = typeof isPseudoState === 'function' && isPseudoState(targetNode.state);
@@ -598,262 +626,279 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       // itself searchable resets that without changing the state.
       const postAlgForCall = isRoot || !frame.moves ? '' : `${frame.moves} ${POSTALG_BOUNDARY}`;
 
-      if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
+      plan.push({
+        edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges, maxLength,
+        effectiveMaxSolutions, color, baseRotation, scramble, callRotation, postAlgForCall,
+      });
+    }
+  }
 
-      let raw;
-      try {
-        raw = isPseudo
-          ? await pseudoCallFor(pseudoHelper, allEdges, allCorners, scramble, callRotation, maxLength, postAlgForCall, effectiveMaxSolutions)
-          : await solverCallFor(helper, allCorners, scramble, callRotation, maxLength, postAlgForCall, effectiveMaxSolutions,
-            session.proMoves ? proEngineOptions(callRotation) : {});
-      } catch (err) {
-        console.error('Solver error', err);
-        continue;
+  // Pass 2: start them all at once (PROJECT_STATUS.md §4.34). A pooled,
+  // scheduler-gated helper runs them in parallel on several engine workers;
+  // a plain helper gets them one at a time (serialEngine). Results are still
+  // consumed in plan order below, so the output is the same either way.
+  const engine = serialEngine(helper);
+  const pseudoEngine = serialEngine(pseudoHelper);
+  for (const p of plan) {
+    p.raw = Promise.resolve().then(() => (p.isPseudo
+      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions)
+      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions,
+        session.proMoves ? proEngineOptions(p.callRotation) : {})))
+      .catch((err) => { console.error('Solver error', err); return null; });
+  }
+
+  // Pass 3: post-process each call's solutions, in plan order.
+  for (const p of plan) {
+    const {
+      edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges,
+      color, baseRotation, callRotation, postAlgForCall,
+    } = p;
+    if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
+    const raw = await p.raw;
+    if (raw === null) continue;
+
+    // The engine prefixes every returned solution with `rotation + ' ' +
+    // postAlg` verbatim (see solver.cpp) -- strip exactly that known
+    // prefix to recover just the new step's algorithm. Dedupe identical
+    // algorithms before altAlgs expansion — the solver commonly returns
+    // the same algorithm multiple times across its maxSolutions results.
+    const knownPrefixParts = [];
+    if (callRotation) knownPrefixParts.push(callRotation);
+    if (postAlgForCall) knownPrefixParts.push(postAlgForCall);
+    const knownPrefix = knownPrefixParts.join(' ');
+
+    const uniqueCoreAlgs = new Set();
+    for (let sol of raw) {
+      sol = (sol || '').trim();
+      if (!sol) continue; // "already solved" (empty string) — not a real step here
+      let coreAlg = sol;
+      if (knownPrefix && sol.startsWith(knownPrefix)) {
+        coreAlg = sol.slice(knownPrefix.length).trim();
       }
+      if (coreAlg) uniqueCoreAlgs.add(coreAlg);
+    }
 
-      // The engine prefixes every returned solution with `rotation + ' ' +
-      // postAlg` verbatim (see solver.cpp) -- strip exactly that known
-      // prefix to recover just the new step's algorithm. Dedupe identical
-      // algorithms before altAlgs expansion — the solver commonly returns
-      // the same algorithm multiple times across its maxSolutions results.
-      const knownPrefixParts = [];
-      if (callRotation) knownPrefixParts.push(callRotation);
-      if (postAlgForCall) knownPrefixParts.push(postAlgForCall);
-      const knownPrefix = knownPrefixParts.join(' ');
+    for (const coreAlg of uniqueCoreAlgs) {
+      await yieldIfDue(yieldState);
 
-      const uniqueCoreAlgs = new Set();
-      for (let sol of raw) {
-        sol = (sol || '').trim();
-        if (!sol) continue; // "already solved" (empty string) — not a real step here
-        let coreAlg = sol;
-        if (knownPrefix && sol.startsWith(knownPrefix)) {
-          coreAlg = sol.slice(knownPrefix.length).trim();
-        }
-        if (coreAlg) uniqueCoreAlgs.add(coreAlg);
-      }
+      // Cross optimisation (README "Wide moves and Cross optimisation") --
+      // a first-step-only, Cross-only (pairCount=0) post-process, kept
+      // independent of altAlgs below (its own rotation search already
+      // explores reorientation; combining both was judged unnecessary
+      // added complexity -- see PROJECT_STATUS.md §4.5/§4.13). Every
+      // variant it returns is mathematically equal to "the raw coreAlg,
+      // followed by a pure y-rotation" (see cross-optimization.js's
+      // header comment for the proof), so a plain luck-check call below
+      // is a cheap safety net, not load-bearing.
+      if (isRoot && pairCount === 0 && session.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
+        const optimized = optimizeCrossSolution(coreAlg.trim().split(/\s+/));
+        for (const opt of optimized) {
+          const optAlg = opt.moves.join(' ');
+          if (optAlg === coreAlg && !opt.rotation) continue; // identical to the unoptimized result below
 
-      for (const coreAlg of uniqueCoreAlgs) {
-        await yieldIfDue(yieldState);
-
-        // Cross optimisation (README "Wide moves and Cross optimisation") --
-        // a first-step-only, Cross-only (pairCount=0) post-process, kept
-        // independent of altAlgs below (its own rotation search already
-        // explores reorientation; combining both was judged unnecessary
-        // added complexity -- see PROJECT_STATUS.md §4.5/§4.13). Every
-        // variant it returns is mathematically equal to "the raw coreAlg,
-        // followed by a pure y-rotation" (see cross-optimization.js's
-        // header comment for the proof), so a plain luck-check call below
-        // is a cheap safety net, not load-bearing.
-        if (isRoot && pairCount === 0 && session.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
-          const optimized = optimizeCrossSolution(coreAlg.trim().split(/\s+/));
-          for (const opt of optimized) {
-            const optAlg = opt.moves.join(' ');
-            if (optAlg === coreAlg && !opt.rotation) continue; // identical to the unoptimized result below
-
-            // The optimised text equals "coreAlg, then opt.rotation": the
-            // residual rotation happens DURING the algorithm (inside its wide
-            // moves), so it is replayed as written after the inspection
-            // rotation, exactly like a plain Cross candidate.
-            const optLuckCheck = checkCandidateAgainstRealCubeState(
-              session.scramble, baseRotation, session.scoredPath, optAlg, []
-            );
-            if (!optLuckCheck.ok) {
-              // Luck (an extra pair solved) is an expected discard, exactly as
-              // for the plain result below; only a real failure is a warning.
-              if (optLuckCheck.reason.includes('claimed solved but is not actually solved')) {
-                console.warn(`Discarding cross-optimised candidate: ${optLuckCheck.reason}`, { coreAlg: optAlg, rotation: baseRotation });
-              }
-              continue;
-            }
-
-            // The residual rotation happens DURING the algorithm (it is part
-            // of the wide moves), so the inspection rotation stays
-            // baseRotation; later steps derive the real frame from the
-            // committed text via SolveSession.engineFrame (§4.19). Composing
-            // it in here as well applied it twice.
-            const optRotation = baseRotation;
-
-            const optScoredAlg = session.scoredPath ? session.scoredPath + ' ' + optAlg : optAlg;
-            const optTpp = algSpeed(optScoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
-
-            candidates.push({
-              color,
-              type: edgeTypeLabel(pairCount, isRoot),
-              rotation: optRotation,
-              edges: [],
-              corners: [],
-              coreAlg: optAlg,
-              tpp: Number.isFinite(optTpp) ? optTpp : Infinity,
-              targetNodeId: edge.target,
-            });
-          }
-        }
-
-        // A root result that STARTS with a rotation duplicates a free
-        // inspection-rotation variant below; only mid-step rotations count.
-        if (isRoot && session.proMoves && /^[xyz]/.test(coreAlg)) continue;
-        // Inspection variants. With the pro move set the alg can contain
-        // wide moves and rotations, which altAlgs' face table can't relabel,
-        // so the mechanical (permutation-derived) relabel is used instead;
-        // it agrees with altAlgs on every face-turn alg (§4.20).
-        const variants = !isRoot ? [coreAlg]
-          : session.proMoves ? ['', 'y', 'y2', "y'"].map(t => (t ? `${t} ${relabelAlgForRotation(coreAlg, t)}` : coreAlg))
-          : typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
-
-        for (const variant of variants) {
-          // Only a root variant carries a free inspection token to split
-          // off; a later step's leading rotation (pro move set, e.g.
-          // "y' R U R'") is part of the step itself.
-          const { token: yToken, rest: variantAlg } = isRoot ? stripLeadingRotation(variant) : { token: '', rest: variant };
-          const fullRotation = isRoot ? composeRotations(baseRotation, yToken) : session.rotation;
-
-          if (!variantAlg) continue; // shouldn't happen, but guard
-
-          // A pseudo result is only solved up to a free D-layer offset; make
-          // it physically exact (see alignPseudoAlg). A matched result never
-          // needs this.
-          const finalCoreAlg = isPseudo
-            ? alignPseudoAlg(session.scramble, fullRotation, session.scoredPath, variantAlg)
-            : variantAlg;
-          if (finalCoreAlg === null) {
-            console.warn('Discarding pseudo candidate: cross is not solved up to a D turn', { coreAlg: variantAlg, rotation: fullRotation });
-            continue;
-          }
-          if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
-
-          // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
-          // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
-          // /newEdges here, since the root's current node has none solved
-          // yet) are the DAG edge's UNROTATED labels -- but a non-identity
-          // altAlgs variant physically solves a y/y2/y'-cycled slot, not the
-          // unrotated one (confirmed empirically, see relabelSlotsForRotation
-          // and test/solver-bridge.test.js). The luck check below MUST use
-          // this corrected claim, not the raw label -- using the raw label
-          // made every non-identity-rotation root candidate with
-          // pairCount>=1 look like it "failed to solve what it claims" and
-          // get wrongly discarded as a bug, which is not what's happening.
-          // For a non-root candidate there is no yToken (altAlgs isn't
-          // applied there) and §4.12's superset filter already makes
-          // `allCorners` trustworthy, so it's used unchanged.
-          const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
-          const trueClaimedEdges = isRoot ? relabelSlotsForRotation(allEdges, yToken) : allEdges;
-
-          // The node this candidate really reaches is the one labelled with
-          // the slots it PHYSICALLY solves (in the frame after fullRotation,
-          // which every later step searches and replays in) -- not the
-          // unrotated DAG target. Committing the unrotated target made later
-          // steps protect the wrong slot: found 2026-10-04 (PROJECT_STATUS.md
-          // §4.16), 26 of 501 later-step candidates on one scramble broke the
-          // committed pair while still passing the luck check.
-          // A pro-move-set alg can end rotated (a mid-step y, or wide moves):
-          // claims are checked in the step's STARTING frame (its own net
-          // rotation undone), but the node it reaches is labelled in the
-          // frame the cube ends in -- read off the physical result, like the
-          // §4.16 fix, so later steps keep reading labels correctly.
-          const stepRotation = session.proMoves && !isPseudo ? netRotation(finalCoreAlg) : '';
-          let reachedNodeId;
-          if (stepRotation) {
-            const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, finalCoreAlg));
-            const pairs = F2L_SLOTS.filter(sl => after[sl]);
-            reachedNodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
-          } else {
-            reachedNodeId = isRoot
-              ? rootTargetByLabels(session, trueClaimedCorners, trueClaimedEdges)
-              : edge.target;
-          }
-          if (!reachedNodeId) {
-            console.warn('Discarding candidate: no DAG node for its rotated claim', { trueClaimedCorners, trueClaimedEdges, rotation: fullRotation });
-            continue;
-          }
-
-          // Luck filtering (README "Luck filtering") -- discard any
-          // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
-          // edge's full claimed target, old+new pairs, rotation-corrected)
-          // when physically replayed. See this file's header comment and
-          // PROJECT_STATUS.md §4.3/§4.9 for why a real cube-state check, not
-          // a solver probe, is needed.
-          const luckCheck = checkCandidateAgainstRealCubeState(
-            session.scramble, fullRotation, session.scoredPath,
-            stepRotation ? `${finalCoreAlg} ${inverseRotation(stepRotation)}` : finalCoreAlg,
-            trueClaimedCorners, trueClaimedEdges
+          // The optimised text equals "coreAlg, then opt.rotation": the
+          // residual rotation happens DURING the algorithm (inside its wide
+          // moves), so it is replayed as written after the inspection
+          // rotation, exactly like a plain Cross candidate.
+          const optLuckCheck = checkCandidateAgainstRealCubeState(
+            session.scramble, baseRotation, session.scoredPath, optAlg, []
           );
-          if (!luckCheck.ok) {
-            if (luckCheck.reason.includes('claimed solved but is not actually solved')) {
-              console.warn(`Discarding candidate: ${luckCheck.reason}`, { coreAlg: finalCoreAlg, rotation: fullRotation, trueClaimedCorners });
+          if (!optLuckCheck.ok) {
+            // Luck (an extra pair solved) is an expected discard, exactly as
+            // for the plain result below; only a real failure is a warning.
+            if (optLuckCheck.reason.includes('claimed solved but is not actually solved')) {
+              console.warn(`Discarding cross-optimised candidate: ${optLuckCheck.reason}`, { coreAlg: optAlg, rotation: baseRotation });
             }
             continue;
           }
 
-          const scoredAlg = session.scoredPath
-            ? session.scoredPath + ' ' + finalCoreAlg
-            : finalCoreAlg;
-          const tppScore = algSpeed(scoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+          // The residual rotation happens DURING the algorithm (it is part
+          // of the wide moves), so the inspection rotation stays
+          // baseRotation; later steps derive the real frame from the
+          // committed text via SolveSession.engineFrame (§4.19). Composing
+          // it in here as well applied it twice.
+          const optRotation = baseRotation;
 
-          // Display label ("corners"/"edges" columns: what's NEWLY solved
-          // by this step specifically, not the full cumulative claim used
-          // above). Root: `trueClaimedCorners` already IS just the new
-          // slots, rotation-corrected (root's current node has none solved
-          // yet). Non-root: take the set difference between the target's
-          // full (trustworthy, superset-checked) claim and the current
-          // node's own corners/edges -- simpler and more robust than any
-          // rotation algebra, since it only depends on fields already known
-          // to be correct (§4.12 finding #3's fix).
-          const displayCorners = isRoot
-            ? trueClaimedCorners
-            : allCorners.filter(c => !(session.currentNode.state.corners || []).includes(c));
-          const displayEdges = isRoot
-            ? relabelSlotsForRotation(newEdges, yToken)
-            : (targetNode.state.edges || []).filter(e => !(session.currentNode.state.edges || []).includes(e));
+          const optScoredAlg = session.scoredPath ? session.scoredPath + ' ' + optAlg : optAlg;
+          const optTpp = algSpeed(optScoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
 
-          const candidate = {
-            color: isRoot ? color : (session.committedRows[0] ? session.committedRows[0].color : ''),
-            type: edgeTypeLabel(pairCount, isRoot, isPseudo),
-            rotation: fullRotation,
-            edges: displayEdges,
-            corners: displayCorners,
-            coreAlg: finalCoreAlg,
-            tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
-            targetNodeId: reachedNodeId,
-          };
-          candidates.push(candidate);
+          candidates.push({
+            color,
+            type: edgeTypeLabel(pairCount, isRoot),
+            rotation: optRotation,
+            edges: [],
+            corners: [],
+            coreAlg: optAlg,
+            tpp: Number.isFinite(optTpp) ? optTpp : Infinity,
+            targetNodeId: edge.target,
+          });
+        }
+      }
 
-          // Rotation spellings (pro move set; README "Professional reference
-          // solves"): the engine often returns the un-rotated spelling
-          // ("U' B U B'") of what a human does with a rotation ("y U' R U R'").
-          // Each spelling is physically "this alg, then y/y'", so it solves the
-          // same pieces; only the frame it ends in (hence the node labels)
-          // changes, read off the physical result as above. At most one
-          // rotation per step, as in the pro move set; never a leading one at
-          // the root (that is an inspection variant). §4.20.
-          if (session.proMoves && !isPseudo && typeof rotationSpellings === 'function') {
-            for (const spelling of rotationSpellings(finalCoreAlg, !isRoot)) {
-              if (spelling.split(' ').filter(t => /^[xyz]/.test(t)).length > 1) continue;
-              const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, spelling));
-              const pairs = F2L_SLOTS.filter(sl => after[sl]);
-              const nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
-              if (!nodeId) continue;
-              const spTpp = algSpeed(session.scoredPath ? `${session.scoredPath} ${spelling}` : spelling, false, false)
-                / calculateSolvedPieces(session.rootNode, targetNode);
-              candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
-            }
+      // A root result that STARTS with a rotation duplicates a free
+      // inspection-rotation variant below; only mid-step rotations count.
+      if (isRoot && session.proMoves && /^[xyz]/.test(coreAlg)) continue;
+      // Inspection variants. With the pro move set the alg can contain
+      // wide moves and rotations, which altAlgs' face table can't relabel,
+      // so the mechanical (permutation-derived) relabel is used instead;
+      // it agrees with altAlgs on every face-turn alg (§4.20).
+      const variants = !isRoot ? [coreAlg]
+        : session.proMoves ? ['', 'y', 'y2', "y'"].map(t => (t ? `${t} ${relabelAlgForRotation(coreAlg, t)}` : coreAlg))
+        : typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
+
+      for (const variant of variants) {
+        // Only a root variant carries a free inspection token to split
+        // off; a later step's leading rotation (pro move set, e.g.
+        // "y' R U R'") is part of the step itself.
+        const { token: yToken, rest: variantAlg } = isRoot ? stripLeadingRotation(variant) : { token: '', rest: variant };
+        const fullRotation = isRoot ? composeRotations(baseRotation, yToken) : session.rotation;
+
+        if (!variantAlg) continue; // shouldn't happen, but guard
+
+        // A pseudo result is only solved up to a free D-layer offset; make
+        // it physically exact (see alignPseudoAlg). A matched result never
+        // needs this.
+        const finalCoreAlg = isPseudo
+          ? alignPseudoAlg(session.scramble, fullRotation, session.scoredPath, variantAlg)
+          : variantAlg;
+        if (finalCoreAlg === null) {
+          console.warn('Discarding pseudo candidate: cross is not solved up to a D turn', { coreAlg: variantAlg, rotation: fullRotation });
+          continue;
+        }
+        if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
+
+        // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
+        // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
+        // /newEdges here, since the root's current node has none solved
+        // yet) are the DAG edge's UNROTATED labels -- but a non-identity
+        // altAlgs variant physically solves a y/y2/y'-cycled slot, not the
+        // unrotated one (confirmed empirically, see relabelSlotsForRotation
+        // and test/solver-bridge.test.js). The luck check below MUST use
+        // this corrected claim, not the raw label -- using the raw label
+        // made every non-identity-rotation root candidate with
+        // pairCount>=1 look like it "failed to solve what it claims" and
+        // get wrongly discarded as a bug, which is not what's happening.
+        // For a non-root candidate there is no yToken (altAlgs isn't
+        // applied there) and §4.12's superset filter already makes
+        // `allCorners` trustworthy, so it's used unchanged.
+        const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
+        const trueClaimedEdges = isRoot ? relabelSlotsForRotation(allEdges, yToken) : allEdges;
+
+        // The node this candidate really reaches is the one labelled with
+        // the slots it PHYSICALLY solves (in the frame after fullRotation,
+        // which every later step searches and replays in) -- not the
+        // unrotated DAG target. Committing the unrotated target made later
+        // steps protect the wrong slot: found 2026-10-04 (PROJECT_STATUS.md
+        // §4.16), 26 of 501 later-step candidates on one scramble broke the
+        // committed pair while still passing the luck check.
+        // A pro-move-set alg can end rotated (a mid-step y, or wide moves):
+        // claims are checked in the step's STARTING frame (its own net
+        // rotation undone), but the node it reaches is labelled in the
+        // frame the cube ends in -- read off the physical result, like the
+        // §4.16 fix, so later steps keep reading labels correctly.
+        const stepRotation = session.proMoves && !isPseudo ? netRotation(finalCoreAlg) : '';
+        let reachedNodeId;
+        if (stepRotation) {
+          const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, finalCoreAlg));
+          const pairs = F2L_SLOTS.filter(sl => after[sl]);
+          reachedNodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
+        } else {
+          reachedNodeId = isRoot
+            ? rootTargetByLabels(session, trueClaimedCorners, trueClaimedEdges)
+            : edge.target;
+        }
+        if (!reachedNodeId) {
+          console.warn('Discarding candidate: no DAG node for its rotated claim', { trueClaimedCorners, trueClaimedEdges, rotation: fullRotation });
+          continue;
+        }
+
+        // Luck filtering (README "Luck filtering") -- discard any
+        // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
+        // edge's full claimed target, old+new pairs, rotation-corrected)
+        // when physically replayed. See this file's header comment and
+        // PROJECT_STATUS.md §4.3/§4.9 for why a real cube-state check, not
+        // a solver probe, is needed.
+        const luckCheck = checkCandidateAgainstRealCubeState(
+          session.scramble, fullRotation, session.scoredPath,
+          stepRotation ? `${finalCoreAlg} ${inverseRotation(stepRotation)}` : finalCoreAlg,
+          trueClaimedCorners, trueClaimedEdges
+        );
+        if (!luckCheck.ok) {
+          if (luckCheck.reason.includes('claimed solved but is not actually solved')) {
+            console.warn(`Discarding candidate: ${luckCheck.reason}`, { coreAlg: finalCoreAlg, rotation: fullRotation, trueClaimedCorners });
           }
+          continue;
+        }
 
-          // Side-cross inspections (pro move set, root only): start with a
-          // wide move from an inspection that has the cross on a side. Each
-          // variant is physically identical to this candidate, end orientation
-          // included (the wide move's x-rotation is undone in the free
-          // inspection rotation), so it reaches the same node with the same
-          // labels. §4.25.
-          if (isRoot && session.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
-            for (const v of inspectionWideVariants(finalCoreAlg)) {
-              const vTpp = algSpeed(v.alg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
-              candidates.push({
-                ...candidate,
-                rotation: rotationName(`${fullRotation} ${v.inspection}`),
-                coreAlg: v.alg,
-                tpp: Number.isFinite(vTpp) ? vTpp : Infinity,
-              });
-            }
+        const scoredAlg = session.scoredPath
+          ? session.scoredPath + ' ' + finalCoreAlg
+          : finalCoreAlg;
+        const tppScore = algSpeed(scoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+
+        // Display label ("corners"/"edges" columns: what's NEWLY solved
+        // by this step specifically, not the full cumulative claim used
+        // above). Root: `trueClaimedCorners` already IS just the new
+        // slots, rotation-corrected (root's current node has none solved
+        // yet). Non-root: take the set difference between the target's
+        // full (trustworthy, superset-checked) claim and the current
+        // node's own corners/edges -- simpler and more robust than any
+        // rotation algebra, since it only depends on fields already known
+        // to be correct (§4.12 finding #3's fix).
+        const displayCorners = isRoot
+          ? trueClaimedCorners
+          : allCorners.filter(c => !(session.currentNode.state.corners || []).includes(c));
+        const displayEdges = isRoot
+          ? relabelSlotsForRotation(newEdges, yToken)
+          : (targetNode.state.edges || []).filter(e => !(session.currentNode.state.edges || []).includes(e));
+
+        const candidate = {
+          color: isRoot ? color : (session.committedRows[0] ? session.committedRows[0].color : ''),
+          type: edgeTypeLabel(pairCount, isRoot, isPseudo),
+          rotation: fullRotation,
+          edges: displayEdges,
+          corners: displayCorners,
+          coreAlg: finalCoreAlg,
+          tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
+          targetNodeId: reachedNodeId,
+        };
+        candidates.push(candidate);
+
+        // Rotation spellings (pro move set; README "Professional reference
+        // solves"): the engine often returns the un-rotated spelling
+        // ("U' B U B'") of what a human does with a rotation ("y U' R U R'").
+        // Each spelling is physically "this alg, then y/y'", so it solves the
+        // same pieces; only the frame it ends in (hence the node labels)
+        // changes, read off the physical result as above. At most one
+        // rotation per step, as in the pro move set; never a leading one at
+        // the root (that is an inspection variant). §4.20.
+        if (session.proMoves && !isPseudo && typeof rotationSpellings === 'function') {
+          for (const spelling of rotationSpellings(finalCoreAlg, !isRoot)) {
+            if (spelling.split(' ').filter(t => /^[xyz]/.test(t)).length > 1) continue;
+            const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, spelling));
+            const pairs = F2L_SLOTS.filter(sl => after[sl]);
+            const nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
+            if (!nodeId) continue;
+            const spTpp = algSpeed(session.scoredPath ? `${session.scoredPath} ${spelling}` : spelling, false, false)
+              / calculateSolvedPieces(session.rootNode, targetNode);
+            candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
+          }
+        }
+
+        // Side-cross inspections (pro move set, root only): start with a
+        // wide move from an inspection that has the cross on a side. Each
+        // variant is physically identical to this candidate, end orientation
+        // included (the wide move's x-rotation is undone in the free
+        // inspection rotation), so it reaches the same node with the same
+        // labels. §4.25.
+        if (isRoot && session.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
+          for (const v of inspectionWideVariants(finalCoreAlg)) {
+            const vTpp = algSpeed(v.alg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+            candidates.push({
+              ...candidate,
+              rotation: rotationName(`${fullRotation} ${v.inspection}`),
+              coreAlg: v.alg,
+              tpp: Number.isFinite(vTpp) ? vTpp : Infinity,
+            });
           }
         }
       }
@@ -919,12 +964,16 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper)
   const results = await memoSearch(session, helper, onStatus, pseudoHelper);
   if (!results.length) return { tpp: Infinity, algs: [] };
   if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg] };
+  // Explored in parallel (an engine pool runs their searches side by side),
+  // compared in rank order so ties resolve exactly as a sequential loop would.
+  const top = results.slice(0, LOOKAHEAD_INNER_BREADTH);
+  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper)));
   let best = null;
-  for (const c of results.slice(0, LOOKAHEAD_INNER_BREADTH)) {
-    const sub = await bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper);
+  top.forEach((c, i) => {
+    const sub = subs[i];
     const tpp = sub ? sub.tpp : c.tpp; // null: c completes Cross+F2L
     if (!best || tpp < best.tpp) best = { tpp, algs: [c.coreAlg, ...(sub ? sub.algs : [])] };
-  }
+  });
   return best;
 }
 
@@ -943,17 +992,15 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   if (depth === 1 || !results.length) return results;
 
   const top = results.slice(0, breadth);
-  const reranked = [];
-  for (let i = 0; i < top.length; i++) {
-    const cand = top[i];
+  const bests = await Promise.all(top.map((cand, i) => {
     const status = onStatus && (msg => onStatus(`Look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    const best = await bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper);
-    reranked.push({
-      ...cand,
-      lookaheadTpp: best ? best.tpp : cand.tpp,
-      lookaheadAlgs: best ? best.algs : [],
-    });
-  }
+    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper);
+  }));
+  const reranked = top.map((cand, i) => ({
+    ...cand,
+    lookaheadTpp: bests[i] ? bests[i].tpp : cand.tpp,
+    lookaheadAlgs: bests[i] ? bests[i].algs : [],
+  }));
   reranked.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
   return reranked.concat(results.slice(breadth));
 }

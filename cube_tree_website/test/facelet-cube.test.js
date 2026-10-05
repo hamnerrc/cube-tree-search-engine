@@ -147,8 +147,50 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
     check(`inspectionWideVariants: physically identical incl. end orientation, wide move within the first two (${n} variants, ${bad} bad)`, n > 0 && bad === 0);
 }
 
+{
+    // §4.34: the table-driven canonicalizeForEngine / relabelAlgForRotation /
+    // inverseRotation must give exactly what the plain permutation versions
+    // (the pre-optimisation code, kept here as the reference) give.
+    const F = require('../js/facelet-cube.js');
+    const { MOVE_TABLE, composePerm, invertPerm, IDENTITY_PERM } = F;
+    const key = p => p.join(',');
+    const rotations = [...'xyz'].flatMap(a => [a, a + "'", a + '2']);
+    const faces = [...'UDRLFB'].flatMap(f => [f, f + "'", f + '2']);
+    const derived = { r: ['L', 'x'], l: ['R', "x'"], u: ['D', 'y'], d: ['U', "y'"], f: ['B', 'z'], b: ['F', "z'"], M: ['R', "L'", "x'"], E: ['U', "D'", "y'"], S: ["F'", 'B', 'z'] };
+    const all = [...faces, ...rotations, ...Object.keys(derived).flatMap(n => [n, n + "'", n + '2'])];
+    const tokenByPerm = new Map();
+    for (const t of all) if (!tokenByPerm.has(key(MOVE_TABLE[t]))) tokenByPerm.set(key(MOVE_TABLE[t]), t);
+    const faceByPerm = new Map(faces.map(t => [key(MOVE_TABLE[t]), t]));
+    const permOf = s => s.split(' ').filter(Boolean).reduce((a, t) => composePerm(a, MOVE_TABLE[t]), IDENTITY_PERM);
+    const inv = t => t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : t + "'";
+    const prim = tok => { const b = tok.replace(/['2]$/, ''); const parts = derived[b]; if (!parts) return [tok]; if (tok.endsWith("'")) return parts.slice().reverse().map(inv); if (tok.endsWith('2')) return parts.concat(parts); return parts.slice(); };
+    const refRelabel = (alg, rot) => { const r = permOf(rot); const ir = invertPerm(r); return alg.split(' ').filter(Boolean).map(t => tokenByPerm.get(key(composePerm(composePerm(ir, MOVE_TABLE[t]), r)))).join(' '); };
+    const refCanonMoves = (prefix, alg) => {
+        let Q = IDENTITY_PERM; const early = [];
+        for (const tok of [prefix, alg].filter(Boolean).join(' ').split(' ').filter(Boolean)) for (const p of prim(tok)) {
+            if (rotations.includes(p)) { Q = composePerm(Q, MOVE_TABLE[p]); continue; }
+            early.push(composePerm(composePerm(Q, MOVE_TABLE[p]), invertPerm(Q)));
+        }
+        const iQ = invertPerm(Q);
+        return { Q, moves: early.map(e => faceByPerm.get(key(composePerm(composePerm(iQ, e), Q)))).join(' ') };
+    };
+    let seed = 11, bad = 0;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const pick = arr => arr[Math.floor(rnd() * arr.length)];
+    for (let i = 0; i < 3000; i++) {
+        const alg = Array.from({ length: 1 + Math.floor(rnd() * 14) }, () => pick(all)).join(' ');
+        const prefix = Array.from({ length: Math.floor(rnd() * 3) }, () => pick(rotations)).join(' ');
+        const got = F.canonicalizeForEngine(prefix, alg);
+        const ref = refCanonMoves(prefix, alg);
+        if (got.moves !== ref.moves || key(permOf(got.rotation)) !== key(ref.Q)) bad++;
+        if (F.relabelAlgForRotation(alg, prefix) !== refRelabel(alg, prefix)) bad++;
+        if (key(permOf(F.inverseRotation(prefix))) !== key(invertPerm(permOf(prefix)))) bad++;
+    }
+    check(`table-driven rotation helpers match the permutation reference on 3000 random mixed-notation algs (${bad} mismatches)`, bad === 0);
+}
+
 if (process.exitCode) {
-    console.error(`\n${passCount}/${cases.length + 8} checks passed.`);
+    console.error(`\n${passCount}/${cases.length + 9} checks passed.`);
 } else {
     console.log('\nAll facelet-cube.js tests passed.');
 }

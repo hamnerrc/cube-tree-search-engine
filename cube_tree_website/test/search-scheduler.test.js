@@ -125,6 +125,42 @@ test('many concurrent jobs never overlap engine calls', async () => {
   assert.strictEqual(log.length, 24);
 });
 
+test('a helper array is a pool: up to one call per member at once, every member used, none overlapping', async () => {
+  const logs = [[], [], []];
+  const pool = logs.map(l => fakeHelper(l, 10));
+  let inFlight = 0, maxInFlight = 0;
+  pool.forEach(h => { const f = h.solveCross; h.solveCross = async (...a) => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); try { return await f.apply(h, a); } finally { inFlight--; } }; });
+  const s = createSearchScheduler();
+  const job = s.submit(async wrap => {
+    const g = wrap(pool);
+    assert.strictEqual(g.__gated, true);
+    return Promise.all(Array.from({ length: 9 }, (_, i) => g.solveCross(`c${i}`)));
+  }, ACTIVE);
+  const out = await job.promise; // fakeHelper throws if one member gets overlapping calls
+  assert.deepStrictEqual(out.map(r => r[0]), Array.from({ length: 9 }, (_, i) => `c${i}`), 'results come back to the right caller');
+  assert.ok(logs.every(l => l.length === 3), logs.map(l => l.length).join(','));
+  assert.strictEqual(maxInFlight, 3, 'all three members busy at once');
+});
+
+test('with a pool, background calls still wait while an active search runs', async () => {
+  const log = [];
+  const pool = [fakeHelper(log, 10), fakeHelper(log, 10)];
+  const s = createSearchScheduler();
+  const bg = s.submit(search(pool, 'b', 4), BACKGROUND);
+  await sleep(5);
+  const act = s.submit(async wrap => {
+    const g = wrap(pool);
+    await Promise.all([g.solveCross('X0'), g.solveCross('X1')]);
+    await sleep(15); // post-processing: background must stay paused
+    await Promise.all([g.solveCross('X2'), g.solveCross('X3')]);
+    return 'X';
+  }, ACTIVE);
+  await Promise.all([bg.promise, act.promise]);
+  const first = log.indexOf('X0') < log.indexOf('X1') ? log.indexOf('X0') : log.indexOf('X1');
+  const last = Math.max(log.indexOf('X2'), log.indexOf('X3'));
+  assert.ok(log.slice(first, last + 1).every(t => t.startsWith('X')), log.join(' '));
+});
+
 (async () => {
   let failures = 0;
   for (const t of tests) {

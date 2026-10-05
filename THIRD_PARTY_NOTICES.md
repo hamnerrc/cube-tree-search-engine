@@ -34,6 +34,18 @@ listed here with the date of the change.
 - **2026-10-04** `crossSolver/worker-persistent.js`, `pseudoCrossSolver/worker3.js`:
   forward the worker's query string (engine version) to `solver.js` /
   `pseudo.js` and their `.wasm` files (cache busting).
+- **2026-10-04** `crossSolver/solver.cpp` (performance; outputs verified
+  byte-identical to the previous binary on a call battery):
+  `corner_prune_table()` caches the "cross + one corner" prune tables per
+  (corner, move list) and shares them between all xcross..xxxxcross solver
+  instances, replacing each instance's own copy and its `_initialized` flag
+  (this also stops a persistent solver reusing a table built for a different
+  move list); `pair_prune_table()` adds an admissible pairs-only lower bound
+  (cached per pieces and move list) checked in the xcross, xxcross, xxxcross
+  and xxxxcross searches (`>= depth` after a move, `> depth` after a
+  rotation, which consumes no move); `create_prune_table()` precomputes, per
+  centre state, the ordered list of distinct base moves instead of re-trying
+  every move/rotation combination per cell (same table).
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

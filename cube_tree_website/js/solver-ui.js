@@ -29,7 +29,7 @@
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261004-noop1';
+const ENGINE_VERSION = '20261004-pairs1';
 
 // SESSION_STATE_KEY is declared once, in script.js (loaded before this file
 // on solver.html, and needed standalone by index.html's clearScrambleData)
@@ -60,10 +60,26 @@ const ENGINE_VERSION = '20261004-noop1';
     return (colors && colors.length) ? colors : ['white'];
   }
 
+  // A pool of engine workers (PROJECT_STATUS.md §4.34): each search starts all
+  // of its solver calls at once and the scheduler runs one per worker, so the
+  // calls of a search (one per DAG edge and colour) run in parallel. One core
+  // is left for the page itself; each worker holds its own tables (~100 MB).
+  const ENGINE_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+
   async function ensureHelper() {
     if (!helper) {
-      helper = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}`);
-      await helper.init();
+      helper = (async () => {
+        const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
+          const h = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}`);
+          await h.init();
+          return h;
+        });
+        const settled = await Promise.allSettled(started);
+        const pool = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        if (!pool.length) throw settled[0].reason;
+        return pool;
+      })();
+      helper.catch(() => { helper = null; });
     }
     return helper;
   }

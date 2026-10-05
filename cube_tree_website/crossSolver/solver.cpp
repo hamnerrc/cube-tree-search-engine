@@ -9,6 +9,7 @@
 #include <sstream>
 #include <cstdlib>
 #include <bitset>
+#include <map>
 
 EM_JS(void, update, (const char *str), {
     postMessage(UTF8ToString(str));
@@ -725,17 +726,9 @@ void create_prune_table(int index1, int index2, int size1, int size2, int depth,
     int size = size1 * size2;
     tmp_array = std::vector<unsigned char>(size, 0);
     int start = index1 * size2 + index2;
-    int next_i;
-    int index1_tmp;
-    int index2_tmp;
-    int next_d;
     prune_table[start] = 0;
     int num = 1;
     int num_old = 1;
-    int m;
-    int center = 0;
-    int center_tmp;
-    std::bitset<27> computed;
     std::vector<int> move_restrict_move;
     std::vector<int> move_restrict_rot;
     for (int i : move_restrict)
@@ -749,58 +742,54 @@ void create_prune_table(int index1, int index2, int size1, int size2, int depth,
             move_restrict_rot.emplace_back(i);
         }
     }
+    // cube⑂tree modification (2026-10-04, PROJECT_STATUS.md §4.34): the
+    // successors of a cell depend only on its centre state, so for each of the
+    // 24 centre states list the distinct base moves once, in the order the
+    // original loop first tried them (each move j, then j after each
+    // rotation), with the centre the original stored for them. A base move
+    // tried again later can only reach a cell that is already set, so this
+    // is the same table; with rotations it cuts ~140 tries per cell to <= 27.
+    std::vector<std::vector<std::pair<int, int>>> steps(24);
+    for (int center = 0; center < 24; ++center)
+    {
+        std::bitset<27> seen;
+        for (int j : move_restrict_move)
+        {
+            int m = converter[rotationMapReverse[center][j]];
+            if (!seen[m])
+            {
+                seen.set(m);
+                steps[center].emplace_back(m, center_move_table[center][j]);
+            }
+            for (int r : move_restrict_rot)
+            {
+                int center_tmp = center_move_table[center][r];
+                m = converter[rotationMapReverse[center_tmp][j]];
+                if (!seen[m])
+                {
+                    seen.set(m);
+                    steps[center].emplace_back(m, center_move_table[center][j]);
+                }
+            }
+        }
+    }
     for (int d = 0; d < depth; ++d)
     {
-        next_d = d + 1;
+        int next_d = d + 1;
         for (int i = 0; i < size; ++i)
         {
             if (prune_table[i] == d)
             {
-                index1_tmp = (i / size2) * 27;
-                index2_tmp = (i % size2) * 27;
-                center = tmp_array[i];
-                for (int j : move_restrict_move)
+                int index1_tmp = (i / size2) * 27;
+                int index2_tmp = (i % size2) * 27;
+                for (const auto &step : steps[tmp_array[i]])
                 {
-                    computed.reset();
-                    if (j >= 45)
+                    int next_i = table1[index1_tmp + step.first] * size2 + table2[index2_tmp + step.first];
+                    if (prune_table[next_i] == 255)
                     {
-                        continue;
-                    }
-                    m = converter[rotationMapReverse[center][j]];
-                    if (!computed[m])
-                    {
-                        next_i = table1[index1_tmp + m] * size2 + table2[index2_tmp + m];
-                        if (prune_table[next_i] == 255)
-                        {
-                            tmp_array[next_i] = center_move_table[center][j];
-                            prune_table[next_i] = next_d;
-                            num += 1;
-                        }
-                        computed.set(m);
-                    }
-                    else
-                    {
-                        continue;
-                    }
-                    for (int r : move_restrict_rot)
-                    {
-                        center_tmp = center_move_table[center][r];
-                        m = converter[rotationMapReverse[center_tmp][j]];
-                        if (!computed[m])
-                        {
-                            next_i = table1[index1_tmp + m] * size2 + table2[index2_tmp + m];
-                            if (prune_table[next_i] == 255)
-                            {
-                                tmp_array[next_i] = center_move_table[center][j];
-                                prune_table[next_i] = next_d;
-                                num += 1;
-                            }
-                            computed.set(m);
-                        }
-                        else
-                        {
-                            continue;
-                        }
+                        tmp_array[next_i] = step.second;
+                        prune_table[next_i] = next_d;
+                        num += 1;
                     }
                 }
             }
@@ -811,6 +800,137 @@ void create_prune_table(int index1, int index2, int size1, int size2, int depth,
         }
         num_old = num;
     }
+}
+
+// cube⑂tree modification (2026-10-04, PROJECT_STATUS.md §4.34): every F2L
+// solver class (xcross..xxxxcross, any slot combination) prunes on the same
+// "cross + one corner" tables, which only depend on the corner and the move
+// list. Build each (corner, move list) table once and share it, instead of
+// once per solver instance and slot -- up to 32 builds (~145 MB) became at
+// most 4 per move list. Keying on the exact move list also stops a persistent
+// solver reusing a table built for a different move set. The move list is not
+// sorted: create_prune_table's centre bookkeeping depends on its order, and
+// tables must stay byte-identical to the per-instance ones.
+static std::map<std::pair<int, std::vector<int>>, std::vector<unsigned char>> g_corner_prune_cache;
+const unsigned char *corner_prune_table(int corner_index, const std::vector<int> &move_restrict_tmp)
+{
+    auto key = std::make_pair(corner_index, move_restrict_tmp);
+    auto it = g_corner_prune_cache.find(key);
+    if (it != g_corner_prune_cache.end())
+    {
+        return it->second.data();
+    }
+    std::vector<unsigned char> table(24 * 22 * 20 * 18 * 24, 255);
+    std::vector<unsigned char> scratch;
+    std::vector<int> moves = move_restrict_tmp;
+    solver_yield();
+    if (solver_is_cancelled())
+    {
+        return nullptr;
+    }
+    create_prune_table(187520, corner_index, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, table, moves, scratch, g_center_move_table);
+    if (solver_is_cancelled())
+    {
+        return nullptr;
+    }
+    std::vector<unsigned char> &stored = g_corner_prune_cache[key];
+    stored = std::move(table);
+    return stored.data();
+}
+
+// cube⑂tree modification (2026-10-04, PROJECT_STATUS.md §4.34): an extra
+// admissible lower bound for multi-pair searches -- the distance to solve the
+// given F2L pairs' corners and edges alone (no cross), over 24^(2k) states
+// (k = 1 or 2 pairs: 576 or 331,776 entries), built once per (pieces, moves)
+// by plain BFS in the absolute frame. With a face-turn-only move list the
+// frame never changes, so those exact moves are used; with wide moves or
+// rotations every face can come into play, so all 18 face turns are used (a
+// superset of moves: still a lower bound). Slice moves move pair edges in ways
+// this table does not model, so it is not used then (nullptr). A tighter
+// admissible bound only skips subtrees that contain no solution within the
+// depth limit, so the solutions found, and their order, are unchanged.
+static std::map<std::pair<std::vector<int>, std::vector<int>>, std::vector<unsigned char>> g_pair_prune_cache;
+const unsigned char *pair_prune_table(const std::vector<int> &pieces, const std::vector<int> &move_restrict_tmp)
+{
+    bool face_only = true;
+    for (int mv : move_restrict_tmp)
+    {
+        if (mv >= 36 && mv < 45)
+        {
+            return nullptr;
+        }
+        if (mv >= 18)
+        {
+            face_only = false;
+        }
+    }
+    std::vector<int> faces;
+    if (face_only)
+    {
+        faces = move_restrict_tmp;
+        std::sort(faces.begin(), faces.end());
+        faces.erase(std::unique(faces.begin(), faces.end()), faces.end());
+    }
+    else
+    {
+        for (int i = 0; i < 18; ++i)
+        {
+            faces.push_back(i);
+        }
+    }
+    auto key = std::make_pair(pieces, faces);
+    auto it = g_pair_prune_cache.find(key);
+    if (it != g_pair_prune_cache.end())
+    {
+        return it->second.data();
+    }
+    int n = static_cast<int>(pieces.size()); // corner, edge, corner, edge, ...
+    int size = 1;
+    for (int k = 0; k < n; ++k)
+    {
+        size *= 24;
+    }
+    std::vector<unsigned char> table(size, 255);
+    int start = 0;
+    for (int k = 0; k < n; ++k)
+    {
+        start = start * 24 + pieces[k];
+    }
+    table[start] = 0;
+    std::vector<int> frontier = {start};
+    std::vector<int> next;
+    std::vector<int> digits(n);
+    for (int d = 0; !frontier.empty() && d < 254; ++d)
+    {
+        next.clear();
+        for (int cell : frontier)
+        {
+            int c = cell;
+            for (int k = n - 1; k >= 0; --k)
+            {
+                digits[k] = c % 24;
+                c /= 24;
+            }
+            for (int m : faces)
+            {
+                int to = 0;
+                for (int k = 0; k < n; ++k)
+                {
+                    const std::vector<int> &t = (k % 2 == 0) ? g_corner_move_table : g_edge_move_table;
+                    to = to * 24 + t[digits[k] * 27 + m];
+                }
+                if (table[to] == 255)
+                {
+                    table[to] = d + 1;
+                    next.push_back(to);
+                }
+            }
+        }
+        frontier.swap(next);
+    }
+    std::vector<unsigned char> &stored = g_pair_prune_cache[key];
+    stored = std::move(table);
+    return stored.data();
 }
 
 std::vector<bool> create_ma_table()
@@ -1369,8 +1489,8 @@ struct xcross_search
     int sol_num;
     int count;
     std::vector<unsigned char> tmp_array;
-    std::vector<unsigned char> prune_table1;
-    bool prune_table1_initialized;
+    const unsigned char *prune_table1 = nullptr;
+    const unsigned char *pair_table = nullptr; // §4.34 pairs bound
     std::vector<int> alg;
     std::vector<std::string> restrict;
     std::vector<int> move_restrict;
@@ -1399,7 +1519,6 @@ struct xcross_search
     xcross_search()
     {
         // move tables are in globals; prune table allocation deferred to start_search_persistent()
-        prune_table1_initialized = false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index3, int depth, int center, int rot_count, int aprev)
@@ -1423,6 +1542,10 @@ struct xcross_search
             index3_tmp = g_edge_move_table[arg_index3 + m];
             prune1_tmp = prune_table1[index1_tmp * 24 + index2_tmp];
             if (prune1_tmp != 255 && prune1_tmp >= depth)
+            {
+                continue;
+            }
+            if (pair_table && pair_table[(index2_tmp) * 24 + index3_tmp] >= depth)
             {
                 continue;
             }
@@ -1544,6 +1667,11 @@ struct xcross_search
             index3_tmp = arg_index3 / 27;
             prune1_tmp = prune_table1[index1_tmp * 24 + index2_tmp];
             if (prune1_tmp != 255 && prune1_tmp >= depth)
+            {
+                continue;
+            }
+            // A rotation consumes no move: only h > depth proves no solution (§4.34).
+            if (pair_table && pair_table[(index2_tmp) * 24 + index3_tmp] > depth)
             {
                 continue;
             }
@@ -1704,7 +1832,8 @@ struct xcross_search
         index2 = corner_index[slot1];
         index3 = single_edge_index[slot1];
         edge_solved1 = index3;
-        create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
+        pair_table = pair_prune_table({index2, index3}, move_restrict_tmp);
         count = 0;
         int aprev_tmp = 54;
         for (int m : alg)
@@ -1818,21 +1947,12 @@ struct xcross_search
         index2 = corner_index[slot1];
         index3 = single_edge_index[slot1];
         edge_solved1 = index3;
-        if (!prune_table1_initialized)
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
+        pair_table = pair_prune_table({index2, index3}, move_restrict_tmp);
+        if (!prune_table1)
         {
-            prune_table1 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table1_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
         if (solver_is_cancelled())
         {
@@ -1914,10 +2034,9 @@ struct xxcross_search
     int sol_num;
     int count;
     std::vector<unsigned char> tmp_array;
-    std::vector<unsigned char> prune_table1;
-    bool prune_table1_initialized;
-    std::vector<unsigned char> prune_table2;
-    bool prune_table2_initialized;
+    const unsigned char *prune_table1 = nullptr;
+    const unsigned char *prune_table2 = nullptr;
+    const unsigned char *pair_table = nullptr; // §4.34: both pairs' corners+edges
     std::vector<int> alg;
     std::vector<std::string> restrict;
     std::vector<int> move_restrict;
@@ -1953,8 +2072,6 @@ struct xxcross_search
 
     xxcross_search()
     {
-        prune_table1_initialized = false;
-        prune_table2_initialized = false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index5, int arg_index6, int depth, int center, int rot_count, int aprev)
@@ -1985,6 +2102,10 @@ struct xxcross_search
             index6_tmp = g_edge_move_table[arg_index6 + m];
             prune2_tmp = prune_table2[index1_tmp * 24 + index4_tmp];
             if (prune2_tmp != 255 && prune2_tmp >= depth)
+            {
+                continue;
+            }
+            if (pair_table && pair_table[((index2_tmp * 24 + index5_tmp) * 24 + index4_tmp) * 24 + index6_tmp] >= depth)
             {
                 continue;
             }
@@ -2119,6 +2240,12 @@ struct xxcross_search
             index6_tmp = arg_index6 / 27;
             prune2_tmp = prune_table2[index1_tmp * 24 + index4_tmp];
             if (prune2_tmp != 255 && prune2_tmp >= depth)
+            {
+                continue;
+            }
+            // A rotation consumes no move: `depth` moves remain after it, so
+            // only h > depth proves there is no solution below (§4.34).
+            if (pair_table && pair_table[((index2_tmp * 24 + index5_tmp) * 24 + index4_tmp) * 24 + index6_tmp] > depth)
             {
                 continue;
             }
@@ -2286,11 +2413,12 @@ struct xxcross_search
         index2 = corner_index[slot1];
         index5 = single_edge_index[slot1];
         edge_solved1 = index5;
-        create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
         index4 = corner_index[slot2];
         index6 = single_edge_index[slot2];
         edge_solved2 = index6;
-        create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
+        pair_table = pair_prune_table({index2, index5, index4, index6}, move_restrict_tmp);
         count = 0;
         int aprev_tmp = 54;
         for (int m : alg)
@@ -2415,37 +2543,18 @@ struct xxcross_search
         index4 = corner_index[slot2];
         index6 = single_edge_index[slot2];
         edge_solved2 = index6;
-        if (!prune_table1_initialized)
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
+        if (!prune_table1)
         {
-            prune_table1 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table1_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table2_initialized)
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
+        pair_table = pair_prune_table({index2, index5, index4, index6}, move_restrict_tmp);
+        if (!prune_table2)
         {
-            prune_table2 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table2_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
         if (solver_is_cancelled())
         {
@@ -2535,12 +2644,12 @@ struct xxxcross_search
     int sol_num;
     int count;
     std::vector<unsigned char> tmp_array;
-    std::vector<unsigned char> prune_table1;
-    bool prune_table1_initialized;
-    std::vector<unsigned char> prune_table2;
-    bool prune_table2_initialized;
-    std::vector<unsigned char> prune_table3;
-    bool prune_table3_initialized;
+    const unsigned char *prune_table1 = nullptr;
+    const unsigned char *prune_table2 = nullptr;
+    const unsigned char *prune_table3 = nullptr;
+    const unsigned char *pair_table12 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table13 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table23 = nullptr; // §4.34 pairs bound
     std::vector<int> alg;
     std::vector<std::string> restrict;
     std::vector<int> move_restrict;
@@ -2584,9 +2693,6 @@ struct xxxcross_search
 
     xxxcross_search()
     {
-        prune_table1_initialized = false;
-        prune_table2_initialized = false;
-        prune_table3_initialized = false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index7, int arg_index8, int arg_index9, int depth, int center, int rot_count, int aprev)
@@ -2624,6 +2730,18 @@ struct xxxcross_search
             index9_tmp = g_edge_move_table[arg_index9 + m];
             prune3_tmp = prune_table3[index1_tmp * 24 + index6_tmp];
             if (prune3_tmp != 255 && prune3_tmp >= depth)
+            {
+                continue;
+            }
+            if (pair_table12 && pair_table12[(((index2_tmp) * 24 + index7_tmp) * 24 + index4_tmp) * 24 + index8_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table13 && pair_table13[(((index2_tmp) * 24 + index7_tmp) * 24 + index6_tmp) * 24 + index9_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index8_tmp) * 24 + index6_tmp) * 24 + index9_tmp] >= depth)
             {
                 continue;
             }
@@ -2771,6 +2889,19 @@ struct xxxcross_search
             index9_tmp = arg_index9 / 27;
             prune3_tmp = prune_table3[index1_tmp * 24 + index6_tmp];
             if (prune3_tmp != 255 && prune3_tmp >= depth)
+            {
+                continue;
+            }
+            // A rotation consumes no move: only h > depth proves no solution (§4.34).
+            if (pair_table12 && pair_table12[(((index2_tmp) * 24 + index7_tmp) * 24 + index4_tmp) * 24 + index8_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table13 && pair_table13[(((index2_tmp) * 24 + index7_tmp) * 24 + index6_tmp) * 24 + index9_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index8_tmp) * 24 + index6_tmp) * 24 + index9_tmp] > depth)
             {
                 continue;
             }
@@ -2945,15 +3076,18 @@ struct xxxcross_search
         index2 = corner_index[slot1];
         index7 = single_edge_index[slot1];
         edge_solved1 = index7;
-        create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
         index4 = corner_index[slot2];
         index8 = single_edge_index[slot2];
         edge_solved2 = index8;
-        create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
         index6 = corner_index[slot3];
         index9 = single_edge_index[slot3];
         edge_solved3 = index9;
-        create_prune_table(index1, index6, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table3, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table3 = corner_prune_table(index6, move_restrict_tmp);
+        pair_table12 = pair_prune_table({index2, index7, index4, index8}, move_restrict_tmp);
+        pair_table13 = pair_prune_table({index2, index7, index6, index9}, move_restrict_tmp);
+        pair_table23 = pair_prune_table({index4, index8, index6, index9}, move_restrict_tmp);
         count = 0;
         int aprev_tmp = 54;
         for (int m : alg)
@@ -3089,53 +3223,26 @@ struct xxxcross_search
         index6 = corner_index[slot3];
         index9 = single_edge_index[slot3];
         edge_solved3 = index9;
-        if (!prune_table1_initialized)
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
+        if (!prune_table1)
         {
-            prune_table1 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table1_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table2_initialized)
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
+        if (!prune_table2)
         {
-            prune_table2 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table2_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table3_initialized)
+        prune_table3 = corner_prune_table(index6, move_restrict_tmp);
+        pair_table12 = pair_prune_table({index2, index7, index4, index8}, move_restrict_tmp);
+        pair_table13 = pair_prune_table({index2, index7, index6, index9}, move_restrict_tmp);
+        pair_table23 = pair_prune_table({index4, index8, index6, index9}, move_restrict_tmp);
+        if (!prune_table3)
         {
-            prune_table3 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index6, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table3, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table3_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
         if (solver_is_cancelled())
         {
@@ -3229,14 +3336,16 @@ struct xxxxcross_search
     int sol_num;
     int count;
     std::vector<unsigned char> tmp_array;
-    std::vector<unsigned char> prune_table1;
-    bool prune_table1_initialized;
-    std::vector<unsigned char> prune_table2;
-    bool prune_table2_initialized;
-    std::vector<unsigned char> prune_table3;
-    bool prune_table3_initialized;
-    std::vector<unsigned char> prune_table4;
-    bool prune_table4_initialized;
+    const unsigned char *prune_table1 = nullptr;
+    const unsigned char *prune_table2 = nullptr;
+    const unsigned char *prune_table3 = nullptr;
+    const unsigned char *prune_table4 = nullptr;
+    const unsigned char *pair_table12 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table34 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table13 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table24 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table14 = nullptr; // §4.34 pairs bound
+    const unsigned char *pair_table23 = nullptr; // §4.34 pairs bound
     std::vector<int> alg;
     std::vector<std::string> restrict;
     std::vector<int> move_restrict;
@@ -3284,10 +3393,6 @@ struct xxxxcross_search
 
     xxxxcross_search()
     {
-        prune_table1_initialized = false;
-        prune_table2_initialized = false;
-        prune_table3_initialized = false;
-        prune_table4_initialized = false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int depth, int center, int rot_count, int aprev)
@@ -3332,6 +3437,30 @@ struct xxxxcross_search
             index12_tmp = g_edge_move_table[arg_index12 + m];
             prune4_tmp = prune_table4[index1_tmp * 24 + index8_tmp];
             if (prune4_tmp != 255 && prune4_tmp >= depth)
+            {
+                continue;
+            }
+            if (pair_table12 && pair_table12[(((index2_tmp) * 24 + index9_tmp) * 24 + index4_tmp) * 24 + index10_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table34 && pair_table34[(((index6_tmp) * 24 + index11_tmp) * 24 + index8_tmp) * 24 + index12_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table13 && pair_table13[(((index2_tmp) * 24 + index9_tmp) * 24 + index6_tmp) * 24 + index11_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table24 && pair_table24[(((index4_tmp) * 24 + index10_tmp) * 24 + index8_tmp) * 24 + index12_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table14 && pair_table14[(((index2_tmp) * 24 + index9_tmp) * 24 + index8_tmp) * 24 + index12_tmp] >= depth)
+            {
+                continue;
+            }
+            if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index10_tmp) * 24 + index6_tmp) * 24 + index11_tmp] >= depth)
             {
                 continue;
             }
@@ -3492,6 +3621,31 @@ struct xxxxcross_search
             index12_tmp = arg_index12 / 27;
             prune4_tmp = prune_table4[index1_tmp * 24 + index8_tmp];
             if (prune4_tmp != 255 && prune4_tmp >= depth)
+            {
+                continue;
+            }
+            // A rotation consumes no move: only h > depth proves no solution (§4.34).
+            if (pair_table12 && pair_table12[(((index2_tmp) * 24 + index9_tmp) * 24 + index4_tmp) * 24 + index10_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table34 && pair_table34[(((index6_tmp) * 24 + index11_tmp) * 24 + index8_tmp) * 24 + index12_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table13 && pair_table13[(((index2_tmp) * 24 + index9_tmp) * 24 + index6_tmp) * 24 + index11_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table24 && pair_table24[(((index4_tmp) * 24 + index10_tmp) * 24 + index8_tmp) * 24 + index12_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table14 && pair_table14[(((index2_tmp) * 24 + index9_tmp) * 24 + index8_tmp) * 24 + index12_tmp] > depth)
+            {
+                continue;
+            }
+            if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index10_tmp) * 24 + index6_tmp) * 24 + index11_tmp] > depth)
             {
                 continue;
             }
@@ -3668,16 +3822,22 @@ struct xxxxcross_search
         index1 = edge_index[0];
         index2 = corner_index[0];
         index9 = single_edge_index[0];
-        create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
         index4 = corner_index[1];
         index10 = single_edge_index[1];
-        create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
         index6 = corner_index[2];
         index11 = single_edge_index[2];
-        create_prune_table(index1, index6, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table3, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table3 = corner_prune_table(index6, move_restrict_tmp);
         index8 = corner_index[3];
         index12 = single_edge_index[3];
-        create_prune_table(index1, index8, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table4, move_restrict_tmp, tmp_array, g_center_move_table);
+        prune_table4 = corner_prune_table(index8, move_restrict_tmp);
+        pair_table12 = pair_prune_table({index2, index9, index4, index10}, move_restrict_tmp);
+        pair_table34 = pair_prune_table({index6, index11, index8, index12}, move_restrict_tmp);
+        pair_table13 = pair_prune_table({index2, index9, index6, index11}, move_restrict_tmp);
+        pair_table24 = pair_prune_table({index4, index10, index8, index12}, move_restrict_tmp);
+        pair_table14 = pair_prune_table({index2, index9, index8, index12}, move_restrict_tmp);
+        pair_table23 = pair_prune_table({index4, index10, index6, index11}, move_restrict_tmp);
         count = 0;
         int aprev_tmp = 54;
         for (int m : alg)
@@ -3816,69 +3976,35 @@ struct xxxxcross_search
         index11 = single_edge_index[2];
         index8 = corner_index[3];
         index12 = single_edge_index[3];
-        if (!prune_table1_initialized)
+        prune_table1 = corner_prune_table(index2, move_restrict_tmp);
+        if (!prune_table1)
         {
-            prune_table1 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index2, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table1, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table1_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table2_initialized)
+        prune_table2 = corner_prune_table(index4, move_restrict_tmp);
+        if (!prune_table2)
         {
-            prune_table2 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index4, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table2, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table2_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table3_initialized)
+        prune_table3 = corner_prune_table(index6, move_restrict_tmp);
+        if (!prune_table3)
         {
-            prune_table3 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index6, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table3, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table3_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
-        if (!prune_table4_initialized)
+        prune_table4 = corner_prune_table(index8, move_restrict_tmp);
+        pair_table12 = pair_prune_table({index2, index9, index4, index10}, move_restrict_tmp);
+        pair_table34 = pair_prune_table({index6, index11, index8, index12}, move_restrict_tmp);
+        pair_table13 = pair_prune_table({index2, index9, index6, index11}, move_restrict_tmp);
+        pair_table24 = pair_prune_table({index4, index10, index8, index12}, move_restrict_tmp);
+        pair_table14 = pair_prune_table({index2, index9, index8, index12}, move_restrict_tmp);
+        pair_table23 = pair_prune_table({index4, index10, index6, index11}, move_restrict_tmp);
+        if (!prune_table4)
         {
-            prune_table4 = std::vector<unsigned char>(24 * 22 * 20 * 18 * 24, 255);
-            solver_yield();
-            if (solver_is_cancelled()) { update("Search cancelled."); return; }
-            create_prune_table(index1, index8, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_corner_move_table, prune_table4, move_restrict_tmp, tmp_array, g_center_move_table);
-            if (!solver_is_cancelled())
-            {
-                prune_table4_initialized = true;
-            }
-            else
-            {
-                update("Search cancelled.");
-                return;
-            }
+            update("Search cancelled.");
+            return;
         }
         if (solver_is_cancelled())
         {
@@ -6980,6 +7106,8 @@ void setCancelCheckMask(int mask)
 {
     g_cancel_check_mask = mask;
 }
+
+
 
 EMSCRIPTEN_BINDINGS(my_module)
 {

@@ -11,16 +11,19 @@
  *    nothing else is running.
  *  - ACTIVE jobs (the scramble on screen, e.g. the search started by
  *    committing a result) start immediately.
- *  - Every engine call of every job goes through one priority gate: the
- *    engine call already in flight finishes, then the ACTIVE job's calls run,
- *    and a BACKGROUND job's calls wait for as long as any ACTIVE job is still
+ *  - Every engine call of every job goes through a priority gate per engine
+ *    (helper, or array of helpers = a worker pool, one slot per worker): calls
+ *    already in flight finish, then the ACTIVE job's calls run, and a
+ *    BACKGROUND job's calls wait for as long as any ACTIVE job is still
  *    running -- including its non-engine post-processing between calls -- so
  *    a background search pauses at its next engine call instead of competing.
+ *    A pool runs up to one call per worker at once (PROJECT_STATUS.md §4.34).
  *  - A job's priority can change while it is queued or running (setPriority):
  *    switching scrambles promotes the newly active one and demotes the old.
  *
  * Jobs talk to the engines only through wrap(helper), which gates the
- * helper's solve* methods; everything else passes through untouched.
+ * helper's solve* methods (dispatching each call to a free pool member);
+ * everything else passes through to the first member untouched.
  */
 'use strict';
 
@@ -29,39 +32,48 @@ const SEARCH_PRIORITY = { BACKGROUND: 0, ACTIVE: 1 };
 function createSearchScheduler() {
   const queued = []; // jobs not started yet, FIFO
   const running = new Set();
-  const gateWaiters = []; // { job, resolve }, FIFO within a priority
-  let gateBusy = false;
+  const gates = new Map(); // engine (helper or helper array) -> { free: [slot], waiters: [{ job, resolve }] }
 
   const activeRunning = () => [...running].some(j => j.priority > SEARCH_PRIORITY.BACKGROUND);
 
-  function pumpGate() {
-    if (gateBusy || !gateWaiters.length) return;
-    let best = 0;
-    for (let i = 1; i < gateWaiters.length; i++) {
-      if (gateWaiters[i].job.priority > gateWaiters[best].job.priority) best = i;
+  function pumpGate(g) {
+    while (g.free.length && g.waiters.length) {
+      let best = 0;
+      for (let i = 1; i < g.waiters.length; i++) {
+        if (g.waiters[i].job.priority > g.waiters[best].job.priority) best = i;
+      }
+      const waiter = g.waiters[best];
+      if (waiter.job.priority === SEARCH_PRIORITY.BACKGROUND && activeRunning()) return;
+      g.waiters.splice(best, 1);
+      waiter.resolve(g.free.shift());
     }
-    const waiter = gateWaiters[best];
-    if (waiter.job.priority === SEARCH_PRIORITY.BACKGROUND && activeRunning()) return;
-    gateWaiters.splice(best, 1);
-    gateBusy = true;
-    waiter.resolve();
+  }
+  const pumpGates = () => { for (const g of gates.values()) pumpGate(g); };
+
+  function gateFor(engine, size) {
+    if (!gates.has(engine)) gates.set(engine, { free: Array.from({ length: size }, (_, i) => i), waiters: [] });
+    return gates.get(engine);
   }
 
-  function gate(job, fn) {
-    return new Promise(resolve => { gateWaiters.push({ job, resolve }); pumpGate(); })
-      .then(fn)
-      .finally(() => { gateBusy = false; pumpGate(); });
+  function gate(job, engine, size, fn) {
+    const g = gateFor(engine, size);
+    return new Promise(resolve => { g.waiters.push({ job, resolve }); pumpGate(g); })
+      .then(slot => Promise.resolve()
+        .then(() => fn(slot))
+        .finally(() => { g.free.push(slot); pumpGates(); }));
   }
 
   function wrapFor(job) {
-    return helper => {
-      if (!helper) return helper;
-      return new Proxy(helper, {
+    return engine => {
+      if (!engine) return engine;
+      const members = Array.isArray(engine) ? engine : [engine];
+      return new Proxy(members[0], {
         get(target, prop) {
+          if (prop === '__gated') return true;
           const value = target[prop];
           if (typeof value !== 'function') return value;
           if (typeof prop === 'string' && prop.startsWith('solve')) {
-            return (...args) => gate(job, () => value.apply(target, args));
+            return (...args) => gate(job, engine, members.length, slot => members[slot][prop](...args));
           }
           return value.bind(target);
         },
@@ -86,13 +98,14 @@ function createSearchScheduler() {
   function pump() {
     for (const job of queued.filter(j => j.priority > SEARCH_PRIORITY.BACKGROUND)) start(job);
     if (!running.size && queued.length) start(queued[0]);
-    pumpGate();
+    pumpGates();
   }
 
   return {
     /**
-     * Queues run(wrap) -- wrap(helper) returns that helper with its engine
-     * calls gated -- and returns the job; job.promise settles with run's result.
+     * Queues run(wrap) -- wrap(helper or helper array) returns an engine whose
+     * calls are gated (and spread over the array's members) -- and returns
+     * the job; job.promise settles with run's result.
      */
     submit(run, priority = SEARCH_PRIORITY.BACKGROUND) {
       const job = { run, priority, state: 'queued' };

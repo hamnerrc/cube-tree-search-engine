@@ -168,33 +168,84 @@ function primitiveTokens(token) {
     return parts.slice();
 }
 
-function canonicalizeForEngine(prefixRotation, alg) {
-    const tokens = [prefixRotation, alg].filter(Boolean).join(' ')
-        .replace(/\bnone\b/gi, '').trim().split(/\s+/).filter(Boolean);
-    // Pass 1: rewrite as "E then Q" with E in the starting frame.
-    let Q = IDENTITY_PERM;
-    const early = [];
-    for (const tok of tokens) {
-        if (!isMoveToken(tok)) throw new Error(`facelet-cube: unrecognized move token "${tok}"`);
-        for (const p of primitiveTokens(tok)) {
-            if (ROTATION_TOKENS.includes(p)) { Q = composePerm(Q, MOVE_TABLE[p]); continue; }
-            early.push(composePerm(composePerm(Q, MOVE_TABLE[p]), invertPerm(Q)));
-        }
-    }
-    // Pass 2: "E then Q" == "Q then (Q^-1 e Q for each e)".
-    const invQ = invertPerm(Q);
-    const moves = early.map(e => {
-        const name = FACE_TURN_BY_PERM.get(permKey(composePerm(composePerm(invQ, e), Q)));
-        if (!name) throw new Error('canonicalizeForEngine: conjugated move is not a face turn');
-        return name;
-    });
-    return { rotation: ROTATION_BY_PERM.get(permKey(Q)), moves: moves.join(' ') };
-}
-
 // Every single token by permutation (face turns first, so they win ties).
 const TOKEN_BY_PERM = new Map();
 for (const t of [...FACE_TURNS, ...ROTATION_TOKENS, ...Object.keys(DERIVED_MOVES).flatMap(n => [n, `${n}'`, `${n}2`])]) {
     if (!TOKEN_BY_PERM.has(permKey(MOVE_TABLE[t]))) TOKEN_BY_PERM.set(permKey(MOVE_TABLE[t]), t);
+}
+
+// ---------------------------------------------------------------------------
+// Orientation tables (PROJECT_STATUS.md §4.34, performance). The 24 whole-cube
+// orientations are indexed once, so the hot paths below (canonicalizeForEngine,
+// relabelAlgForRotation, rotationSpellings -- called for every candidate)
+// compose rotations by table lookup and conjugate tokens through a cache
+// instead of building and string-keying 54-element permutations per token.
+// Everything is still derived from the verified permutations above, and
+// test/facelet-cube.test.js checks the results against the plain
+// permutation implementations on random inputs.
+const ROT_PERMS = [];
+const ROT_INDEX_BY_KEY = new Map();
+for (const [key] of ROTATION_BY_PERM) {
+    ROT_INDEX_BY_KEY.set(key, ROT_PERMS.length);
+    ROT_PERMS.push(key.split(',').map(Number));
+}
+const ROT_NAMES = [...ROTATION_BY_PERM.values()];
+const ROT_IDENTITY = ROT_INDEX_BY_KEY.get(permKey(IDENTITY_PERM));
+const rotIndexOf = perm => ROT_INDEX_BY_KEY.get(permKey(perm));
+// ROT_MUL[i][j]: index of composePerm(ROT_PERMS[i], ROT_PERMS[j]).
+const ROT_MUL = ROT_PERMS.map(a => ROT_PERMS.map(b => rotIndexOf(composePerm(a, b))));
+const ROT_INV = ROT_PERMS.map(a => rotIndexOf(invertPerm(a)));
+const ROT_OF_TOKEN = Object.fromEntries(ROTATION_TOKENS.map(t => [t, rotIndexOf(MOVE_TABLE[t])]));
+// CONJ[i].get(token): the single token equal to inv(R_i) * token * R_i (perm
+// composition order), i.e. `token` relabelled for rotation i; null if none.
+const CONJ = ROT_PERMS.map(() => new Map());
+function conjugateToken(rotIndex, token) {
+    const cache = CONJ[rotIndex];
+    let name = cache.get(token);
+    if (name === undefined) {
+        const r = ROT_PERMS[rotIndex];
+        name = TOKEN_BY_PERM.get(permKey(composePerm(composePerm(invertPerm(r), MOVE_TABLE[token]), r))) || null;
+        cache.set(token, name);
+    }
+    return name;
+}
+/** Orientation index of a rotation string ('' = identity). */
+function rotationIndex(rotation) {
+    let q = ROT_IDENTITY;
+    for (const t of String(rotation || '').split(/\s+/)) {
+        if (!t) continue;
+        const r = ROT_OF_TOKEN[t];
+        if (r === undefined) throw new Error(`facelet-cube: not a rotation token "${t}"`);
+        q = ROT_MUL[q][r];
+    }
+    return q;
+}
+const FACE_TURN_SET = new Set(FACE_TURNS);
+
+function canonicalizeForEngine(prefixRotation, alg) {
+    const tokens = [prefixRotation, alg].filter(Boolean).join(' ')
+        .replace(/\bnone\b/gi, '').trim().split(/\s+/).filter(Boolean);
+    // Pass 1: rewrite as "E then Q" with E in the starting frame; each early
+    // move e_k = Q_k p Q_k^-1 is kept as (p, Q_k).
+    let q = ROT_IDENTITY;
+    const early = [];
+    for (const tok of tokens) {
+        if (!isMoveToken(tok)) throw new Error(`facelet-cube: unrecognized move token "${tok}"`);
+        for (const p of primitiveTokens(tok)) {
+            const r = ROT_OF_TOKEN[p];
+            if (r !== undefined) { q = ROT_MUL[q][r]; continue; }
+            early.push(p, q);
+        }
+    }
+    // Pass 2: "E then Q" == "Q then (Q^-1 e_k Q for each k)", and
+    // Q^-1 Q_k p Q_k^-1 Q is p relabelled for rotation Q_k^-1 Q.
+    const moves = [];
+    for (let k = 0; k < early.length; k += 2) {
+        const name = conjugateToken(ROT_MUL[ROT_INV[early[k + 1]]][q], early[k]);
+        if (!FACE_TURN_SET.has(name)) throw new Error('canonicalizeForEngine: conjugated move is not a face turn');
+        moves.push(name);
+    }
+    return { rotation: ROT_NAMES[q], moves: moves.join(' ') };
 }
 
 /**
@@ -204,11 +255,9 @@ for (const t of [...FACE_TURNS, ...ROTATION_TOKENS, ...Object.keys(DERIVED_MOVES
  * relabelling, valid for wide moves, slices and rotations too.
  */
 function relabelAlgForRotation(alg, rotation) {
-    const r = String(rotation || '').split(/\s+/).filter(Boolean)
-        .reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
-    const inv = invertPerm(r);
+    const r = rotationIndex(rotation);
     return String(alg).split(/\s+/).filter(Boolean).map(t => {
-        const name = TOKEN_BY_PERM.get(permKey(composePerm(composePerm(inv, MOVE_TABLE[t]), r)));
+        const name = isMoveToken(t) ? conjugateToken(r, t) : null;
         if (!name) throw new Error(`relabelAlgForRotation: no single token for ${t} under ${rotation}`);
         return name;
     }).join(' ');
@@ -269,7 +318,7 @@ function inspectionWideVariants(alg, maxPos = 2) {
     for (let k = 0; k < Math.min(maxPos, t.length); k++) {
         if (!/^[LR]/.test(t[k])) continue;
         for (const rho of ['x', "x'", 'x2']) {
-            const w = TOKEN_BY_PERM.get(permKey(composePerm(MOVE_TABLE[t[k]], MOVE_TABLE[rho])));
+            const w = TOKEN_BY_PERM.get(permKey(composePerm(MOVE_TABLE[t[k]], MOVE_TABLE[rho])));  // at most 2 per alg
             if (!w || !/^[rl]/.test(w)) continue;
             // t[:k] w relabel(t[k+1:], rho) == alg then rho
             const spelled = [...t.slice(0, k), w, relabelAlgForRotation(t.slice(k + 1).join(' '), rho)].join(' ').trim();
@@ -287,9 +336,7 @@ function rotationName(rotation) {
 
 /** The rotation string that undoes `rotation` ('' for none). */
 function inverseRotation(rotation) {
-    const perm = String(rotation || '').split(/\s+/).filter(Boolean)
-        .reduce((acc, t) => composePerm(acc, MOVE_TABLE[t]), IDENTITY_PERM);
-    return ROTATION_BY_PERM.get(permKey(invertPerm(perm)));
+    return ROT_NAMES[ROT_INV[rotationIndex(rotation)]];
 }
 
 /** Net whole-cube rotation of an alg (as a rotation string, '' for none). */
