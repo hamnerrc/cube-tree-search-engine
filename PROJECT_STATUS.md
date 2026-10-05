@@ -1699,6 +1699,18 @@ inspection line, yellow cross, 3 steps), #11 (`x2`, a mid-step `y'` in its
    passes `afterStart.pairs`. The engine side of both harnesses moved into
    `tools/pro-search.js`.
 
+**Membership (partial, `--config extended`, 200k cap):** the full run is
+hours long on this machine (the 12-13-move 4-pair segments hit the cap at
+~16 min each) and was stopped after 10 segments: #1 xcross/2nd/3rd, #2 all
+four, #3 xcross/2nd FOUND; **#1 4th pair missing (CAPPED at 200k)**. The
+pre-pass code (HEAD served from `git archive`, same data) gives the
+identical result for #1 (3/4, 4th pair capped), so it is a cap limit and not
+a regression. §4.26's "22/24" must have used a different cap. Re-run
+segment-by-segment with `--only N` and a higher `--max` when there is time.
+Regression runs this pass: `solver-bridge-e2e.js --pro` (3/3, white+green)
+and `--pseudo` (2/2, 4 full-pseudo-only steps): 0 warnings, 0 frame
+failures; slot-mapping and colour-orientation pass.
+
 Segments now: #8 xxcross | 3rd | 4th; #9 xxcross | 3rd/4th; #10 xxcross |
 3rd | 4th; #11 xcross | 2nd | 3rd | 4th (36 segments in total). Goal-no-op
 moves are detected in #9 xxcross and #11 xcross too.
