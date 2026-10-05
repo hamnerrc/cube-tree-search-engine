@@ -25,7 +25,9 @@ in the README.
      faae44e (ENGINE_VERSION 20261004-pairs1): the deploy of c3e8eca sat
      "queued" on GitHub for 1.5 h, so the fourteenth pass's JS speedups
      (incl. the cross-opt rewrite, 41% of root time) never went live.
-     Headless Chrome, same config: live 14.7 s vs local 5.5 s. Check
+     Headless Chrome, same config: live 14.7 s vs local 5.5 s. Workflow fixed
+     (be914d1: new concurrency group, cancel-in-progress) and deployed; live
+     now 2.0 s to first rows, 7.6 s total, files match the repo. Check
      `api.github.com/repos/hamnerrc/cube-tree-search-engine/actions/runs`
      after every push (no `gh` CLI on this machine).
   2. **JS hot paths** (output byte-identical on an 11-search snapshot):
