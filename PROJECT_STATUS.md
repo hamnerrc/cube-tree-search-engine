@@ -1953,6 +1953,10 @@ IndexedDB, quota) only cost the old rebuild.
   HEAD at every step, 0 console errors; commit 1.6 → 0.3 s, switching on
   no r2/l2 3.1 → 0.3 s (its tables were stored by an earlier load).
   First-ever load: 5.0-5.4 s, unchanged.
+- **Live site** (c7f2e10 deployed, file hashes match the repo; headless
+  Chrome, same flow): first visit 6.0 s to the first list (downloads
+  included), repeat visit 1.7 s; commit 1.6 s first visit → 0.3 s repeat;
+  page-1 row hashes equal the local/HEAD ones; 0 console errors.
 
 **3. Post-processing workers.** `searchCurrentNode`'s per-call loop (luck
 filter, inspection variants, cross optimisation, rotation spellings,
