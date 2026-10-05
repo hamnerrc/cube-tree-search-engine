@@ -366,22 +366,29 @@ const ENGINE_VERSION = '20261005-deadline1';
         cache.live = list;
         if (isShown()) renderActiveResults(list, true);
       };
+      // Replaced (another setting, a commit or an undo): its look-ahead stops
+      // starting new searches, so it does not compete with the new one.
+      const isCancelled = () => session.resultsCache !== cache;
       const job = scheduler.submit(
-        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate }),
+        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled }),
         priority,
       );
       const promise = job.promise;
       cache.job = job;
       cache.promise = promise;
       trackJob(session, job, priority);
+      // Only the current search of a session sets its status: a replaced one
+      // finishing must not show "ready" while its replacement still runs.
       promise.then(() => {
         cache.live = null;
+        if (session.resultsCache !== cache) return;
         session._status = 'done';
         renderScrambleStatusIfActive(session);
       }).catch(() => {
+        if (session.resultsCache !== cache) return;
         session._status = 'error';
         renderScrambleStatusIfActive(session);
-        if (session.resultsCache && session.resultsCache.promise === promise) session.resultsCache = null;
+        session.resultsCache = null;
       });
     } else {
       setJobsPriority(session, priority);

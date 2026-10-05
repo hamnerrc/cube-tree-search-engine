@@ -50,7 +50,9 @@ in the README.
      entries / 500k candidates); solver.html wrote the whole pruned tree
      (~1.7 MB) to localStorage under a key nothing reads, outside any
      try/catch (a quota or private-mode error stopped the page before its
-     first search) -- removed; a missing time limit silently meant 60 s.
+     first search) -- removed; a missing time limit silently meant 60 s;
+     a look-ahead replaced by another setting kept searching at active
+     priority and its end flipped the indicator to "ready" too early.
 
 **Previous handoff (2026-10-05, after the fifteenth pass):**
 - Fifteenth pass (user task list: live-site speed, defaults, streaming,
@@ -1962,6 +1964,19 @@ choice), and solver-ui no longer falls back to 60 for a missing value.
 (`cubecrit_pruned_tree`, ~870k characters) without a try/catch and nothing
 read it; a quota or private-mode error there ended the page's start-up before
 its first search. Removed.
+
+**Replaced searches stop expanding.** Changing a results-page setting (or
+committing/undoing) mid-look-ahead used to leave the old job expanding its
+look-ahead at active priority, competing with the new search for the
+engines; and when it finished it set the scramble's indicator to "ready"
+while the new search was still running. `searchWithLookahead` takes
+`isCancelled` (solver-ui: the job's cache entry was replaced): no new
+follow-up searches start (running ones finish; they are memoised and may be
+what the new search needs), and only the current job of a session sets its
+status. e2e: a cancelled depth-3 look-ahead makes exactly the step's own
+engine calls. Browser: depth 5 with multislot → back to depth 1 mid-search →
+results at once, indicator stays "ready", 0 console errors. The root search's
+memo key ignores the two later-step options (they cannot change it).
 
 **Browser check** (headless Chrome, CDP): config page shows a blank time
 limit and no multislotting box; stored criteria `timeLimit: null`; root →

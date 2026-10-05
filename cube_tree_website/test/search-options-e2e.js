@@ -10,6 +10,8 @@
  *  - no r2/l2 after step 1: later steps and every look-ahead follow-up contain
  *    no R2/L2, every result still physically solves exactly what its node
  *    says (independent facelet replay), and the root step is unchanged.
+ *  - a look-ahead whose caller cancelled it (results page: another setting or
+ *    step replaced it) starts no follow-up searches.
  *
  * Usage: node test/search-options-e2e.js
  */
@@ -88,6 +90,16 @@ function physicallyExact(session, r) {
     const res = await searchWithLookahead(session(withMulti), h, null, null, { noLaterR2L2: true });
     assert.strictEqual(ser(res), ser(rootList));
     assert.ok(res.some(r => hasR2L2(r.coreAlg)), 'the root may still use R2/L2');
+  });
+
+  await test('a cancelled look-ahead starts no follow-up searches', async () => {
+    const before = h.stats.length;
+    await searchWithLookahead(session(withMulti), h, null, null, {});
+    const stepOnly = h.stats.length - before;
+    const mid = h.stats.length;
+    const res = await searchWithLookahead(session(withMulti), h, null, null, { depth: 3, breadth: 3, isCancelled: () => true });
+    assert.strictEqual(h.stats.length - mid, stepOnly, 'only the step\'s own engine calls');
+    assert.ok(res.length > 0);
   });
 
   await h.terminate();

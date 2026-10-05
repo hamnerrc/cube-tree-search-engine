@@ -601,6 +601,8 @@ async function asyncTests() {
     assert.notStrictEqual(a, c);
     assert.notStrictEqual(b, c);
     assert.strictEqual(bridge.memoSearch(later.withSettings({ multislot: true }), fake), a, 'same options -> same search');
+    const r = bridge.memoSearch(atRoot, fake);
+    assert.strictEqual(bridge.memoSearch(atRoot.withSettings({ multislot: false, noLaterR2L2: true }), fake), r, 'the root search does not depend on them');
     await Promise.all([a, b, c]);
   });
 }

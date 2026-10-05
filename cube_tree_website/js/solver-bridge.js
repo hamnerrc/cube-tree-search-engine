@@ -1191,7 +1191,8 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   // multislot "S" and the same moves committed as two single pairs reach the
   // same node with the same text (they used to share one memo entry, so one
   // was shown the other's TPPs).
-  const key = `${session.currentNodeId}|${session.rotation}|${session.stepAlgs.join(' | ')}|${session.searchSettingsKey || ''}`;
+  // The results-page search options only change later steps.
+  const key = `${session.currentNodeId}|${session.rotation}|${session.stepAlgs.join(' | ')}|${session.isAtRoot ? '' : session.searchSettingsKey || ''}`;
   if (memo.has(key)) {
     const hit = memo.get(key);
     memo.delete(key); // refresh its place in the eviction order
@@ -1240,8 +1241,12 @@ function filterResults(results, filter) {
  * session is already complete, tpp Infinity when no continuation was found.
  * Only results passing `filter` (null = all) are followed.
  */
-async function bestContinuation(session, levels, helper, onStatus, pseudoHelper, deadline, filter = null) {
+async function bestContinuation(session, levels, helper, onStatus, pseudoHelper, deadline, filter = null, isCancelled = null) {
   if (session.isComplete) return null;
+  // Nobody wants this look-ahead any more (see searchWithLookahead): start no
+  // further searches. Searches already running finish (they are memoised and
+  // may be what the replacing search needs).
+  if (isCancelled && isCancelled()) return { tpp: Infinity, algs: [], cancelled: true };
   const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, deadline), filter);
   const cut = !!results.truncatedCalls;
   if (!results.length) return { tpp: Infinity, algs: [], truncated: cut };
@@ -1249,7 +1254,7 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
   // Explored in parallel (an engine pool runs their searches side by side),
   // compared in rank order so ties resolve exactly as a sequential loop would.
   const top = results.slice(0, LOOKAHEAD_INNER_BREADTH);
-  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline, filter)));
+  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline, filter, isCancelled)));
   let best = null;
   top.forEach((c, i) => {
     const sub = subs[i];
@@ -1275,6 +1280,9 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * list with the top block re-ranked as each candidate's look-ahead finishes
  * (finished ones first, by combined TPP; candidates still being looked at
  * carry `lookaheadPending`). The returned list is always the complete one.
+ * options.isCancelled (optional) returning true means the caller has dropped
+ * this search (another setting or step replaced it): the look-ahead starts no
+ * further searches and the returned list is incomplete.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
   // Results-page search options (multislot, noLaterR2L2) for this step and
@@ -1321,7 +1329,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   if (onUpdate) onUpdate(rerank(false));
   await Promise.all(top.map((cand, i) => {
     const status = onStatus && (msg => onStatus(`look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline, filter)
+    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
       .then((best) => {
         bests[i] = best;
         if (onUpdate && bests.filter(b => b !== undefined).length < top.length) onUpdate(rerank(false));
