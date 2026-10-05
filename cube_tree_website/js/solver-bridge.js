@@ -565,11 +565,26 @@ function serialEngine(helper) {
  * `pseudoHelper` (optional) is a pseudoCrossSolver helper; without one,
  * pseudo (mismatched) targets are skipped.
  */
-async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline) {
+async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
   const isRoot = session.isAtRoot;
   // Absolute deadline (epoch ms) for this search's engine calls; 0 = none.
   if (deadline === undefined) deadline = budgetDeadline(session, SEARCH_ENGINE_SHARE);
   let edges = session.outgoingEdges();
+  const targetKey = (edge) => {
+    const target = session.nodeMap.get(edge.target);
+    return JSON.stringify([
+      (target.state.corners || []).slice().sort(),
+      (target.state.edges || []).slice().sort(),
+    ]);
+  };
+  // A transition is "full pseudo only" (hidden by the results page's
+  // simple-pseudo filter) only if EVERY edge to that target is; the old
+  // simplified-pseudo mode dropped exactly those edges (pruneGraph).
+  const fullOnlyByKey = new Map();
+  for (const edge of edges) {
+    const key = targetKey(edge);
+    fullOnlyByKey.set(key, (fullOnlyByKey.has(key) ? fullOnlyByKey.get(key) : true) && !!edge.full_pseudo_only);
+  }
 
   {
     // tree_gen.py's generation has two independent sources of fully
@@ -590,11 +605,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // searching, or real actions get searched and shown 2-6x over.
     const seen = new Set();
     edges = edges.filter(edge => {
-      const target = session.nodeMap.get(edge.target);
-      const key = JSON.stringify([
-        (target.state.corners || []).slice().sort(),
-        (target.state.edges || []).slice().sort(),
-      ]);
+      const key = targetKey(edge);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -635,7 +646,6 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     });
   }
 
-  const candidates = [];
   const yieldState = { lastYield: now() };
 
   const colorList = isRoot ? session.colors : [null];
@@ -686,6 +696,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       plan.push({
         edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges, maxLength,
         effectiveMaxSolutions, color, baseRotation, scramble, callRotation, postAlgForCall,
+        fullPseudoOnly: fullOnlyByKey.get(targetKey(edge)) === true,
       });
     }
   }
@@ -723,7 +734,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges,
       color, baseRotation, callRotation, postAlgForCall,
     } = p;
-    if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
+    if (onStatus) onStatus(`searching ${edgeLabel(pairCount, isRoot, isPseudo).toLowerCase()}${color ? ' (' + color + ')' : ''}…`);
     const raw = await p.raw;
     if (raw === null) return;
     // Finished at or after the deadline without reaching its cap: cut short
@@ -929,6 +940,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
           tpp: Number.isFinite(tppScore) ? tppScore : Infinity,
           targetNodeId: reachedNodeId,
         };
+        if (p.fullPseudoOnly) candidate.fullPseudoOnly = true;
         candidates.push(candidate);
 
         // Rotation spellings (pro move set; README "Professional reference
@@ -940,11 +952,20 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
         // rotation per step, as in the pro move set; never a leading one at
         // the root (that is an inspection variant). §4.20.
         if (session.proMoves && !isPseudo && typeof rotationSpellings === 'function') {
+          // Every spelling with rotation r is physically "alg, then r", so the
+          // node it reaches depends only on r: replayed once per rotation, not
+          // once per spelling (§4.38).
+          const nodeByRotation = new Map();
           for (const spelling of rotationSpellings(finalCoreAlg, !isRoot)) {
-            if (spelling.split(' ').filter(t => /^[xyz]/.test(t)).length > 1) continue;
-            const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, spelling));
-            const pairs = F2L_SLOTS.filter(sl => after[sl]);
-            const nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
+            const rots = spelling.split(' ').filter(t => /^[xyz]/.test(t));
+            if (rots.length > 1) continue;
+            let nodeId = nodeByRotation.get(rots[0]);
+            if (nodeId === undefined) {
+              const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, `${finalCoreAlg} ${rots[0]}`));
+              const pairs = F2L_SLOTS.filter(sl => after[sl]);
+              nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
+              nodeByRotation.set(rots[0], nodeId);
+            }
             if (!nodeId) continue;
             const spTpp = session.pathCost(spelling)
               / calculateSolvedPieces(session.rootNode, targetNode);
@@ -972,25 +993,66 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       }
     }
   };
-  await Promise.all(plan.map(p => p.raw.then(() => processCall(p))));
-  for (const p of plan) for (const c of p.candidates || []) candidates.push(c);
+  // Progressive results (README "Results table"): while calls are still
+  // running, the calls finished so far are ranked exactly like the final
+  // list and handed to onPartial, throttled so ranking tens of thousands of
+  // candidates does not crowd out the post-processing itself.
+  let lastPartial = 0;
+  let partialCost = 0;
+  const maybeEmitPartial = () => {
+    if (typeof onPartial !== 'function') return;
+    const t = now();
+    if (lastPartial && t - lastPartial < Math.max(PARTIAL_INTERVAL_MS, 4 * partialCost)) return;
+    const list = rankCandidates(plan.filter(p => p.processed));
+    partialCost = now() - t;
+    lastPartial = now();
+    onPartial(list);
+  };
+  await Promise.all(plan.map(p => p.raw.then(() => processCall(p)).then(() => {
+    p.processed = true;
+    maybeEmitPartial();
+  })));
 
-  // D-alignment (pseudo) can collapse two distinct raw solver results into
-  // the same final algorithm, and rotation spellings can differ only in the
-  // order of commuting same-axis moves ("y U'" vs "U' y"). Sort first so the
-  // best-scoring spelling of each is the one kept.
+  const out = rankCandidates(plan);
+  // How many engine calls the time budget cut short (absent = complete).
+  if (truncatedCalls) out.truncatedCalls = truncatedCalls;
+  return out;
+}
+
+// A candidate's identity for deduplication, cached per candidate object
+// (partial result lists rank the same candidates repeatedly).
+const dedupeKeys = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+function dedupeKey(c) {
+  let key = dedupeKeys && dedupeKeys.get(c);
+  if (key === undefined) {
+    const normalize = typeof commuteNormalize === 'function' ? commuteNormalize : (x => x);
+    key = `${c.targetNodeId}|${c.rotation}|${normalize(c.coreAlg)}`;
+    if (dedupeKeys) dedupeKeys.set(c, key);
+  }
+  return key;
+}
+
+// Minimum time between two partial result lists of one search.
+const PARTIAL_INTERVAL_MS = 350;
+
+/**
+ * Joins the calls' candidates in plan order and ranks them. D-alignment
+ * (pseudo) can collapse two distinct raw solver results into the same final
+ * algorithm, and rotation spellings can differ only in the order of commuting
+ * same-axis moves ("y U'" vs "U' y"). Sort first so the best-scoring spelling
+ * of each is the one kept.
+ */
+function rankCandidates(calls) {
+  const candidates = [];
+  for (const p of calls) for (const c of p.candidates || []) candidates.push(c);
   candidates.sort((a, b) => a.tpp - b.tpp);
-  const normalize = typeof commuteNormalize === 'function' ? commuteNormalize : (x => x);
   const seenCandidates = new Set();
-  const out = candidates.filter(c => {
-    const key = `${c.targetNodeId}|${c.rotation}|${normalize(c.coreAlg)}`;
+  return candidates.filter(c => {
+    const key = dedupeKey(c);
     if (seenCandidates.has(key)) return false;
     seenCandidates.add(key);
     return true;
   });
-  // How many engine calls the time budget cut short (absent = complete).
-  if (truncatedCalls) out.truncatedCalls = truncatedCalls;
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,24 +1071,47 @@ const SEARCH_MEMO_LIMIT = 48;
  * searchCurrentNode, memoised per (node, inspection rotation, committed path)
  * in session.searchMemo -- shared by every fork, so the look-ahead's searches
  * are reused once the user commits one of the candidates it explored.
+ * `onPartial` (optional) receives the progressive result lists of the search
+ * while it runs -- also when it was started earlier by someone else (a
+ * background search the user switched to): it gets the latest list at once.
  */
-function memoSearch(session, helper, onStatus, pseudoHelper, deadline) {
+function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
   const memo = session.searchMemo || (session.searchMemo = new Map());
   const key = `${session.currentNodeId}|${session.rotation}|${session.scoredPath}`;
   if (memo.has(key)) {
     const hit = memo.get(key);
     memo.delete(key); // refresh its place in the eviction order
     memo.set(key, hit);
+    if (onPartial && hit.listeners) {
+      hit.listeners.add(onPartial);
+      if (hit.latest) onPartial(hit.latest);
+    }
     return hit;
   }
-  const promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline);
+  const listeners = new Set(onPartial ? [onPartial] : []);
+  let promise;
+  const emit = (list) => {
+    promise.latest = list;
+    for (const f of listeners) f(list);
+  };
+  promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit);
+  promise.listeners = listeners;
   memo.set(key, promise);
   // A search the time budget cut short is not reused (committing that step
   // later searches it again in full); neither is a failed one.
-  promise.then((r) => { if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key); },
-    () => { if (memo.get(key) === promise) memo.delete(key); });
+  const settle = () => { promise.listeners = null; promise.latest = null; };
+  promise.then((r) => { settle(); if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key); },
+    () => { settle(); if (memo.get(key) === promise) memo.delete(key); });
   while (memo.size > SEARCH_MEMO_LIMIT) memo.delete(memo.keys().next().value);
   return promise;
+}
+
+/** `results` filtered by `filter` (null = all), keeping the search's flags. */
+function filterResults(results, filter) {
+  if (!filter) return results;
+  const out = results.filter(filter);
+  if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
+  return out;
 }
 
 /**
@@ -1034,17 +1119,18 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline) {
  * { tpp, algs } where tpp is the path TPP after the last step (TPP is
  * cumulative, so that IS the combined TPP of the sequence), null when the
  * session is already complete, tpp Infinity when no continuation was found.
+ * Only results passing `filter` (null = all) are followed.
  */
-async function bestContinuation(session, levels, helper, onStatus, pseudoHelper, deadline) {
+async function bestContinuation(session, levels, helper, onStatus, pseudoHelper, deadline, filter = null) {
   if (session.isComplete) return null;
-  const results = await memoSearch(session, helper, onStatus, pseudoHelper, deadline);
+  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, deadline), filter);
   const cut = !!results.truncatedCalls;
   if (!results.length) return { tpp: Infinity, algs: [], truncated: cut };
   if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg], truncated: cut };
   // Explored in parallel (an engine pool runs their searches side by side),
   // compared in rank order so ties resolve exactly as a sequential loop would.
   const top = results.slice(0, LOOKAHEAD_INNER_BREADTH);
-  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline)));
+  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline, filter)));
   let best = null;
   top.forEach((c, i) => {
     const sub = subs[i];
@@ -1062,36 +1148,62 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * the rest keep their single-step order below them. depth 1 = no look-ahead.
  * Every candidate keeps its own `tpp`; re-ranked ones gain `lookaheadTpp`
  * and `lookaheadAlgs` (the follow-up steps of that best sequence).
+ *
+ * options.filter (optional predicate) hides results, at this step and in
+ * every look-ahead step (the results page's simple-pseudo filter).
+ * options.onUpdate (optional) receives progressive lists: the single-step
+ * ranking while it is still being searched, then, with look-ahead, the same
+ * list with the top block re-ranked as each candidate's look-ahead finishes
+ * (finished ones first, by combined TPP; candidates still being looked at
+ * carry `lookaheadPending`). The returned list is always the complete one.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
+  const filter = options.filter || null;
+  const onUpdate = typeof options.onUpdate === 'function' ? options.onUpdate : null;
   // One time budget for the whole step: its own search first, then the
   // follow-up searches until the end of the engine share.
   const start = Date.now();
   const firstDeadline = budgetDeadline(session, depth > 1 ? LOOKAHEAD_FIRST_SHARE : SEARCH_ENGINE_SHARE, start);
   const lookDeadline = budgetDeadline(session, SEARCH_ENGINE_SHARE, start);
-  const results = await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline);
+  const onPartial = onUpdate && ((list) => onUpdate(filterResults(list, filter)));
+  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial), filter);
   if (depth === 1 || !results.length) return results;
 
   const top = results.slice(0, breadth);
-  const bests = await Promise.all(top.map((cand, i) => {
-    const status = onStatus && (msg => onStatus(`Look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline);
+  const bests = new Array(top.length);
+  const rerank = (final) => {
+    const done = [];
+    const pending = [];
+    top.forEach((cand, i) => {
+      if (bests[i] === undefined) { pending.push({ ...cand, lookaheadPending: true }); return; }
+      done.push({
+        ...cand,
+        lookaheadTpp: bests[i] ? bests[i].tpp : cand.tpp,
+        lookaheadAlgs: bests[i] ? bests[i].algs : [],
+        // The time budget cut a follow-up search short: the best sequence is
+        // the best one found in time, not necessarily the best one there is.
+        ...(bests[i] && bests[i].truncated ? { lookaheadTruncated: true } : {}),
+      });
+    });
+    done.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
+    const out = done.concat(pending, results.slice(breadth));
+    if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
+    if (done.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
+    if (!final) out.lookaheadPending = pending.length;
+    return out;
+  };
+  if (onUpdate) onUpdate(rerank(false));
+  await Promise.all(top.map((cand, i) => {
+    const status = onStatus && (msg => onStatus(`look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
+    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline, filter)
+      .then((best) => {
+        bests[i] = best;
+        if (onUpdate && bests.filter(b => b !== undefined).length < top.length) onUpdate(rerank(false));
+      });
   }));
-  const reranked = top.map((cand, i) => ({
-    ...cand,
-    lookaheadTpp: bests[i] ? bests[i].tpp : cand.tpp,
-    lookaheadAlgs: bests[i] ? bests[i].algs : [],
-    // The time budget cut a follow-up search short: the best sequence is
-    // the best one found in time, not necessarily the best one there is.
-    ...(bests[i] && bests[i].truncated ? { lookaheadTruncated: true } : {}),
-  }));
-  reranked.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
-  const out = reranked.concat(results.slice(breadth));
-  if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
-  if (reranked.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
-  return out;
+  return rerank(true);
 }
 
 /**
@@ -1131,7 +1243,7 @@ if (typeof module !== 'undefined' && module.exports) {
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,
-    memoSearch, searchWithLookahead, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
+    memoSearch, searchWithLookahead, filterResults, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank,
   };
 }

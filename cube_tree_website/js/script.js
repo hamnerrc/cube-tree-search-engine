@@ -11,6 +11,12 @@ const SESSION_STATE_KEY = 'cubecrit_session_state';
 // solver-bridge.js's categoryFor()/categoryKeyFor() exactly.
 const SEARCH_CONFIG_CATEGORIES = ['cross', 'xcross', 'xxcross', 'xxxcross', 'singlePair', 'multislot'];
 
+// Always on (no checkbox): the pro move set and cross optimisation (README
+// "Move set" / "Wide moves and Cross optimisation").
+const ALWAYS_ON_OPTIONS = ['cross_opt', 'pro_moves'];
+// Results-page view settings (look-ahead, simple-pseudo filter, page size).
+const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
+
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
 
@@ -126,13 +132,10 @@ function persistAndNavigate() {
         // Per-category overrides (README "Granular search configuration");
         // undefined when every per-category field was left blank.
         searchConfig: readSearchConfig(),
-        // Look-ahead (README "Look-ahead optimisation depth"): 1 = off.
-        lookaheadDepth: parseInt(document.getElementById('lookahead-depth')?.value, 10) || 1,
-        lookaheadBreadth: parseInt(document.getElementById('lookahead-breadth')?.value, 10) || undefined,
         scrambles
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(searchCriteria));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeCriteria(searchCriteria)));
     window.location.href = 'solver.html';
 }
 
@@ -140,16 +143,11 @@ function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions, searchConfig, lookaheadDepth, lookaheadBreadth, timeLimit } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions, searchConfig, timeLimit } = JSON.parse(rawState);
     const maxSolutionsInput = document.getElementById('max-solutions');
     if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
     const timeLimitInput = document.getElementById('time-limit');
     if (timeLimitInput && Number.isFinite(timeLimit)) timeLimitInput.value = timeLimit;
-    const depthInput = document.getElementById('lookahead-depth');
-    if (depthInput && lookaheadDepth) depthInput.value = String(lookaheadDepth);
-    const breadthInput = document.getElementById('lookahead-breadth');
-    if (breadthInput && lookaheadBreadth) breadthInput.value = lookaheadBreadth;
-    updateLookaheadWarning();
     restoreSearchConfigInputs(searchConfig);
 
     const checkMatching = (selector, values) => {
@@ -162,16 +160,62 @@ function restoreCheckboxState() {
     checkMatching('#advanced-group input[type="checkbox"]', advanced);
 }
 
-/** Highlights the look-ahead performance note once depth 3+ is chosen. */
-function updateLookaheadWarning() {
-    const depth = parseInt(document.getElementById('lookahead-depth')?.value, 10) || 1;
-    const note = document.getElementById('lookahead-note');
-    if (note) note.classList.toggle('search-note-warning', depth >= 3);
+/**
+ * Criteria as the solver page uses them: the always-on options added, and
+ * the retired config-page settings moved out. "simplified pseudo" is now the
+ * results page's simple-pseudo filter and look-ahead a results-page control;
+ * a saved search from before keeps both, as initial view settings.
+ */
+function normalizeCriteria(criteria) {
+    const advanced = (criteria.advanced || []).filter(o => o !== 'simplified_pseudo' && !ALWAYS_ON_OPTIONS.includes(o));
+    const out = { ...criteria, advanced: [...advanced, ...ALWAYS_ON_OPTIONS] };
+    const legacy = {};
+    if ((criteria.advanced || []).includes('simplified_pseudo')) legacy.simplePseudo = true;
+    if (criteria.lookaheadDepth > 1) legacy.lookaheadDepth = criteria.lookaheadDepth;
+    if (criteria.lookaheadBreadth) legacy.lookaheadBreadth = criteria.lookaheadBreadth;
+    delete out.lookaheadDepth;
+    delete out.lookaheadBreadth;
+    if (Object.keys(legacy).length) out.legacyView = legacy;
+    return out;
 }
 
 function loadSearchCriteria() {
     const rawState = localStorage.getItem(STORAGE_KEY);
-    return rawState ? JSON.parse(rawState) : null;
+    return rawState ? normalizeCriteria(JSON.parse(rawState)) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Info dialog (both pages): what each option does, behind the "i" next to
+// the logo instead of inline captions.
+// ---------------------------------------------------------------------------
+const INFO_SECTIONS = [
+    ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). click a result to commit it and search the next step.'],
+    ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
+    ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. multislotting: later steps that solve several pairs at once. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
+    ['always on', 'pro move set (wide r/l, one mid-step y or x rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
+    ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (0 = none). per-type limits: max solutions / move depth per step type; blank = default.'],
+    ['results', 'results appear as they are found and re-rank as the search continues. look-ahead: re-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+];
+
+function installInfoDialog() {
+    const button = document.getElementById('info-btn');
+    if (!button || typeof document.createElement('dialog').showModal !== 'function') {
+        if (button) button.hidden = true;
+        return;
+    }
+    const dialog = document.createElement('dialog');
+    dialog.className = 'info-dialog';
+    dialog.setAttribute('aria-label', 'about the options');
+    const body = INFO_SECTIONS.map(([title, text]) => `<h3>${title}</h3><p>${text}</p>`).join('');
+    dialog.innerHTML = `<div class="info-head"><h2>cube⑂tree</h2><button type="button" class="close-btn" aria-label="close">×</button></div>${body}`;
+    document.body.appendChild(dialog);
+    button.addEventListener('click', () => dialog.showModal());
+    dialog.querySelector('.close-btn').addEventListener('click', () => dialog.close());
+    // A click on the backdrop (outside the dialog box) closes it.
+    dialog.addEventListener('click', (e) => {
+        const r = dialog.getBoundingClientRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+    });
 }
 
 const scrambleController = {
@@ -1128,12 +1172,15 @@ if (typeof module !== 'undefined' && module.exports) {
         isPseudoState,
         calculateSolvedPieces,
         scoreAlgorithms,
-        pruneGraph
+        pruneGraph,
+        normalizeCriteria,
+        ALWAYS_ON_OPTIONS
     };
 }
 
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', async () => {
+        installInfoDialog();
         if (document.getElementById('scramble-input')) {
             restoreTextareaState();
             restoreCheckboxState();

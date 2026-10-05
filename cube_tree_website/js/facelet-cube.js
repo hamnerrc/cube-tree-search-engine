@@ -86,14 +86,19 @@ for (const name of Object.keys(MOVE_TABLE)) {
     if (name.endsWith('2')) MOVE_TABLE[`${name}'`] = MOVE_TABLE[name];
 }
 
+// Hot path (every candidate of every search is replayed): char codes into a
+// reused buffer, then one fromCharCode, instead of 54 string concatenations.
+const PERM_BUF = new Uint16Array(54);
 function applyPerm(facelets, perm) {
-    let out = '';
-    for (let i = 0; i < perm.length; i++) out += facelets[perm[i]];
-    return out;
+    for (let i = 0; i < 54; i++) PERM_BUF[i] = facelets.charCodeAt(perm[i]);
+    return String.fromCharCode.apply(null, PERM_BUF);
 }
 
+// MOVE_TABLE is complete at this point; a Map lookup instead of
+// hasOwnProperty on every token.
+const MOVE_PERMS = new Map(Object.entries(MOVE_TABLE));
 function isMoveToken(token) {
-    return Object.prototype.hasOwnProperty.call(MOVE_TABLE, token);
+    return MOVE_PERMS.has(token);
 }
 
 // Applies a space-separated algorithm string (standard face turns plus
@@ -296,10 +301,20 @@ function commuteNormalize(alg) {
  */
 function rotationSpellings(alg, allowLeading = true) {
     const t = String(alg).split(/\s+/).filter(Boolean);
+    // Relabelling is per token, so each token is relabelled once per rotation
+    // and every suffix reuses it (was one relabelAlgForRotation per split).
+    const relabelled = {};
+    for (const r of ['y', "y'"]) {
+        const ri = rotationIndex(r);
+        relabelled[r] = t.map(tok => (isMoveToken(tok) ? conjugateToken(ri, tok) : null));
+    }
     const out = [];
     for (let k = allowLeading ? 0 : 1; k < t.length; k++) {
         for (const r of ['y', "y'"]) {
-            out.push([...t.slice(0, k), r, relabelAlgForRotation(t.slice(k).join(' '), r)].join(' '));
+            const rest = relabelled[r].slice(k);
+            const bad = rest.indexOf(null);
+            if (bad !== -1) throw new Error(`relabelAlgForRotation: no single token for ${t[k + bad]} under ${r}`);
+            out.push([...t.slice(0, k), r, ...rest].join(' '));
         }
     }
     return out;

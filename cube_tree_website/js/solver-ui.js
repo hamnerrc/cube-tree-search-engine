@@ -156,62 +156,160 @@ const ENGINE_VERSION = '20261005-deadline1';
     if (sessions.get(activeIndex) === session) renderScrambleStatus();
   }
 
-  // Rendering tens of thousands of rows freezes the page; the ranking still
-  // runs over every result, only the table is capped.
-  const MAX_ROWS = 500;
+  // ---------------------------------------------------------------------
+  // Results-page view settings (look-ahead per step, simple-pseudo filter,
+  // page size), remembered per browser. Changing look-ahead or the filter
+  // re-searches the current step; the depth-1 search behind it is reused.
+  // ---------------------------------------------------------------------
+  const DEFAULT_PAGE_SIZE = 25;
+  const view = { lookaheadDepth: 1, lookaheadBreadth: 5, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE };
+  let currentPage = 0;
+  let shownResults = null; // the list on screen (complete or partial)
+
+  function loadViewPrefs(crit) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) || 'null'); } catch (err) { saved = null; }
+    Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
+    view.lookaheadDepth = Math.max(1, Math.min(5, parseInt(view.lookaheadDepth, 10) || 1));
+    view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
+    view.pageSize = Math.max(1, Math.min(500, parseInt(view.pageSize, 10) || DEFAULT_PAGE_SIZE));
+    view.simplePseudo = !!view.simplePseudo;
+  }
+
+  function saveViewPrefs() {
+    try { localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(view)); } catch (err) { /* private mode: not remembered */ }
+  }
+
+  const pseudoOn = () => !!(criteria && (criteria.advanced || []).includes('full_pseudo'));
+
+  function syncViewControls() {
+    const depth = document.getElementById('lookahead-depth');
+    if (depth) depth.value = String(view.lookaheadDepth);
+    const breadth = document.getElementById('lookahead-breadth');
+    if (breadth) {
+      breadth.value = view.lookaheadBreadth;
+      breadth.disabled = view.lookaheadDepth <= 1;
+    }
+    const slow = document.getElementById('lookahead-slow');
+    if (slow) slow.hidden = view.lookaheadDepth < 3;
+    const wrap = document.getElementById('simple-pseudo-wrap');
+    if (wrap) wrap.hidden = !pseudoOn();
+    const simple = document.getElementById('simple-pseudo');
+    if (simple) simple.checked = view.simplePseudo;
+    const size = document.getElementById('page-size');
+    if (size) size.value = view.pageSize;
+  }
+
+  function bindViewControls() {
+    const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+    const research = () => { saveViewPrefs(); syncViewControls(); currentPage = 0; runSearch(); };
+    on('lookahead-depth', 'change', (e) => { view.lookaheadDepth = parseInt(e.target.value, 10) || 1; research(); });
+    on('lookahead-breadth', 'change', (e) => {
+      view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 5));
+      research();
+    });
+    on('simple-pseudo', 'change', (e) => { view.simplePseudo = e.target.checked; research(); });
+    on('page-size', 'change', (e) => {
+      view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
+      saveViewPrefs();
+      syncViewControls();
+      currentPage = 0;
+      if (shownResults) renderResults(shownResults);
+    });
+  }
 
   const formatTpp = (tpp) => (Number.isFinite(tpp) ? tpp.toFixed(2) : '-');
+  const COLUMNS = ['#', 'colour', 'type', 'rotation', 'edges', 'corners', 'alg', 'tpp', 'look-ahead'];
 
+  function lookaheadCell(r) {
+    if (r.lookaheadPending) return '…';
+    if (!r.lookaheadAlgs) return '-';
+    return `${formatTpp(r.lookaheadTpp)}${r.lookaheadAlgs.length ? '  → ' + r.lookaheadAlgs.join(' | ') : ''}`;
+  }
+
+  // Only one page of rows is rendered; ranking still covers every result.
   function renderResults(results) {
+    shownResults = results;
     const tbody = document.getElementById('results-body');
     if (!tbody) return;
+    const pages = Math.max(1, Math.ceil(results.length / view.pageSize));
+    currentPage = Math.max(0, Math.min(currentPage, pages - 1));
+    const offset = currentPage * view.pageSize;
     tbody.innerHTML = '';
-
-    results.slice(0, MAX_ROWS).forEach((r, i) => {
-      // Look-ahead re-ranked rows show the combined TPP of their best
-      // sequence and its follow-up steps.
-      const lookahead = r.lookaheadAlgs
-        ? `${formatTpp(r.lookaheadTpp)}${r.lookaheadAlgs.length ? '  → ' + r.lookaheadAlgs.join(' | ') : ''}`
-        : '-';
-      const tr = document.createElement('tr');
+    results.slice(offset, offset + view.pageSize).forEach((r, i) => {
       const cells = [
-        String(i + 1),
+        String(offset + i + 1),
         r.color || '-',
-        r.type,
+        String(r.type || '').toLowerCase(),
         r.rotation || '-',
         (r.edges || []).join('+') || '-',
         (r.corners || []).join('+') || '-',
         r.coreAlg,
         formatTpp(r.tpp),
-        lookahead,
+        lookaheadCell(r),
       ];
-      tr.innerHTML = cells.map(c => `<td>${escapeHtml(c)}</td>`).join('');
-      tr.style.cursor = 'pointer';
+      const tr = document.createElement('tr');
+      tr.tabIndex = 0;
+      tr.innerHTML = cells.map((c, k) => `<td data-label="${COLUMNS[k]}" class="col-${k}${c === '-' ? ' empty' : ''}">${escapeHtml(c)}</td>`).join('');
       tr.addEventListener('click', () => handleResultClick(r));
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleResultClick(r); });
       tbody.appendChild(tr);
     });
+    renderPagination(results.length, pages);
+  }
+
+  function renderPagination(total, pages) {
+    const nav = document.getElementById('pagination');
+    if (!nav) return;
+    nav.innerHTML = '';
+    if (pages <= 1) return;
+    const button = (label, page, aria) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-label', aria);
+      b.disabled = page < 0 || page >= pages || page === currentPage;
+      b.addEventListener('click', () => { currentPage = page; renderResults(shownResults); });
+      return b;
+    };
+    const info = document.createElement('span');
+    info.className = 'page-info';
+    info.textContent = `${currentPage + 1} / ${pages}`;
+    nav.append(
+      button('«', 0, 'first page'),
+      button('‹', currentPage - 1, 'previous page'),
+      info,
+      button('›', currentPage + 1, 'next page'),
+      button('»', pages - 1, 'last page'),
+    );
   }
 
   function renderSolved() {
+    shownResults = null;
     const tbody = document.getElementById('results-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9">Cross + F2L solved.</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr class="solved-row"><td colspan="9">cross + f2l solved.</td></tr>';
+    const nav = document.getElementById('pagination');
+    if (nav) nav.innerHTML = '';
   }
 
-  function renderActiveResults(results) {
+  const count = (n) => n.toLocaleString('en-US');
+
+  function renderActiveResults(results, partial = false) {
     renderResults(results);
     // The time limit cut some engine calls (or look-ahead searches) short.
-    const cut = results.truncatedCalls || results.lookaheadTruncated
-      ? ' Search time limit reached: showing the best results found in time.' : '';
-    setStatus((results.length
-      ? (results.length > MAX_ROWS ? `${results.length} result(s); showing the top ${MAX_ROWS}.` : `${results.length} result(s).`)
-      : 'No results found for the current filters at this step.') + cut);
+    const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
+    let msg;
+    if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
+    else if (partial) msg = `${count(results.length)} results so far · searching…`;
+    else msg = results.length ? `${count(results.length)} results` : 'no results for the current filters at this step';
+    setStatus(msg + cut);
   }
 
-  // One search per (session, committed path): navigating away from a scramble
-  // mid-search no longer throws the work away, and coming back to an
-  // already-searched node (or one still searching) reuses it instead of
-  // starting again. The path only grows by commits, so node + path text
-  // identifies the step.
+  // One search per (session, committed path, view settings): navigating away
+  // from a scramble mid-search no longer throws the work away, and coming
+  // back to an already-searched node (or one still searching) reuses it
+  // instead of starting again. The path only grows by commits, so node +
+  // path text identifies the step.
   //
   // The solver helpers reject a second call while one is running ("Another
   // solve is in progress", §4.18), so every engine call goes through one
@@ -221,29 +319,50 @@ const ENGINE_VERSION = '20261005-deadline1';
   const scheduler = createSearchScheduler();
   const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
 
-  function lookaheadOptions() {
+  // Background scrambles search one step without look-ahead; the scramble
+  // on screen uses the results page's look-ahead setting (reusing that
+  // single-step search when it becomes active).
+  function searchOptions(priority) {
+    const lookahead = priority === ACTIVE ? view.lookaheadDepth : 1;
     return {
-      depth: (criteria && criteria.lookaheadDepth) || 1,
-      breadth: (criteria && criteria.lookaheadBreadth) || undefined,
+      depth: lookahead,
+      breadth: view.lookaheadBreadth,
+      filter: pseudoOn() && view.simplePseudo ? (r => !r.fullPseudoOnly) : null,
     };
   }
 
   function resultsFor(session, h, ph, priority) {
-    const key = session.currentNodeId + '|' + session.scoredPath;
+    const opts = searchOptions(priority);
+    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filter ? 'simple' : ''].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
       renderScrambleStatusIfActive(session);
+      // Set before the job starts: a search the memo already has running
+      // reports its latest partial list synchronously.
+      const cache = { key, live: null };
+      session.resultsCache = cache;
+      const isShown = () => sessions.get(activeIndex) === session && session.resultsCache === cache;
       const onStatus = (msg) => {
-        if (sessions.get(activeIndex) === session) setStatus(msg);
+        if (isShown() && !cache.live) setStatus(msg);
       };
-      onStatus(priority === ACTIVE ? 'Searching...' : 'Queued behind the active search...');
+      onStatus(priority === ACTIVE ? 'searching…' : 'queued behind the active search…');
+      // Progressive results: partial lists while the step's calls finish,
+      // then look-ahead re-ranking as each candidate's look-ahead finishes.
+      const onUpdate = (list) => {
+        if (session.resultsCache !== cache) return;
+        cache.live = list;
+        if (isShown()) renderActiveResults(list, true);
+      };
       const job = scheduler.submit(
-        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), lookaheadOptions()),
+        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate }),
         priority,
       );
       const promise = job.promise;
-      session.resultsCache = { key, promise, job };
+      cache.job = job;
+      cache.promise = promise;
+      trackJob(session, job, priority);
       promise.then(() => {
+        cache.live = null;
         session._status = 'done';
         renderScrambleStatusIfActive(session);
       }).catch(() => {
@@ -252,15 +371,32 @@ const ENGINE_VERSION = '20261005-deadline1';
         if (session.resultsCache && session.resultsCache.promise === promise) session.resultsCache = null;
       });
     } else {
-      scheduler.setPriority(session.resultsCache.job, priority);
+      setJobsPriority(session, priority);
+      if (session.resultsCache.live && sessions.get(activeIndex) === session) renderActiveResults(session.resultsCache.live, true);
     }
     return session.resultsCache.promise;
+  }
+
+  // Every unfinished job of a scramble runs at that scramble's priority: its
+  // searches share one memo, so a new job (another look-ahead setting, the
+  // next step) can be waiting on engine calls an older job started, and an
+  // ACTIVE job waiting on BACKGROUND calls would never let them run.
+  function trackJob(session, job, priority) {
+    if (!session._jobs) session._jobs = new Set();
+    session._jobs.add(job);
+    const done = () => session._jobs.delete(job);
+    job.promise.then(done, done);
+    setJobsPriority(session, priority);
+  }
+
+  function setJobsPriority(session, priority) {
+    for (const job of session._jobs || []) scheduler.setPriority(job, priority);
   }
 
   // The scramble the user is looking at always outranks the background.
   function setSessionPriority(index, priority) {
     const session = sessions.get(index);
-    if (session && session.resultsCache) scheduler.setPriority(session.resultsCache.job, priority);
+    if (session) setJobsPriority(session, priority);
   }
 
   // Enqueues every OTHER scramble's search as BACKGROUND work -- not awaited
@@ -272,9 +408,10 @@ const ENGINE_VERSION = '20261005-deadline1';
       const session = getOrCreateSession(idx);
       if (session.isComplete) return;
       if (session.resultsCache) return; // already queued/searched; keep its current priority
-      resultsFor(session, h, ph, BACKGROUND)
+      const promise = resultsFor(session, h, ph, BACKGROUND);
+      promise
         .then((results) => {
-          if (sessions.get(activeIndex) === session) renderActiveResults(results);
+          if (sessions.get(activeIndex) === session && session.resultsCache && session.resultsCache.promise === promise) renderActiveResults(results);
         })
         .catch(() => {});
     });
@@ -291,16 +428,16 @@ const ENGINE_VERSION = '20261005-deadline1';
 
     if (session.isComplete) {
       renderSolved();
-      setStatus('Solved.');
+      setStatus('solved.');
       return;
     }
 
-    setStatus('Loading solver...');
+    setStatus('loading solver…');
     let h;
     try {
       h = await ensureHelper();
     } catch (err) {
-      setStatus('Failed to load solver: ' + err.message);
+      setStatus('failed to load the solver: ' + err.message);
       return;
     }
     if (myToken !== searchToken) return;
@@ -315,7 +452,7 @@ const ENGINE_VERSION = '20261005-deadline1';
     try {
       results = await activePromise;
     } catch (err) {
-      if (myToken === searchToken) setStatus('Search failed: ' + err.message);
+      if (myToken === searchToken) setStatus('search failed: ' + err.message);
       return;
     }
     if (myToken !== searchToken) return;
@@ -325,7 +462,10 @@ const ENGINE_VERSION = '20261005-deadline1';
 
   async function handleResultClick(candidate) {
     const session = getOrCreateSession(activeIndex);
-    session.commit(candidate);
+    // Look-ahead annotations describe this step's ranking, not the commit.
+    const { lookaheadPending, lookaheadTpp, lookaheadAlgs, lookaheadTruncated, ...row } = candidate;
+    session.commit(row);
+    currentPage = 0;
     persistSessionState();
     await runSearch();
   }
@@ -333,6 +473,7 @@ const ENGINE_VERSION = '20261005-deadline1';
   async function handleUndo() {
     const session = getOrCreateSession(activeIndex);
     if (!session.undo()) return;
+    currentPage = 0;
     persistSessionState();
     await runSearch();
   }
@@ -412,6 +553,9 @@ const ENGINE_VERSION = '20261005-deadline1';
     prunedTree = tree;
     criteria = crit;
     sessions.clear();
+    loadViewPrefs(crit);
+    syncViewControls();
+    bindViewControls();
 
     const saved = loadPersistedState(crit);
     if (saved) {
@@ -427,7 +571,10 @@ const ENGINE_VERSION = '20261005-deadline1';
   };
 
   window.onActiveScrambleChanged = function (index) {
-    if (index !== activeIndex) setSessionPriority(activeIndex, BACKGROUND);
+    if (index !== activeIndex) {
+      setSessionPriority(activeIndex, BACKGROUND);
+      currentPage = 0;
+    }
     activeIndex = index;
     if (prunedTree) {
       persistSessionState();

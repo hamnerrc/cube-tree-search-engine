@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-05.*
+*Last updated 2026-10-05 (fifteenth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,32 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-05, after the fourteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-05, after the fifteenth pass):** read this first.
+- Fifteenth pass (user task list: live-site speed, defaults, streaming,
+  per-step look-ahead, pseudo filter, results table, minimalist UI,
+  responsiveness). Writeup: §4.38. Summary:
+  1. **Live site slow = stale deploy.** GitHub Pages was still serving
+     faae44e (ENGINE_VERSION 20261004-pairs1): the deploy of c3e8eca sat
+     "queued" on GitHub for 1.5 h, so the fourteenth pass's JS speedups
+     (incl. the cross-opt rewrite, 41% of root time) never went live.
+     Headless Chrome, same config: live 14.7 s vs local 5.5 s. Check
+     `api.github.com/repos/hamnerrc/cube-tree-search-engine/actions/runs`
+     after every push (no `gh` CLI on this machine).
+  2. **JS hot paths** (output byte-identical on an 11-search snapshot):
+     precomputed mask checks in `isSlotSolved`, `applyPerm` via char codes,
+     Map-based `isMoveToken`, rotation spellings relabel each token once and
+     replay once per rotation. Warm root 8.1 → ~7 s, cold 13-15 → 11.6 s; the
+     engine is now most of the time.
+  3. **Progressive results:** partial ranked lists while a step's calls run
+     (first rows ~1.3 s instead of 6.5 s in the browser), look-ahead
+     re-ranks live. New `test/progressive-e2e.js` (real WASM).
+  4. **UI:** pro move set + cross optimisation always on (no checkboxes);
+     look-ahead and a "simple pseudo only" filter moved to the results page
+     (filter == old simplified-pseudo DAG, verified exactly); 25 results per
+     page with page-size box and pagination; no clipped columns (cards on
+     phones); lowercase minimal style; info dialog next to the logo.
+
+**Previous handoff (2026-10-05, after the fourteenth pass):**
 - Fourteenth pass: the README gained a long-term goal ("worst-case search
   with all settings enabled must complete in under 1 minute"). Writeups:
   §4.36 (performance and the search time limit) and §4.37 (alg_speed on all
@@ -342,6 +367,7 @@ node cube_tree_website/test/random-state-scramble.test.js
 node cube_tree_website/test/pro-references.test.js
 node cube_tree_website/test/search-scheduler.test.js
 node cube_tree_website/test/search-budget.test.js
+# slow-ish, real WASM (~35 s): node cube_tree_website/test/progressive-e2e.js
 # engine rebuilds: node cube_tree_website/tools/engine-battery.js [--pseudo] --solver <old solver.js> --out old.json,
 #   then the same without --solver and with --compare old.json (must say "all calls identical")
 # worst case: node cube_tree_website/tools/worst-case-bench.js --scrambles 2 --depth 1|5
@@ -1779,6 +1805,91 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.38 DONE (2026-10-05, fifteenth pass): live-site speed, progressive results, results-page controls, UI pass
+
+**Why the live site was slower than local benchmarks.** Measured with headless
+Chrome on the same machine and config (white; xcross, pro moves, cross opt;
+500/call): live 14.7 s to the full list, local 5.5 s. Every JS/WASM file on
+Pages differed from the working tree: the live site ran faae44e
+(`ENGINE_VERSION` 20261004-pairs1), because the Pages workflow run for
+c3e8eca had been "queued" for 1.5 h (a GitHub-side stall; a newer push
+supersedes it). So the fourteenth pass's post-processing speedups, including
+the `optimizeCrossSolution` rewrite that was 41% of a cross-opt root search,
+were never deployed. Lesson: after pushing, confirm the run completes via the
+public Actions API and compare a file hash against the live site.
+
+**JS hot paths** (profile of a warm root search, pro + cross opt, 57k results;
+engine ~4 s wall of 8 s):
+- `isSlotSolved` scanned the 54-char mask with `toUpperCase` per position on
+  every call; the checked positions and their centres are now computed once
+  per mask (`maskChecks`).
+- `applyPerm` builds the string from a reused `Uint16Array` with one
+  `fromCharCode` (1.6× in a micro-benchmark); `isMoveToken` is a Map lookup.
+- Rotation spellings: every spelling with rotation r is physically "alg, then
+  r", so the reached node is computed once per r instead of once per
+  spelling; `rotationSpellings` relabels each token once per rotation instead
+  of once per split point (checked equal to the old definition on 20k random
+  mixed-notation algs).
+- Not changed: `algSpeed` (MCC) is ~25% of JS time but 69k of 72k calls are
+  unique strings, so memoising does not help; changing MCC itself was out of
+  scope.
+
+| measurement (Node, 3 workers, same scramble) | HEAD | now |
+|---|---|---|
+| root, cold | 13.0-15.0 s | 11.6-11.7 s |
+| root, warm | 8.0-8.2 s | 6.5-7.4 s |
+| browser, time to first results | 6.5 s (whole search) | ~1.3 s |
+
+Equality: an 11-search snapshot (pro + cross opt two colours; full pseudo +
+cross opt; matched multislot; look-ahead depth 2; 2-3 steps each) is
+byte-identical to the pre-change output, as is `solver-bridge-e2e.js --pro`
+(0 warnings, 0 bad finals, 0 frame failures).
+
+**Progressive results.** `searchCurrentNode(..., onPartial)` ranks the calls
+finished so far exactly like the final list (`rankCandidates`, shared with the
+final ranking; dedupe keys cached per candidate) and emits at most every
+`PARTIAL_INTERVAL_MS` (350 ms, or 4× the last ranking's cost). `memoSearch`
+keeps listeners, so a search the user switches to while it runs in the
+background still streams (a late listener gets the latest list at once).
+`searchWithLookahead(..., { onUpdate })` emits the single-step ranking first,
+then re-ranks the top block as each candidate's look-ahead resolves
+(resolved first by combined TPP, pending ones marked `lookaheadPending`).
+The returned list is unchanged. `test/progressive-e2e.js` checks all of it
+against the real engines.
+
+**Results-page controls** (`solver-ui.js`, settings in localStorage
+`cubecrit_view_prefs`): look-ahead depth/breadth per step (background
+scrambles search depth 1; the active one uses the control; changing it
+re-searches, reusing the memoised depth-1 search); "simple pseudo only"
+(visible with pseudo F2L) = `options.filter`, applied at the step and inside
+look-ahead. Each candidate carries `fullPseudoOnly` when every DAG edge to its
+target is `full_pseudo_only`; filtering on it equals the old
+`simplified_pseudo` pruneGraph mode exactly (root + two later steps through a
+mismatched node, real engines). `pruneGraph` keeps `simplified_pseudo` for the
+harnesses (`solver-bridge-e2e.js --simplified`).
+
+**Scheduler deadlock found and avoided.** A new ACTIVE job for a scramble
+(e.g. look-ahead switched on) can await a memoised search whose engine calls
+belong to an older job of the same scramble; if that older job is
+BACKGROUND, the gate never lets its calls run while an ACTIVE job is running.
+All unfinished jobs of a scramble now always share its priority (`trackJob`
+/ `setJobsPriority`).
+
+**Config/defaults.** `pro_moves` and `cross_opt` are always added
+(`ALWAYS_ON_OPTIONS`, `normalizeCriteria`); saved criteria from before keep
+their old look-ahead/simplified-pseudo choices as initial view settings
+(`legacyView`).
+
+**UI.** Rewritten `styles.css`, `index.html`, `solver.html`: lowercase,
+monospace, no inline captions; info dialog (`installInfoDialog`, native
+`<dialog>`) next to the logo on both pages; results table with no clipping
+(algs wrap; ≤720 px: labelled cards; per-type limits table becomes blocks);
+25 rows per page, page-size box, first/prev/next/last pagination. Checked in
+headless Chrome at 360, 390, 768, 820, 1024, 1280 and 1440 px: no horizontal
+page scroll, 0 cells with clipped content, 0 console errors; config → search
+→ filter → commit → look-ahead → paginate → undo flow exercised.
+Cache-buster `?v=20261005b` (styles.css now has one too).
 
 ### 4.37 (2026-10-05, fourteenth pass): alg_speed on all 19 pro solves — penalties kept, tools fixed
 

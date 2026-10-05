@@ -52,8 +52,12 @@ the current node is the baseline behavior (see
 
 ### Look-ahead optimisation depth
 
-A search setting optimises results for the best combined next *N* steps,
-for N = 2, 3, 4 or 5 (default: off, i.e. 1 step):
+A control on the **results page** optimises results for the best combined
+next *N* steps, for N = 2, 3, 4 or 5 (default: off, i.e. 1 step). It is set
+**per step**: it applies to the step on screen and stays as chosen until
+changed, so e.g. look-ahead can be on while choosing the cross and turned off
+for the later pairs. Changing it re-searches the current step, reusing its
+single-step search.
 
 1. Search step *n* as usual and rank it by TPP.
 2. For each of the top results of step *n* (the **look-ahead breadth**,
@@ -69,14 +73,16 @@ for N = 2, 3, 4 or 5 (default: off, i.e. 1 step):
    sinks to the bottom of the re-ranked block.
 
 Each re-ranked result shows its combined TPP and the follow-up steps of its
-best sequence. Only the clicked step is committed — the follow-ups are a
+best sequence. The single-step ranking is shown first, as soon as it is
+available; the top block then re-ranks on screen as each candidate's
+look-ahead finishes (candidates still being looked at show "…"). Only the clicked step is committed — the follow-ups are a
 preview, and the next search starts from the committed node as usual (reusing
 the look-ahead's searches where it can).
 
 > Look-ahead multiplies the searching per step: depth 2 adds one search per
 > re-ranked result, and **depths of 3 or more cause significant performance
-> delays** (minutes per step with the pro move set). The settings page shows
-> this warning.
+> delays** (minutes per step with the pro move set). The results page marks
+> depths of 3 or more as slow.
 
 ## Orientation
 
@@ -190,12 +196,13 @@ efficient but imperfect insertion.
 - **Pseudo F2L on:** the solver may traverse states containing
   corner/edge mismatches, since these can be fixed up cheaply later and
   sometimes lead to a faster overall path.
-- **Simplified pseudo** (a secondary checkbox, independent of plain pseudo):
-  once a mismatch has been introduced, the *next* step is constrained to fix
-  **only that mismatch** — it doesn't explore the full combinatorial space of
-  what else could be solved alongside the repair. With simplified pseudo
-  off, the solver explores every relevant corner/edge combination at a
-  mismatched node, not just the direct repair.
+- **Simple pseudo only** (a results-page filter, shown when pseudo F2L is
+  on): once a mismatch has been introduced, the *next* step is limited to
+  fixing **only that mismatch** — the results that also solve other pieces
+  alongside the repair are hidden (look-ahead follows the same filter).
+  Unticked, every relevant corner/edge combination at a mismatched node is
+  listed, not just the direct repair. The search itself always covers the
+  full pseudo space, so toggling the filter needs no new engine search.
 
 A lone solved corner or lone solved edge (with no matching piece placed) is
 never offered as a target in its own right — it may appear transiently as a
@@ -280,10 +287,10 @@ remain distinct results, since the choice of rotation is itself part of the comm
 
 ## Wide moves and Cross optimisation
 
-Wide moves (`r`, `r'`, `l`, `l'`, `u`, `u'`) are **never searched directly** —
-the underlying solvers only search ordinary face turns. Instead, the "Cross
-optimisation" checkbox applies a **post-hoc, first-step-only**
-transformation to ordinary Cross results:
+Outside the pro move set's `r`/`l` (see [Move set](#move-set)), wide moves
+(`r`, `r'`, `l`, `l'`, `u`, `u'`) are not searched directly. Cross
+optimisation (always on; it has no checkbox) applies a **post-hoc,
+first-step-only** transformation to ordinary Cross results:
 
 1. Each face-turn Cross solution is rewritten using the equivalences below,
    tracking cumulative whole-cube rotation state as it goes:
@@ -308,7 +315,7 @@ default, slice moves and wide moves are not part of the search move set —
 wide moves exist only as the post-hoc Cross-optimisation transform described
 above.
 
-The **pro move set** (an advanced checkbox, on by default) widens the search to
+The **pro move set** (always on; it has no checkbox) widens the search to
 the move subsets professionals actually use: wide `r`/`l` and at most one
 mid-step `y`, `y'`, `x` or `x'` rotation (never `y2`), with the cross still
 required to finish on the bottom, plus rotated spellings and side-cross
@@ -367,7 +374,29 @@ search; current measurements are in PROJECT_STATUS.md):
   a small per-search solution cap it is never generated, so it never
   reaches the ranking.
 
+## Configuration and results pages
+
+The configuration page holds the search settings (colours, which step types
+to search, pseudo F2L, solutions per search, the time limit, per-type limits)
+and the scramble list. The pro move set and cross optimisation are always on.
+The interface is lowercase and minimal: options carry no inline
+explanations; an info icon next to the logo opens a short description of
+every option, on both pages. Both pages work on phones, tablets and desktops.
+
+The results page holds the per-step view settings: look-ahead (depth and
+breadth), the simple-pseudo filter, and how many results to show per page.
+
 ## Results table
+
+Results appear **progressively**: the first results are listed as soon as
+the first solver calls finish, and the ranking updates on screen as the
+remaining calls (and any look-ahead) complete. The final list is the same as
+if it had been shown only at the end.
+
+The table shows **25 results per page** by default; a "show" box changes the
+page size and controls below the table move between pages. No column is ever
+clipped: long algorithms wrap, and on narrow screens each result becomes a
+labelled card.
 
 At minimum, a results table shows:
 

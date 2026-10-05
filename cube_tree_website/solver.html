@@ -5,65 +5,94 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20261005b">
 </head>
 
 <body>
     <header class="banner">
-        <a href="index.html" class="back-btn">back</a>
-        <h1>cube⑂tree</h1>
+        <a href="index.html" class="back-btn" aria-label="back to settings">‹ back</a>
+        <div class="brand">
+            <h1>cube⑂tree</h1>
+            <button type="button" class="info-btn" id="info-btn" aria-label="about the options" title="about the options">i</button>
+        </div>
     </header>
 
-    <div class="container">
-        <div class="scramble-viewer">
+    <main class="container">
+        <section class="card scramble-viewer" aria-label="scramble">
             <div class="viewer-controls">
-                <button onclick="scrambleController.navigate(-1)">-</button>
-                <input type="number" id="current-scramble-num" min="1" value="1"
+                <button type="button" onclick="scrambleController.navigate(-1)" aria-label="previous scramble">‹</button>
+                <input type="number" id="current-scramble-num" min="1" value="1" aria-label="scramble number"
                     onchange="scrambleController.jumpTo(this.value)">
-                <button onclick="scrambleController.navigate(1)">+</button>
+                <button type="button" onclick="scrambleController.navigate(1)" aria-label="next scramble">›</button>
             </div>
-            <div id="scramble-display" class="scramble-display">loading scramble..</div>
+            <div id="scramble-display" class="scramble-display">loading scramble…</div>
             <div id="scramble-status" class="scramble-status"></div>
-        </div>
+        </section>
 
-        <fieldset class="solution-box">
-            <legend>solution</legend>
-            <textarea id="solution-output" placeholder="click on a solution to search further" rows="4" readonly></textarea>
-            <button id="undo-btn" class="undo-btn" onclick="handleUndoClick()" disabled>Undo</button>
-        </fieldset>
+        <section class="card solution-box" aria-label="solution so far">
+            <div class="card-head">
+                <h2>solution</h2>
+                <button type="button" id="undo-btn" class="undo-btn" onclick="handleUndoClick()" disabled>undo</button>
+            </div>
+            <textarea id="solution-output" placeholder="click a result to commit it" rows="2" readonly></textarea>
+        </section>
 
-        <div id="search-status" class="search-status"></div>
+        <section class="results-controls" aria-label="result options">
+            <label>look-ahead
+                <select id="lookahead-depth">
+                    <option value="1" selected>off</option>
+                    <option value="2">2 steps</option>
+                    <option value="3">3 steps</option>
+                    <option value="4">4 steps</option>
+                    <option value="5">5 steps</option>
+                </select>
+                <span class="slow-tag" id="lookahead-slow" hidden>slow</span>
+            </label>
+            <label>breadth
+                <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
+            </label>
+            <label class="check" id="simple-pseudo-wrap" hidden>
+                <input type="checkbox" id="simple-pseudo"> simple pseudo only
+            </label>
+            <label class="page-size">show
+                <input type="number" id="page-size" value="25" min="1" max="500">
+            </label>
+        </section>
+
+        <div id="search-status" class="search-status" role="status" aria-live="polite"></div>
 
         <div class="table-wrapper">
             <table class="results-table">
                 <thead>
                     <tr>
-                        <th>rank</th>
-                        <th>color</th>
+                        <th>#</th>
+                        <th>colour</th>
                         <th>type</th>
                         <th>rotation</th>
                         <th>edges</th>
                         <th>corners</th>
                         <th>alg</th>
-                        <th title="Time per piece of the whole path so far, including this step (lower is better)">TPP</th>
-                        <th title="Combined TPP of the best look-ahead sequence starting with this step, and its follow-up steps">look-ahead</th>
+                        <th>tpp</th>
+                        <th>look-ahead</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <script src="js/script.js?v=20261005a"></script>
-    <script src="js/facelet-cube.js?v=20261005a"></script>
-    <script src="js/facelet-flags.js?v=20261005a"></script>
-    <script src="js/cross-optimization.js?v=20261005a"></script>
+        <nav class="pagination" id="pagination" aria-label="result pages"></nav>
+    </main>
+
+    <script src="js/script.js?v=20261005b"></script>
+    <script src="js/facelet-cube.js?v=20261005b"></script>
+    <script src="js/facelet-flags.js?v=20261005b"></script>
+    <script src="js/cross-optimization.js?v=20261005b"></script>
     <script src="crossSolver/solver-helper.js"></script>
     <script src="pseudoCrossSolver/solver-helper.js"></script>
-    <script src="js/search-scheduler.js?v=20261005a"></script>
-    <script src="js/solver-bridge.js?v=20261005a"></script>
-    <script src="js/solver-ui.js?v=20261005a"></script>
+    <script src="js/search-scheduler.js?v=20261005b"></script>
+    <script src="js/solver-bridge.js?v=20261005b"></script>
+    <script src="js/solver-ui.js?v=20261005b"></script>
 </body>
 
 </html>

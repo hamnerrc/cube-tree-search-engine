@@ -5,18 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20261005b">
 </head>
 
 <body>
     <header class="banner">
-        <h1>cube⑂tree</h1>
+        <div class="brand">
+            <h1>cube⑂tree</h1>
+            <button type="button" class="info-btn" id="info-btn" aria-label="about the options" title="about the options">i</button>
+        </div>
     </header>
 
-    <div class="container">
+    <main class="container">
         <div class="options-grid">
-            <fieldset class="option-group" id="colors-group">
-                <legend>Colors</legend>
+            <fieldset class="card option-group" id="colors-group">
+                <legend>colours</legend>
                 <label><input type="checkbox" value="white" checked> white</label>
                 <label><input type="checkbox" value="yellow"> yellow</label>
                 <label><input type="checkbox" value="green"> green</label>
@@ -24,54 +27,30 @@
                 <label><input type="checkbox" value="red"> red</label>
                 <label><input type="checkbox" value="orange"> orange</label>
             </fieldset>
-            
-            <fieldset class="option-group" id="advanced-group">
-                <legend>advanced</legend>
+
+            <fieldset class="card option-group" id="advanced-group">
+                <legend>steps</legend>
                 <label><input type="checkbox" value="xcross"> xcross</label>
                 <label><input type="checkbox" value="xxcross"> xxcross</label>
                 <label><input type="checkbox" value="xxxcross"> xxxcross</label>
                 <label><input type="checkbox" value="multislotting"> multislotting</label>
-                <label><input type="checkbox" value="full_pseudo"> pseudo F2L</label>
-                <label><input type="checkbox" value="simplified_pseudo"> simplified pseudo</label>
-                <label><input type="checkbox" value="cross_opt"> cross optimization</label>
-                <label title="Search with wide r/l and one mid-step y/y'/x/x' rotation, like professional solves (slower)"><input type="checkbox" value="pro_moves" checked> pro move set</label>
+                <label><input type="checkbox" value="full_pseudo"> pseudo f2l</label>
+            </fieldset>
+
+            <fieldset class="card option-group" id="search-group">
+                <legend>search</legend>
+                <label class="field">solutions per search
+                    <input type="number" id="max-solutions" value="500" min="1" max="5000">
+                </label>
+                <label class="field">time limit (s)
+                    <input type="number" id="time-limit" value="60" min="0" max="3600">
+                </label>
             </fieldset>
         </div>
 
-        <fieldset class="option-group" id="search-group">
-            <legend>search</legend>
-            <label title="Solutions requested per solver call before ranking. Higher finds more (including professional-style) solutions but is slower.">
-                solutions per search
-                <input type="number" id="max-solutions" value="500" min="1" max="5000">
-            </label>
-            <label title="Each step's search (look-ahead included) stops after this many seconds and shows the best results found so far. 0 = no limit.">
-                search time limit (s)
-                <input type="number" id="time-limit" value="60" min="0" max="3600">
-            </label>
-
-            <div class="lookahead-config">
-                <label title="Re-rank the top results of each step by the combined TPP of the best sequence of this many steps (this step + searched follow-ups)">
-                    look-ahead depth
-                    <select id="lookahead-depth" onchange="updateLookaheadWarning()">
-                        <option value="1" selected>off (1 step)</option>
-                        <option value="2">2 steps</option>
-                        <option value="3">3 steps</option>
-                        <option value="4">4 steps</option>
-                        <option value="5">5 steps</option>
-                    </select>
-                </label>
-                <label title="How many of the step's top results are re-ranked by look-ahead">
-                    look-ahead breadth
-                    <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
-                </label>
-                <p class="search-note" id="lookahead-note">Look-ahead runs extra searches for each re-ranked result:
-                    depth 2 adds one search per result; depths of 3 or more follow the best 2 continuations
-                    of every searched step and cause <strong>significant performance delays</strong>
-                    (minutes per step with the pro move set).</p>
-            </div>
-
-            <details class="search-config-details">
-                <summary>Per-type search limits (optional — blank uses the default)</summary>
+        <details class="card search-config-details">
+            <summary>per-type limits</summary>
+            <div class="config-table-wrap">
                 <table class="search-config-table">
                     <thead>
                         <tr>
@@ -84,74 +63,72 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td>Cross</td>
-                            <td><input type="number" id="cfg-cross-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-cross-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-cross-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-cross-pseudo-maxlen" min="1" max="20"></td>
+                            <td>cross</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-cross-maxsol" min="1" max="20000" aria-label="cross max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-cross-maxlen" min="1" max="20" aria-label="cross move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-cross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo cross max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-cross-pseudo-maxlen" min="1" max="20" aria-label="pseudo cross move depth"></td>
                         </tr>
                         <tr>
-                            <td>XCross</td>
-                            <td><input type="number" id="cfg-xcross-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xcross-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-xcross-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xcross-pseudo-maxlen" min="1" max="20"></td>
+                            <td>xcross</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-xcross-maxsol" min="1" max="20000" aria-label="xcross max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-xcross-maxlen" min="1" max="20" aria-label="xcross move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xcross max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-xcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xcross move depth"></td>
                         </tr>
                         <tr>
-                            <td>XXCross</td>
-                            <td><input type="number" id="cfg-xxcross-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xxcross-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-xxcross-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xxcross-pseudo-maxlen" min="1" max="20"></td>
+                            <td>xxcross</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-xxcross-maxsol" min="1" max="20000" aria-label="xxcross max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-xxcross-maxlen" min="1" max="20" aria-label="xxcross move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xxcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xxcross max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-xxcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xxcross move depth"></td>
                         </tr>
                         <tr>
-                            <td>XXXCross</td>
-                            <td><input type="number" id="cfg-xxxcross-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xxxcross-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-xxxcross-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-xxxcross-pseudo-maxlen" min="1" max="20"></td>
+                            <td>xxxcross</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-xxxcross-maxsol" min="1" max="20000" aria-label="xxxcross max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-xxxcross-maxlen" min="1" max="20" aria-label="xxxcross move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xxxcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xxxcross max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-xxxcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xxxcross move depth"></td>
                         </tr>
                         <tr>
-                            <td>Single pair</td>
-                            <td><input type="number" id="cfg-singlePair-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-singlePair-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-singlePair-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-singlePair-pseudo-maxlen" min="1" max="20"></td>
+                            <td>single pair</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-singlePair-maxsol" min="1" max="20000" aria-label="single pair max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-singlePair-maxlen" min="1" max="20" aria-label="single pair move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-singlePair-pseudo-maxsol" min="1" max="20000" aria-label="pseudo single pair max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-singlePair-pseudo-maxlen" min="1" max="20" aria-label="pseudo single pair move depth"></td>
                         </tr>
                         <tr>
-                            <td>Multislot</td>
-                            <td><input type="number" id="cfg-multislot-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-multislot-maxlen" min="1" max="20"></td>
-                            <td><input type="number" id="cfg-multislot-pseudo-maxsol" min="1" max="20000"></td>
-                            <td><input type="number" id="cfg-multislot-pseudo-maxlen" min="1" max="20"></td>
+                            <td>multislot</td>
+                            <td data-label="max solutions"><input type="number" id="cfg-multislot-maxsol" min="1" max="20000" aria-label="multislot max solutions"></td>
+                            <td data-label="move depth"><input type="number" id="cfg-multislot-maxlen" min="1" max="20" aria-label="multislot move depth"></td>
+                            <td data-label="pseudo max solutions"><input type="number" id="cfg-multislot-pseudo-maxsol" min="1" max="20000" aria-label="pseudo multislot max solutions"></td>
+                            <td data-label="pseudo move depth"><input type="number" id="cfg-multislot-pseudo-maxlen" min="1" max="20" aria-label="pseudo multislot move depth"></td>
                         </tr>
                     </tbody>
                 </table>
-            </details>
-        </fieldset>
+            </div>
+        </details>
 
-        <fieldset class="scramble-section">
-            <legend>Scramble</legend>
-            <textarea id="scramble-input" placeholder="one scramble per line" rows="6"></textarea>
-        
+        <fieldset class="card scramble-section">
+            <legend>scrambles</legend>
+            <textarea id="scramble-input" placeholder="one scramble per line" rows="5"></textarea>
             <div class="scramble-controls">
-                <label>
-                    Generate:
-                    <input type="number" id="scramble-count" value="1" min="1" max="50">
+                <label>generate
+                    <input type="number" id="scramble-count" value="1" min="1" max="50" aria-label="number of scrambles">
                 </label>
-                <button onclick="populateScrambles()">Generate Scrambles</button>
-                <button onclick="clearScrambleData()">Clear</button>
+                <button type="button" onclick="populateScrambles()">generate</button>
+                <button type="button" onclick="clearScrambleData()">clear</button>
             </div>
         </fieldset>
 
         <div class="search-section">
-            <button onclick="persistAndNavigate()" class="search-btn">SEARCH</button>
+            <button type="button" onclick="persistAndNavigate()" class="search-btn">search</button>
         </div>
-    </div>
+    </main>
 
-    <script src="js/facelet-cube.js?v=20261005a"></script>
-    <script src="js/random-state-scramble.js?v=20261005a"></script>
-    <script src="js/script.js?v=20261005a"></script>
+    <script src="js/facelet-cube.js?v=20261005b"></script>
+    <script src="js/random-state-scramble.js?v=20261005b"></script>
+    <script src="js/script.js?v=20261005b"></script>
 </body>
 
 </html>

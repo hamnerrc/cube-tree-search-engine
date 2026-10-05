@@ -45,12 +45,27 @@ function faceOf(position) {
     return FLAGS_FACE_ORDER[Math.floor(position / 9)];
 }
 
+// Each mask's checked positions, paired with the centre they must match,
+// computed once per mask string (this check runs for every candidate of
+// every search; PROJECT_STATUS.md §4.38).
+const MASK_CHECKS = new Map();
+function maskChecks(mask) {
+    let checks = MASK_CHECKS.get(mask);
+    if (!checks) {
+        checks = [];
+        for (let pos = 0; pos < 54; pos++) {
+            if (mask[pos] === mask[pos].toUpperCase()) continue; // ignored position
+            checks.push(pos, CENTERS[faceOf(pos)]);
+        }
+        MASK_CHECKS.set(mask, checks);
+    }
+    return checks;
+}
+
 function isSlotSolved(facelets, maskName, maskTable = MASKS) {
-    const mask = maskTable[maskName];
-    for (let pos = 0; pos < 54; pos++) {
-        if (mask[pos] === mask[pos].toUpperCase()) continue; // ignored position
-        const center = facelets[CENTERS[faceOf(pos)]];
-        if (facelets[pos] !== center) return false;
+    const checks = maskChecks(maskTable[maskName]);
+    for (let i = 0; i < checks.length; i += 2) {
+        if (facelets[checks[i]] !== facelets[checks[i + 1]]) return false;
     }
     return true;
 }

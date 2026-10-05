@@ -241,6 +241,18 @@ test('stepPenalty (PROJECT_STATUS §4.35): penalties only, step-aware rotations'
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
 });
 
+test('normalizeCriteria: pro move set + cross optimisation always on, retired options moved to view settings', () => {
+  const { normalizeCriteria, ALWAYS_ON_OPTIONS } = require(path.join(__dirname, '..', 'js', 'script.js'));
+  const fresh = normalizeCriteria({ colors: ['white'], advanced: ['xcross'] });
+  assert.deepStrictEqual(fresh.advanced, ['xcross', ...ALWAYS_ON_OPTIONS]);
+  assert.strictEqual(fresh.legacyView, undefined);
+  const old = normalizeCriteria({ advanced: ['pro_moves', 'full_pseudo', 'simplified_pseudo'], lookaheadDepth: 3, lookaheadBreadth: 7 });
+  assert.deepStrictEqual(old.advanced, ['full_pseudo', ...ALWAYS_ON_OPTIONS]);
+  assert.deepStrictEqual(old.legacyView, { simplePseudo: true, lookaheadDepth: 3, lookaheadBreadth: 7 });
+  assert.strictEqual(old.lookaheadDepth, undefined);
+  assert.deepStrictEqual(normalizeCriteria(old), old, 'idempotent');
+});
+
 // ---------------------------------------------------------------------
 
 if (failures > 0) {
