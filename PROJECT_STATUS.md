@@ -1631,6 +1631,47 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.29 FIXED (2026-10-04, eleventh pass): background searching froze the whole page, including clicks on an unrelated, already-finished scramble
+
+User report: with several scrambles queued, the page would go slow or
+completely freeze while a background scramble was still searching -- and
+this blocked interacting with a *different*, already-finished scramble
+(e.g. picking scramble 1's best result and continuing to the next pair),
+not just the one being searched.
+
+**Root cause:** the WASM solve itself runs off-thread in a Worker (fine,
+non-blocking), but `searchCurrentNode`'s post-processing of every raw
+solution it returns -- a facelet replay for luck-filtering
+(`checkCandidateAgainstRealCubeState`), plus rotation-spelling/
+inspection-variant expansion under the pro move set -- is synchronous JS on
+the main thread, with zero yield points, over a loop that commonly runs
+into the hundreds or thousands of candidates per edge/color (`"4851 sols"`
+in §4.24's own measurements). §4.28's background scheduler made this much
+worse by queuing every scramble's search up front instead of only the
+active one, so the *cumulative* time the main thread spends unbroken in
+this loop grew with scramble count -- and since it's the main thread, no
+click handler (even for an already-rendered, finished scramble's results
+table) can fire until it yields.
+
+**Fix:** `yieldIfDue()` (new, `solver-bridge.js`) hands control back to the
+event loop via `await new Promise(r => setTimeout(r, 0))` whenever more than
+48ms has elapsed since the last yield, checked once per iteration of the
+main per-candidate loop (`for (const coreAlg of uniqueCoreAlgs)`). This
+changes nothing about what gets searched, scored, or how candidates are
+deduped -- only how the existing work is time-sliced -- so it's a pure
+responsiveness fix, not a search-logic change.
+
+**Verified:** `test/solver-bridge-e2e.js` (real WASM) gives byte-identical
+candidate counts to before this change. Headless-Chrome CDP: with 5
+scrambles (xcross on, pro move set on, for realistic candidate volume),
+polled main-thread responsiveness every 150ms for 25s of sustained
+background searching via trivial `Runtime.evaluate` round-trips -- max
+117ms, zero samples over 300ms (previously, by the same mechanism this fix
+targets, a single candidate loop could legitimately run unbroken for
+seconds). With scramble 1 already "ready" and other scrambles still
+searching, clicking its top result round-tripped in 14ms and committed
+correctly.
+
 ### 4.28 (2026-10-04, tenth pass): background search, undo, reload persistence, granular config — implemented, plus one open finding
 
 Four features added on top of the existing multi-scramble/queue

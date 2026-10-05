@@ -159,6 +159,25 @@ const POSTALG_BOUNDARY = 'y2 y2';
 // SolveSession.maxSolutions overrides it per session.
 const DEFAULT_MAX_SOLUTIONS = 20;
 
+// searchCurrentNode's per-candidate loop (facelet replays for luck-filtering,
+// rotation-spelling/inspection expansion) is synchronous, CPU-bound JS -- the
+// WASM solve itself runs off-thread in a Worker and doesn't block anything,
+// but this post-processing does, and a search can easily carry thousands of
+// raw solutions. Left unbroken, that freezes the whole page (including
+// clicks on an UNRELATED, already-finished scramble's results) for as long
+// as it takes to process every candidate. yieldIfDue() hands control back to
+// the event loop roughly every YIELD_INTERVAL_MS of continuous work so
+// pending UI events (a click, a render) get a chance to run in between
+// chunks -- this changes nothing about what gets searched or how candidates
+// are scored, only how the work is time-sliced.
+const YIELD_INTERVAL_MS = 48;
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+async function yieldIfDue(state) {
+  if (now() - state.lastYield < YIELD_INTERVAL_MS) return;
+  await new Promise(resolve => setTimeout(resolve, 0));
+  state.lastYield = now();
+}
+
 // Distance-1 limits per README "Search limits" table, keyed by pair count.
 // XXXCross=13 is not spec'd; see PROJECT_STATUS §4.6.
 const DISTANCE1_LIMITS = { 0: 10, 1: 11, 2: 12, 3: 13 };
@@ -518,6 +537,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   }
 
   const candidates = [];
+  const yieldState = { lastYield: now() };
 
   const colorList = isRoot ? session.colors : [null];
 
@@ -597,6 +617,8 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
       }
 
       for (const coreAlg of uniqueCoreAlgs) {
+        await yieldIfDue(yieldState);
+
         // Cross optimisation (README "Wide moves and Cross optimisation") --
         // a first-step-only, Cross-only (pairCount=0) post-process, kept
         // independent of altAlgs below (its own rotation search already
