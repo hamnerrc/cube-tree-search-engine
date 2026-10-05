@@ -123,6 +123,9 @@ function persistAndNavigate() {
         // Per-category overrides (README "Granular search configuration");
         // undefined when every per-category field was left blank.
         searchConfig: readSearchConfig(),
+        // Look-ahead (README "Look-ahead optimisation depth"): 1 = off.
+        lookaheadDepth: parseInt(document.getElementById('lookahead-depth')?.value, 10) || 1,
+        lookaheadBreadth: parseInt(document.getElementById('lookahead-breadth')?.value, 10) || undefined,
         scrambles
     };
 
@@ -134,9 +137,14 @@ function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions, searchConfig } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions, searchConfig, lookaheadDepth, lookaheadBreadth } = JSON.parse(rawState);
     const maxSolutionsInput = document.getElementById('max-solutions');
     if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
+    const depthInput = document.getElementById('lookahead-depth');
+    if (depthInput && lookaheadDepth) depthInput.value = String(lookaheadDepth);
+    const breadthInput = document.getElementById('lookahead-breadth');
+    if (breadthInput && lookaheadBreadth) breadthInput.value = lookaheadBreadth;
+    updateLookaheadWarning();
     restoreSearchConfigInputs(searchConfig);
 
     const checkMatching = (selector, values) => {
@@ -147,6 +155,13 @@ function restoreCheckboxState() {
 
     checkMatching('#colors-group input[type="checkbox"]', colors);
     checkMatching('#advanced-group input[type="checkbox"]', advanced);
+}
+
+/** Highlights the look-ahead performance note once depth 3+ is chosen. */
+function updateLookaheadWarning() {
+    const depth = parseInt(document.getElementById('lookahead-depth')?.value, 10) || 1;
+    const note = document.getElementById('lookahead-note');
+    if (note) note.classList.toggle('search-note-warning', depth >= 3);
 }
 
 function loadSearchCriteria() {
@@ -293,7 +308,14 @@ function altAlgs(algorithms) {
     });
 }
 
-function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult = 0.8, pushMult = 1.3, ringMult = 1.4, destabilize = 0.5, addRegrip = 1, double = 1.65, sesliceMult = 1.25, overWorkMult = 2.25, moveblock = 0.8, rotation = 3.5) {
+// algSpeed's tunable constants in signature order (tools/pro-ranking.js
+// sweeps them against the professional reference solves). One deliberate
+// change from untuned MCC: pushMult 1.3 -> 0.8 (finger pushes on U/D turns
+// cheaper), which ranks the professional reference algs higher on both the
+// tuning and the held-out solves (PROJECT_STATUS.md §4.32).
+const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, destabilize: 0.5, addRegrip: 1, double: 1.65, sesliceMult: 1.25, overWorkMult: 2.25, moveblock: 0.8, rotation: 3.5 };
+
+function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult = ALG_SPEED_DEFAULTS.wristMult, pushMult = ALG_SPEED_DEFAULTS.pushMult, ringMult = ALG_SPEED_DEFAULTS.ringMult, destabilize = ALG_SPEED_DEFAULTS.destabilize, addRegrip = ALG_SPEED_DEFAULTS.addRegrip, double = ALG_SPEED_DEFAULTS.double, sesliceMult = ALG_SPEED_DEFAULTS.sesliceMult, overWorkMult = ALG_SPEED_DEFAULTS.overWorkMult, moveblock = ALG_SPEED_DEFAULTS.moveblock, rotation = ALG_SPEED_DEFAULTS.rotation) {
     function test(splitSeq, lGrip, rGrip, speed) {
         let lThumb = [-1, "home"];
         let lIndex = [-1, "home"];
@@ -1070,6 +1092,7 @@ function scoreAlgorithms(algorithms) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         algSpeed,
+        ALG_SPEED_DEFAULTS,
         altAlgs,
         cleanScramble,
         isPseudoState,

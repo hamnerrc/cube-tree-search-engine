@@ -45,6 +45,8 @@
                         <th>edges</th>
                         <th>corners</th>
                         <th>alg</th>
+                        <th title="Time per piece of the whole path so far, including this step (lower is better)">TPP</th>
+                        <th title="Combined TPP of the best look-ahead sequence starting with this step, and its follow-up steps">look-ahead</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
@@ -53,14 +55,15 @@
         </div>
     </div>
 
-    <script src="js/script.js?v=20261004o"></script>
-    <script src="js/facelet-cube.js?v=20261004o"></script>
-    <script src="js/facelet-flags.js?v=20261004o"></script>
-    <script src="js/cross-optimization.js?v=20261004o"></script>
+    <script src="js/script.js?v=20261004p"></script>
+    <script src="js/facelet-cube.js?v=20261004p"></script>
+    <script src="js/facelet-flags.js?v=20261004p"></script>
+    <script src="js/cross-optimization.js?v=20261004p"></script>
     <script src="crossSolver/solver-helper.js"></script>
     <script src="pseudoCrossSolver/solver-helper.js"></script>
-    <script src="js/solver-bridge.js?v=20261004o"></script>
-    <script src="js/solver-ui.js?v=20261004o"></script>
+    <script src="js/search-scheduler.js?v=20261004p"></script>
+    <script src="js/solver-bridge.js?v=20261004p"></script>
+    <script src="js/solver-ui.js?v=20261004p"></script>
 </body>
 
 </html>

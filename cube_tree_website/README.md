@@ -44,13 +44,39 @@ normally **2–5 steps**, not 12 individual piece-by-piece moves.
 4. This repeats until the current node is the fully-solved Cross + F2L node.
 
 Limited look-ahead — pre-evaluating how a given next step affects the
-*following* step's best options — is a desirable future enhancement, since it
-can surface a step that looks slightly worse in isolation but opens up a much
-better continuation. It is explicitly **not** the core interaction model,
-though: single-step search of the current node is the baseline behavior, and
-pre-searching the top-ranked current-step candidates one level further is the
-intended form look-ahead should take when added, rather than a full
-multi-step search at every click.
+*following* steps' best options — can surface a step that looks slightly
+worse in isolation but opens up a much better continuation. It is an
+optional setting, **not** the core interaction model: single-step search of
+the current node is the baseline behavior (see
+[Look-ahead optimisation depth](#look-ahead-optimisation-depth)).
+
+### Look-ahead optimisation depth
+
+A search setting optimises results for the best combined next *N* steps,
+for N = 2, 3, 4 or 5 (default: off, i.e. 1 step):
+
+1. Search step *n* as usual and rank it by TPP.
+2. For each of the top results of step *n* (the **look-ahead breadth**,
+   default 5), commit it tentatively and search step *n+1*; repeat down to
+   step *n+N-1*. Below the first look-ahead level only the best 2
+   continuations of each searched step are followed further, which keeps
+   depth 5 finite.
+3. Re-rank those top step-*n* results by the **combined TPP** of the best
+   look-ahead sequence starting with each — since TPP is cumulative over the
+   whole path, that is simply the TPP after the sequence's last step. The
+   remaining results keep their single-step order below them. A sequence that
+   completes Cross + F2L early stops there; one with no continuation at all
+   sinks to the bottom of the re-ranked block.
+
+Each re-ranked result shows its combined TPP and the follow-up steps of its
+best sequence. Only the clicked step is committed — the follow-ups are a
+preview, and the next search starts from the committed node as usual (reusing
+the look-ahead's searches where it can).
+
+> Look-ahead multiplies the searching per step: depth 2 adds one search per
+> re-ranked result, and **depths of 3 or more cause significant performance
+> delays** (minutes per step with the pro move set). The settings page shows
+> this warning.
 
 ## Orientation
 
@@ -95,10 +121,15 @@ result (see below) — those are free, since a human absorbs them during
 inspection rather than mid-solve. `y2` specifically is forbidden as a
 mid-algorithm move; it may only appear as a distance-1 inspection rotation.
 
-> Apart from the rotation cost above, `alg_speed`'s constants are
-> intentionally **untuned** for now (see
-> [Provenance](#provenance--licensing)) — this is a deliberate, temporary
-> choice, not an oversight.
+**Tuned for professional solutions.** Apart from the rotation cost above,
+`alg_speed` keeps MCC's constants except one, chosen as the simplest change
+that ranks the [professional reference solves](#professional-reference-solves-and-known-gaps)
+higher: finger pushes on `U`/`D` turns (`pushMult`) cost 0.8 instead of 1.3,
+favouring the `R`/`U`-heavy, "spammable" solutions professionals use. The
+choice was benchmarked by where each professional step ranks among the
+engine's alternatives (`tools/pro-ranking.js`) — tuned on the first seven
+reference solves and confirmed on the rest. Further tuning should use the same
+benchmark rather than hand-picked constants.
 
 ## What the DAG edges mean
 
@@ -261,6 +292,10 @@ regardless of how the current scoring algorithm ranks them.** They are the
 validation set for search coverage: `test/pro-references.test.js` checks the
 reference data itself, and `test/pro-references-e2e.js` measures, for every
 step, whether the professional's exact algorithm is in the search tree.
+They are also the ranking benchmark: `tools/pro-ranking.js` measures where
+each professional step ranks among the engine's alternatives under
+`alg_speed`. Reference entries may omit the inspection line (no rotation)
+and may combine pairs into one step (e.g. `// 3rd/4th pairs`).
 
 Professional step boundaries do not always land on a DAG node (a cross edge
 is sometimes parked in a side layer until the next step), so the reference
@@ -303,8 +338,8 @@ search; current measurements are in PROJECT_STATUS.md):
 
 At minimum, a results table shows:
 
-| rank | colour | type | rotation | edges | corners | alg |
-|---|---|---|---|---|---|---|
+| rank | colour | type | rotation | edges | corners | alg | TPP | look-ahead |
+|---|---|---|---|---|---|---|---|---|
 
 - **colour** — which cross color this result targets.
 - **type** — Cross / XCross / XXCross / XXXCross / multislot / single-pair,
@@ -314,6 +349,9 @@ At minimum, a results table shows:
   rotation/color-orientation that brings the chosen color to the bottom.
 - **edges** / **corners** — which F2L slots this step solves.
 - **alg** — the move sequence.
+- **TPP** — the path's time per piece including this step.
+- **look-ahead** — with look-ahead on, the combined TPP of the best sequence
+  starting with this result, and that sequence's follow-up steps.
 
 Clicking a result appends its moves to the current committed path and
 triggers a fresh search from the resulting node. Multiple scrambles are
@@ -335,6 +373,13 @@ programs use.
   solver can only run one search at a time, scrambles are still searched one
   at a time behind the scenes — "background" means *you* never have to wait
   idle for it, not that every scramble searches in true parallel.
+- **Your focus comes first.** The scramble on screen always outranks the
+  background: when you commit a result, that scramble's next search jumps to
+  the front of the queue and starts at once; a background search that is
+  running pauses at its next solver call (only the call already in flight
+  finishes first) and resumes when the active search is done. Switching to
+  another scramble moves that scramble's search to the front and sends the
+  one you left back to the background.
 - **Undo.** Each committed step can be undone, one at a time, back to the
   unsolved start. Undoing does not just erase the step — it re-runs the
   search at the node you've stepped back to, so every other option at that
@@ -355,7 +400,8 @@ programs use.
 - Full Last Layer solving.
 - EO-aware solving beyond what the F2L DAG already captures.
 - Automatic batch ranking across multiple scrambles at once.
-- Swapping in the tuned/fitted `alg_speed` model (see Provenance).
+- Swapping in a fully fitted `alg_speed` model (see Provenance); only the
+  single benchmarked constant above is changed.
 - XXXXCross as a primary, directly-offered target.
 - Cross finishing anywhere other than the bottom face.
 
@@ -377,7 +423,8 @@ record of changes made to the vendored engine code, are in
   [or18_solver_docs.html](docs/or18_solver_docs.html) for reference.
 - `alg_speed` is based on **Triangium's MCC** (move-cost/comfort) model,
   MIT-licensed (Copyright (c) 2021 trangium). cube⑂tree uses the **untuned**
-  version of this model deliberately (see Ranking, above), with one change:
-  every move has a cost, including `x` rotations (see Ranking).
+  version of this model with two changes (see Ranking, above): every move has
+  a cost, including `x` rotations, and `pushMult` is 0.8 (benchmarked against
+  the professional reference solves).
 - Other utility/glue code (the DAG generator, UI, scoring plumbing) was
   originally written with AI assistance.

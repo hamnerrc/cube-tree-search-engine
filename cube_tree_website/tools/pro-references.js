@@ -77,10 +77,16 @@ function replayProSolve(solve) {
     path = [path, step.alg].filter(Boolean).join(' ');
     return {
       label: step.label, alg: step.alg, features: algFeatures(step.alg),
-      before, after: describeState(facelets),
+      before, after: describeState(facelets), facelets,
       frame: canonicalizeForEngine(solve.inspection, path),
     };
   });
+}
+
+/** Inverse of a whole-cube rotation string ("x y'" -> "y x'"). */
+function invertRotation(rot) {
+  return rot.split(' ').filter(Boolean).reverse()
+    .map(t => (t.endsWith('2') ? t : t.endsWith("'") ? t[0] : t + "'")).join(' ');
 }
 
 /**
@@ -88,7 +94,11 @@ function replayProSolve(solve) {
  * cross is solved and no previously solved pair is lost (pros' labelled
  * steps sometimes leave the cross temporarily broken, e.g. a cross edge
  * parked in the R layer until the next step). Returns
- * [{ labels, alg, isRoot, before, after, newPairs, totalPairs, features }].
+ * [{ labels, alg, isRoot, before, after, afterStart, newPairs, totalPairs, features }].
+ * Slot names in `after` are in the frame the segment ends in; `afterStart`
+ * (and `newPairs`) name the same physical slots in the frame the segment
+ * starts in, which is what the engine's goal is expressed in -- they differ
+ * when the segment contains a mid-step y-family rotation (e.g. #11's `y'`).
  */
 function segmentProSolve(solve) {
   const steps = replayProSolve(solve);
@@ -98,16 +108,24 @@ function segmentProSolve(solve) {
   for (const st of steps) {
     if (!pending.length) start = st.before;
     pending.push(st);
-    const lost = start.pairs.some(p => !st.after.pairs.includes(p));
-    if (!st.after.cross || lost) continue;
     const alg = pending.map(x => x.alg).join(' ');
+    const netRotation = canonicalizeForEngine('', alg).rotation;
+    let afterStart = describeState(applyAlgorithm(st.facelets, invertRotation(netRotation)));
+    // A wide move that brings the cross colour down (e.g. #8's r2 from a
+    // yellow-down inspection) has no start frame with the cross on D; those
+    // root segments keep the end-frame names, as the engine searches them
+    // via the cross-down rewrite (inspectionWideVariants).
+    if (afterStart.crossColor !== st.after.crossColor) afterStart = st.after;
+    const lost = start.pairs.some(p => !afterStart.pairs.includes(p));
+    if (!st.after.cross || lost) continue;
     segments.push({
       labels: pending.map(x => x.label),
       alg,
       isRoot: !start.cross,
       before: start,
       after: st.after,
-      newPairs: st.after.pairs.filter(p => !start.pairs.includes(p)),
+      afterStart,
+      newPairs: afterStart.pairs.filter(p => !start.pairs.includes(p)),
       totalPairs: st.after.pairs.length,
       features: algFeatures(alg),
     });
@@ -153,5 +171,5 @@ function goalNoopMoves(solve, segIndex) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { goalNoopMoves, segmentProSolve, parseProReferences, loadProReferences, replayProSolve, describeState, algFeatures, normalizeAlg };
+  module.exports = { invertRotation, goalNoopMoves, segmentProSolve, parseProReferences, loadProReferences, replayProSolve, describeState, algFeatures, normalizeAlg };
 }

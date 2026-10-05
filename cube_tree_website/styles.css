@@ -480,3 +480,31 @@ button:hover {
     opacity: 0.4;
     cursor: not-allowed;
 }
+/* Look-ahead settings (index.html) */
+.lookahead-config {
+    margin-top: 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    align-items: center;
+}
+
+.lookahead-config select {
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 0.2rem 0.3rem;
+    font: inherit;
+}
+
+.search-note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.82rem;
+    color: #888;
+}
+
+.search-note-warning {
+    color: #e0a040;
+}

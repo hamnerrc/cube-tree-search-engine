@@ -407,6 +407,22 @@ class SolveSession {
     this.rotation = ''; // cumulative setup rotation, fixed after step 1
     this.stepAlgs = []; // each committed step's core alg (rotation-stripped)
     this.committedRows = []; // display rows for the solve-so-far
+    this.searchMemo = new Map(); // memoSearch results, shared with fork()s
+  }
+
+  /**
+   * A copy of this session that can commit without touching this one
+   * (look-ahead). Shares the tree, settings and search memo, so a step the
+   * look-ahead already searched is not searched again once really committed.
+   */
+  fork(candidate) {
+    const s = Object.assign(Object.create(SolveSession.prototype), this, {
+      stepAlgs: this.stepAlgs.slice(),
+      committedRows: this.committedRows.slice(),
+      resultsCache: null,
+    });
+    if (candidate) s.commit(candidate);
+    return s;
   }
 
   get isAtRoot() { return this.currentNodeId === this.rootId; }
@@ -859,6 +875,89 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Look-ahead (README "Look-ahead optimisation depth", PROJECT_STATUS.md §4.31)
+// ---------------------------------------------------------------------------
+
+const LOOKAHEAD_MAX_DEPTH = 5;
+const DEFAULT_LOOKAHEAD_BREADTH = 5;
+// Below the first look-ahead level only the best few continuations of each
+// node are followed, or depth 5 would need breadth^4 searches.
+const LOOKAHEAD_INNER_BREADTH = 2;
+// Result lists can hold tens of thousands of candidates; keep the memo bounded.
+const SEARCH_MEMO_LIMIT = 48;
+
+/**
+ * searchCurrentNode, memoised per (node, inspection rotation, committed path)
+ * in session.searchMemo -- shared by every fork, so the look-ahead's searches
+ * are reused once the user commits one of the candidates it explored.
+ */
+function memoSearch(session, helper, onStatus, pseudoHelper) {
+  const memo = session.searchMemo || (session.searchMemo = new Map());
+  const key = `${session.currentNodeId}|${session.rotation}|${session.scoredPath}`;
+  if (memo.has(key)) {
+    const hit = memo.get(key);
+    memo.delete(key); // refresh its place in the eviction order
+    memo.set(key, hit);
+    return hit;
+  }
+  const promise = searchCurrentNode(session, helper, onStatus, pseudoHelper);
+  memo.set(key, promise);
+  promise.catch(() => { if (memo.get(key) === promise) memo.delete(key); });
+  while (memo.size > SEARCH_MEMO_LIMIT) memo.delete(memo.keys().next().value);
+  return promise;
+}
+
+/**
+ * Best path of up to `levels` further steps from `session`'s node:
+ * { tpp, algs } where tpp is the path TPP after the last step (TPP is
+ * cumulative, so that IS the combined TPP of the sequence), null when the
+ * session is already complete, tpp Infinity when no continuation was found.
+ */
+async function bestContinuation(session, levels, helper, onStatus, pseudoHelper) {
+  if (session.isComplete) return null;
+  const results = await memoSearch(session, helper, onStatus, pseudoHelper);
+  if (!results.length) return { tpp: Infinity, algs: [] };
+  if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg] };
+  let best = null;
+  for (const c of results.slice(0, LOOKAHEAD_INNER_BREADTH)) {
+    const sub = await bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper);
+    const tpp = sub ? sub.tpp : c.tpp; // null: c completes Cross+F2L
+    if (!best || tpp < best.tpp) best = { tpp, algs: [c.coreAlg, ...(sub ? sub.algs : [])] };
+  }
+  return best;
+}
+
+/**
+ * searchCurrentNode with look-ahead: the top `breadth` candidates of this
+ * step are re-ranked by the combined TPP of the best sequence of `depth`
+ * steps that starts with them (this step + depth-1 searched follow-ups);
+ * the rest keep their single-step order below them. depth 1 = no look-ahead.
+ * Every candidate keeps its own `tpp`; re-ranked ones gain `lookaheadTpp`
+ * and `lookaheadAlgs` (the follow-up steps of that best sequence).
+ */
+async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
+  const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
+  const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
+  const results = await memoSearch(session, helper, onStatus, pseudoHelper);
+  if (depth === 1 || !results.length) return results;
+
+  const top = results.slice(0, breadth);
+  const reranked = [];
+  for (let i = 0; i < top.length; i++) {
+    const cand = top[i];
+    const status = onStatus && (msg => onStatus(`Look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
+    const best = await bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper);
+    reranked.push({
+      ...cand,
+      lookaheadTpp: best ? best.tpp : cand.tpp,
+      lookaheadAlgs: best ? best.algs : [],
+    });
+  }
+  reranked.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
+  return reranked.concat(results.slice(breadth));
+}
+
 /**
  * The root's outgoing target whose solved corners/edges are exactly the given
  * labels (a y/y2/y' root variant reaches the relabelled node, see
@@ -896,5 +995,6 @@ if (typeof module !== 'undefined' && module.exports) {
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,
+    memoSearch, searchWithLookahead, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
   };
 }

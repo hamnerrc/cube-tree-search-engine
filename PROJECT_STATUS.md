@@ -17,6 +17,34 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
+**2026-10-04 (twelfth pass): dynamic search priority, look-ahead depth, and
+`alg_speed` tuned against the pro references; plus 4 new reference solves
+(one typo fixed) and a segmenter frame bug.** Full writeups in §4.30-§4.33.
+1. **Priority scheduling (§4.30):** new `js/search-scheduler.js` replaces the
+   FIFO search chain. The active scramble's search starts immediately and
+   pre-empts background searches at their next engine call; switching
+   scrambles promotes/demotes. Headless Chrome, 5 scrambles: click → next
+   step's results **83.4 s before, 7.0 s after**, identical result counts.
+2. **Look-ahead (§4.31):** `searchWithLookahead` (depth 2-5, breadth
+   default 5, inner breadth 2) re-ranks the top results by the combined TPP
+   of the best follow-up sequence; settings + depth-3+ warning on index.html;
+   TPP and look-ahead columns in the results table. Searches are memoised per
+   session (`memoSearch`, shared with `SolveSession.fork()`), so committing an
+   explored candidate is instant. `test/lookahead-e2e.js` re-derives every
+   number against the real engine with fresh sessions.
+3. **Tuning (§4.32):** new `tools/pro-ranking.js` benchmarks where each pro
+   step ranks among the engine's alternatives. Single change:
+   `pushMult` 1.3 → 0.8. Mean log10 rank 1.386 → 1.269 (tuned on #1-7:
+   1.229 → 1.119; held out #8-11: 1.702 → 1.568); pro steps in the top 500:
+   26 → 29 of 36. Raising rotation cost scored well on average but was
+   rejected: it pushes down every pro step that rotates.
+4. **Reference data (§4.33):** the user added solves #8-#11. #10's 4th pair
+   ended `L2`; the only single-token edit that solves the cube is `L`, so it
+   was corrected (flagged for the user). The segmenter compared slot names
+   across a mid-step `y'` (#11) and merged three steps into one; it now
+   compares in the segment's start frame (`afterStart`), which is also what
+   the e2e harness passes the engine as the goal.
+
 **Current state:** the core interactive solver loop works end-to-end (pseudo F2L included as of the sixth pass below; slow) and is
 verified — both in a Node harness driving the real WASM solver and physically
 checked with a real cube simulator (`magiccube`) — for matched (non-pseudo)
@@ -236,6 +264,7 @@ node cube_tree_website/test/cross-optimization.test.js
 node cube_tree_website/test/browser-globals.test.js
 node cube_tree_website/test/random-state-scramble.test.js
 node cube_tree_website/test/pro-references.test.js
+node cube_tree_website/test/search-scheduler.test.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 # very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
@@ -260,7 +289,17 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**Reasonable next tasks (as of the eighth pass):**
+**Reasonable next tasks (as of the twelfth pass):**
+- Look-ahead cost: depth 3+ with the pro move set is minutes per step. Ideas:
+  a smaller `maxSolutions` for look-ahead-only searches, or running the
+  look-ahead after the plain results are shown (render, then re-rank).
+- `alg_speed` root ranks: pro xcrosses still rank ~1000-8000 in their pools
+  because MCC is additive per move and the pros' xcrosses are longer than the
+  pool's best. Any further tuning must go through `tools/pro-ranking.js`
+  with a held-out split.
+- §4.28's open browser-worker finding is still open.
+
+**Older list (eighth pass):**
 0. pro_references.txt gaps (§4.20): non-cross-on-D inspection orientations
    (#6/#7). Goal-no-op moves need an engine change (emcc). Tune the default
    solutions-per-search (100) against real timing data.
@@ -352,7 +391,9 @@ re-deriving rotation algebra by hand.
   (`F2L_tree.json`, `f2l_nodes_and_edges.json`, `pro_references.txt`);
   Node/Python dev scripts are in `tools/` (`backend_test.js`,
   `cross_xcross.js`, `pro-references.js`, `tree_gen.py`, `test_tree_gen.py`,
-  `gen_facelet_fixture.py`, plus the new shared `harness.js`); upstream docs
+  `gen_facelet_fixture.py`, plus the new shared `harness.js`; twelfth pass:
+  `pro-search.js`, the engine side of the pro harnesses, and `pro-ranking.js`,
+  the alg_speed benchmark; `js/search-scheduler.js` is the search queue); upstream docs
   are in `docs/`. `index.html`, `solver.html`, `f2l_table_inspector.html`,
   `styles.css` stay at the site root, as do the vendored `crossSolver/` and
   `pseudoCrossSolver/` engines (untouched — `THIRD_PARTY_NOTICES.md`
@@ -1630,6 +1671,190 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.33 (2026-10-04, twelfth pass): reference solves #8-#11, one typo fixed, segmenter frame bug
+
+The user added four solves (uncommitted at the start of this pass): #8
+(`y2`), #9 (`y`, yellow cross, `// 3rd/4th pairs` as one step), #10 (no
+inspection line, yellow cross, 3 steps), #11 (`x2`, a mid-step `y'` in its
+2nd pair). `test/pro-references.test.js` failed on them, for three reasons:
+
+1. **Test assumptions:** exactly 7 solves, always an inspection, always 4
+   steps, always white. Relaxed to the real format (README now says
+   inspection is optional and pairs may be combined).
+2. **#10 doesn't solve as written:** `y U2' L' U L U' L' U L2` breaks the
+   cross. An exhaustive search over every single- and double-token edit of
+   that step found exactly one fix: the final `L2` → `L` (a natural typo).
+   Corrected in `data/pro_references.txt`. **Flagged for the user to confirm.**
+3. **Segmenter bug:** `segmentProSolve` decided "a pair was lost" by comparing
+   slot names before and after a step. A mid-step `y'` relabels slots, so
+   #11's 2nd pair looked like it lost BR and was merged with the 3rd and 4th
+   pairs. It now also describes the state in the segment's **start** frame
+   (`afterStart`: the step's net rotation undone) and uses that for the loss
+   check and `newPairs`. The fallback for a root wide move that brings the
+   cross colour down (#8's `r2`, no start frame with cross on D) keeps the
+   end-frame names. The e2e harness had the same latent issue (it passed
+   end-frame names as the engine's start-frame goal). It only worked before
+   because every earlier rotated segment was a final 4-pair one. It now
+   passes `afterStart.pairs`. The engine side of both harnesses moved into
+   `tools/pro-search.js`.
+
+Segments now: #8 xxcross | 3rd | 4th; #9 xxcross | 3rd/4th; #10 xxcross |
+3rd | 4th; #11 xcross | 2nd | 3rd | 4th (36 segments in total). Goal-no-op
+moves are detected in #9 xxcross and #11 xcross too.
+
+### 4.32 DONE (2026-10-04, twelfth pass): `alg_speed` tuned against the pro references (pushMult 1.3 → 0.8)
+
+User request: adjust the speed algorithm in the simplest way possible so
+professional solutions rank higher, benchmarked on `pro_references.txt`.
+
+**Benchmark (`tools/pro-ranking.js`):** for each of the 36 segments, the
+engine's solutions of that segment's goal up to the pro's length (pro move
+set, shortest first, capped at 5000 like the app's per-search cap), plus
+rotation spellings and root inspection variants, i.e. roughly what the app
+ranks there. Pools have 14-67k algs, cached as JSON; building them takes
+~10 min, and each ranking pass ~3-10 s. Each pool alg and the pro alg are
+scored the way the app scores them (algSpeed of the whole path incl. the
+step; the piece count is the same within a segment). The metric is the mean
+log10 of the pro alg's estimated rank, so every segment counts and rank
+5000 → 500 matters as much as 10 → 1. Also reported: mean percentile and the
+count of pro steps inside the 500 rows the table shows. `--train 1-7` is the
+tuning set; #8-#11 (new this pass) are held out.
+
+**Sweep** (every algSpeed constant, one at a time, `--sweep`):
+- `rotation` higher looked best on average (6: log rank 1.306, 32/36 in the
+  top 500), but it only helps root steps (by burying rotation spellings)
+  while it pushes down **every pro step that does rotate** (#5 4th pair:
+  rank 2 → 38, #10 4th 83 → 194, #11 2nd 24 → 61). Rejected, since rotations
+  are a mandatory requirement.
+- `pushMult` lower (finger pushes on U/D turns) improves both train and
+  held-out with no rotation penalty; 0.7-0.8 are equivalent (0.8 has the
+  better mean percentile).
+- Two-constant combinations on top of it (ringMult, double, addRegrip, ...)
+  gain little and mostly on the train set. Not worth the extra change.
+
+**Chosen: `pushMult` 0.8** (in `ALG_SPEED_DEFAULTS`, script.js; algSpeed's
+signature now reads its defaults from that object). Mean log10 rank 1.386 →
+1.269 (train 1.229 → 1.119, held-out 1.702 → 1.568); mean percentile 2.6% →
+2.2%; top 500: 26 → 29 of 36; 20 segments better, 7 worse, 9 unchanged.
+README "Ranking" and "Provenance" updated (it was "untuned except x").
+Estimated ranks (sample 6000 per pool, so pools over 6000 have about ±0.02%
+resolution):
+
+| segment | pool | rank, pushMult 1.3 | rank, 0.8 |
+|---|---|---|---|
+| #1 xcross | 49828 | 4950 | 7317 |
+| #1 2nd pair | 234 | 3 | 5 |
+| #1 3rd pair | 1837 | 12 | 9 |
+| #1 4th pair | 13630 | 1075 | 467 |
+| #2 xcross | 63368 | 54 | 33 |
+| #2 2nd pair | 18 | 1 | 1 |
+| #2 3rd pair | 557 | 1 | 1 |
+| #2 4th pair | 254 | 4 | 1 |
+| #3 xcross | 50600 | 566 | 397 |
+| #3 2nd pair | 3316 | 5 | 3 |
+| #3 3rd pair+4th pair | 9133 | 572 | 426 |
+| #4 xcross | 1380 | 2 | 2 |
+| #4 2nd pair | 132 | 4 | 4 |
+| #4 3rd pair+4th pair | 50 | 3 | 2 |
+| #5 xcross | 33216 | 7 | 7 |
+| #5 2nd pair | 14 | 1 | 1 |
+| #5 3rd pair | 1187 | 1 | 1 |
+| #5 4th pair | 3300 | 2 | 1 |
+| #6 xcross | 66808 | 9810 | 7060 |
+| #6 2nd pair | 472 | 10 | 7 |
+| #6 3rd pair | 734 | 6 | 3 |
+| #6 4th pair | 1564 | 5 | 8 |
+| #7 xcross+2nd pair | 60828 | 4685 | 2150 |
+| #7 3rd pair+4th pair | 39 | 1 | 1 |
+| #8 xxcross | 43080 | 1739 | 1193 |
+| #8 3rd pair | 34 | 2 | 1 |
+| #8 4th pair | 8005 | 25 | 17 |
+| #9 xxcross | 6040 | 1063 | 1102 |
+| #9 3rd/4th pairs | 1084 | 12 | 9 |
+| #10 xxcross | 48052 | 618 | 514 |
+| #10 3rd pair | 951 | 2 | 2 |
+| #10 4th pair | 9805 | 83 | 143 |
+| #11 xcross | 35068 | 1480 | 2859 |
+| #11 2nd pair | 2027 | 24 | 26 |
+| #11 3rd pair | 306 | 5 | 1 |
+| #11 4th pair | 4561 | 13 | 3 |
+
+**Still weak:** root xcrosses (ranks ~200-8000). MCC is additive per move,
+and the pros' xcrosses are longer (10-15 moves) than the best of the pool
+(~9). No single constant fixes that.
+
+### 4.31 DONE (2026-10-04, twelfth pass): look-ahead optimisation depth
+
+User request: optimise results for the best combined next N steps (N = 2..5,
+with a warning that 3+ is slow). Calculate the best step n, search step n+1
+for each top solution (down to the depth), and re-rank step n by the
+combined TPP of the sequence.
+
+`solver-bridge.js`:
+- `SolveSession.fork(candidate)` makes a copy that can commit without
+  touching the original; it shares the tree, settings and `searchMemo`.
+- `memoSearch` is `searchCurrentNode` memoised per (node, rotation, path),
+  bounded to 48 entries.
+- `bestContinuation` is a beam: at the first look-ahead level every top
+  candidate is expanded, below that the best `LOOKAHEAD_INNER_BREADTH` (2).
+  It returns the TPP after the last step. TPP is cumulative, so that IS the
+  combined TPP. A path that completes early stops; a dead end is `Infinity`.
+- `searchWithLookahead(session, h, onStatus, ph, {depth, breadth})`
+  re-ranks the top `breadth` (default 5) by `lookaheadTpp` (stable sort);
+  the rest keep single-step order. Re-ranked rows also carry
+  `lookaheadAlgs`.
+
+UI: index.html "look-ahead depth" (off/2-5) and "look-ahead breadth" plus a
+performance note that turns orange at depth ≥ 3; saved as
+`lookaheadDepth`/`lookaheadBreadth` in the criteria. solver.html gains TPP
+and look-ahead columns (the look-ahead column shows the combined TPP → the
+follow-up steps).
+
+Search count per step: depth 2 = breadth extra searches; depth d ≥ 3 =
+breadth × (1 + 2 + … + 2^(d-2)) at most (e.g. depth 5, breadth 5 = 75),
+fewer when memo hits or the solve completes early.
+
+**Verified:** `test/lookahead-e2e.js` (real WASM, smoke scramble). At
+depth 2, every `lookaheadTpp` equals the best TPP from a fresh session (no
+shared memo) that committed that candidate; re-ranked rows are sorted; the
+rest keep single-step order; look-ahead changed the top-4 order. Committing
+an explored candidate is a memo hit (< 50 ms). At depth 3, every
+`lookaheadAlgs` sequence, replayed through fresh commits, reaches exactly
+`lookaheadTpp`. Headless Chrome (depth 2, breadth 3): rows 1-3 show the
+look-ahead, row 4+ "-", commit + next search fine, 0 exceptions/warnings;
+the index note toggles at depth 3/5 and settings restore.
+
+### 4.30 DONE (2026-10-04, twelfth pass): the active scramble's search jumps the queue
+
+User request: a search started by committing a solution must go to the front
+of the queue, with background scrambles deprioritised. Before, `solver-ui.js`
+chained every search onto one FIFO promise, so a commit waited behind every
+background scramble queued earlier.
+
+New `js/search-scheduler.js` (`createSearchScheduler`, `SEARCH_PRIORITY`):
+- BACKGROUND jobs start one at a time, only when nothing else is running.
+- ACTIVE jobs start immediately.
+- Every engine call goes through one priority gate (`wrap(helper)` proxies
+  the helper's `solve*` methods). The call in flight finishes, then ACTIVE
+  calls run. BACKGROUND calls wait for as long as any ACTIVE job is running,
+  including the post-processing between its calls, so a background search
+  pauses instead of interleaving.
+- `setPriority` handles promotion and demotion.
+
+`solver-ui.js`: `resultsFor(session, h, ph, priority)` submits or re-prioritises;
+`runSearch` uses ACTIVE; `scheduleBackgroundSearches` uses BACKGROUND and
+leaves already-queued sessions alone; `onActiveScrambleChanged` demotes the
+scramble being left.
+
+**Verified:** `test/search-scheduler.test.js` (fake timed helpers that throw
+on overlapping calls): FIFO background, active pre-emption of queued and
+running jobs, promotion, demotion, errors, no overlap under 6 mixed jobs.
+Headless Chrome, same driver against HEAD (served from a `git archive`
+copy) and the new code: 5 scrambles, xcross + xxcross, 500 solutions per
+search. Clicking scramble 1's top result while the others search in the
+background took **83.4 s → 7.0 s** to show step 2, with identical result
+counts everywhere (21848/1000/21936/...), 0 exceptions, 0 warnings.
 
 ### 4.29 FIXED (2026-10-04, eleventh pass): background searching froze the whole page, including clicks on an unrelated, already-finished scramble
 

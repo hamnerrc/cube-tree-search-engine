@@ -15,6 +15,13 @@
  * reload": committed progress for every scramble is written to
  * localStorage (SESSION_STATE_KEY) after every commit/undo/switch and
  * replayed back through the same SolveSession.commit() a click would use.
+ *
+ * Searches run through a priority scheduler (search-scheduler.js): the
+ * scramble on screen -- e.g. the search started by committing a result --
+ * jumps ahead of every background scramble, and switching scrambles promotes
+ * the new one and demotes the old. With a look-ahead depth > 1 (README
+ * "Look-ahead optimisation depth") each search re-ranks its top candidates
+ * by the combined TPP of the best follow-up steps (searchWithLookahead).
  */
 'use strict';
 
@@ -125,12 +132,19 @@ const ENGINE_VERSION = '20261004-noop1';
   // runs over every result, only the table is capped.
   const MAX_ROWS = 500;
 
+  const formatTpp = (tpp) => (Number.isFinite(tpp) ? tpp.toFixed(2) : '-');
+
   function renderResults(results) {
     const tbody = document.getElementById('results-body');
     if (!tbody) return;
     tbody.innerHTML = '';
 
     results.slice(0, MAX_ROWS).forEach((r, i) => {
+      // Look-ahead re-ranked rows show the combined TPP of their best
+      // sequence and its follow-up steps.
+      const lookahead = r.lookaheadAlgs
+        ? `${formatTpp(r.lookaheadTpp)}${r.lookaheadAlgs.length ? '  → ' + r.lookaheadAlgs.join(' | ') : ''}`
+        : '-';
       const tr = document.createElement('tr');
       const cells = [
         String(i + 1),
@@ -140,6 +154,8 @@ const ENGINE_VERSION = '20261004-noop1';
         (r.edges || []).join('+') || '-',
         (r.corners || []).join('+') || '-',
         r.coreAlg,
+        formatTpp(r.tpp),
+        lookahead,
       ];
       tr.innerHTML = cells.map(c => `<td>${escapeHtml(c)}</td>`).join('');
       tr.style.cursor = 'pointer';
@@ -150,7 +166,7 @@ const ENGINE_VERSION = '20261004-noop1';
 
   function renderSolved() {
     const tbody = document.getElementById('results-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7">Cross + F2L solved.</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9">Cross + F2L solved.</td></tr>';
   }
 
   function renderActiveResults(results) {
@@ -166,16 +182,22 @@ const ENGINE_VERSION = '20261004-noop1';
   // starting again. The path only grows by commits, so node + path text
   // identifies the step.
   //
-  // Searches are also serialised: the solver helpers reject a second call
-  // while one is running ("Another solve is in progress"), which used to make
-  // every solver call of a search started mid-way through another one fail,
-  // leaving that scramble with "No results" (found 2026-10-04, §4.18).
-  // README "Asynchronous background searching" builds on exactly this queue:
-  // every scramble's search gets enqueued onto it up front (see
-  // scheduleBackgroundSearches), so it runs to completion in the background
-  // regardless of which scramble is active when it finishes.
-  let searchQueue = Promise.resolve();
-  function resultsFor(session, h, ph) {
+  // The solver helpers reject a second call while one is running ("Another
+  // solve is in progress", §4.18), so every engine call goes through one
+  // scheduler. Background scrambles run one at a time; the active scramble's
+  // search starts at once and pre-empts them at their next engine call
+  // (README "Multi-scramble queueing"; PROJECT_STATUS.md §4.30).
+  const scheduler = createSearchScheduler();
+  const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
+
+  function lookaheadOptions() {
+    return {
+      depth: (criteria && criteria.lookaheadDepth) || 1,
+      breadth: (criteria && criteria.lookaheadBreadth) || undefined,
+    };
+  }
+
+  function resultsFor(session, h, ph, priority) {
     const key = session.currentNodeId + '|' + session.scoredPath;
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
@@ -183,10 +205,13 @@ const ENGINE_VERSION = '20261004-noop1';
       const onStatus = (msg) => {
         if (sessions.get(activeIndex) === session) setStatus(msg);
       };
-      onStatus('Waiting for the previous search to finish...');
-      const promise = searchQueue.then(() => searchCurrentNode(session, h, onStatus, ph));
-      searchQueue = promise.catch(() => {});
-      session.resultsCache = { key, promise };
+      onStatus(priority === ACTIVE ? 'Searching...' : 'Queued behind the active search...');
+      const job = scheduler.submit(
+        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), lookaheadOptions()),
+        priority,
+      );
+      const promise = job.promise;
+      session.resultsCache = { key, promise, job };
       promise.then(() => {
         session._status = 'done';
         renderScrambleStatusIfActive(session);
@@ -195,21 +220,28 @@ const ENGINE_VERSION = '20261004-noop1';
         renderScrambleStatusIfActive(session);
         if (session.resultsCache && session.resultsCache.promise === promise) session.resultsCache = null;
       });
+    } else {
+      scheduler.setPriority(session.resultsCache.job, priority);
     }
     return session.resultsCache.promise;
   }
 
-  // Enqueues every OTHER scramble's search right behind the active one
-  // (already enqueued by runSearch before this is called), so they all run
-  // to completion in the background -- not awaited here; each one's own
-  // .then() re-renders only if that scramble happens to be active by the
-  // time it resolves.
+  // The scramble the user is looking at always outranks the background.
+  function setSessionPriority(index, priority) {
+    const session = sessions.get(index);
+    if (session && session.resultsCache) scheduler.setPriority(session.resultsCache.job, priority);
+  }
+
+  // Enqueues every OTHER scramble's search as BACKGROUND work -- not awaited
+  // here; each one's own .then() re-renders only if that scramble happens to
+  // be active by the time it resolves.
   function scheduleBackgroundSearches(h, ph) {
     scrambleController.sequenceList.forEach((_, idx) => {
       if (idx === activeIndex) return; // runSearch already enqueued this one
       const session = getOrCreateSession(idx);
       if (session.isComplete) return;
-      resultsFor(session, h, ph)
+      if (session.resultsCache) return; // already queued/searched; keep its current priority
+      resultsFor(session, h, ph, BACKGROUND)
         .then((results) => {
           if (sessions.get(activeIndex) === session) renderActiveResults(results);
         })
@@ -245,7 +277,7 @@ const ENGINE_VERSION = '20261004-noop1';
     const ph = await ensurePseudoHelper();
     if (myToken !== searchToken) return;
 
-    const activePromise = resultsFor(session, h, ph);
+    const activePromise = resultsFor(session, h, ph, ACTIVE);
     scheduleBackgroundSearches(h, ph);
 
     let results;
@@ -364,6 +396,7 @@ const ENGINE_VERSION = '20261004-noop1';
   };
 
   window.onActiveScrambleChanged = function (index) {
+    if (index !== activeIndex) setSessionPriority(activeIndex, BACKGROUND);
     activeIndex = index;
     if (prunedTree) {
       persistSessionState();

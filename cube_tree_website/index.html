@@ -45,6 +45,27 @@
                 <input type="number" id="max-solutions" value="500" min="1" max="5000">
             </label>
 
+            <div class="lookahead-config">
+                <label title="Re-rank the top results of each step by the combined TPP of the best sequence of this many steps (this step + searched follow-ups)">
+                    look-ahead depth
+                    <select id="lookahead-depth" onchange="updateLookaheadWarning()">
+                        <option value="1" selected>off (1 step)</option>
+                        <option value="2">2 steps</option>
+                        <option value="3">3 steps</option>
+                        <option value="4">4 steps</option>
+                        <option value="5">5 steps</option>
+                    </select>
+                </label>
+                <label title="How many of the step's top results are re-ranked by look-ahead">
+                    look-ahead breadth
+                    <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
+                </label>
+                <p class="search-note" id="lookahead-note">Look-ahead runs extra searches for each re-ranked result:
+                    depth 2 adds one search per result; depths of 3 or more follow the best 2 continuations
+                    of every searched step and cause <strong>significant performance delays</strong>
+                    (minutes per step with the pro move set).</p>
+            </div>
+
             <details class="search-config-details">
                 <summary>Per-type search limits (optional — blank uses the default)</summary>
                 <table class="search-config-table">
@@ -124,9 +145,9 @@
         </div>
     </div>
 
-    <script src="js/facelet-cube.js?v=20261004o"></script>
-    <script src="js/random-state-scramble.js?v=20261004o"></script>
-    <script src="js/script.js?v=20261004o"></script>
+    <script src="js/facelet-cube.js?v=20261004p"></script>
+    <script src="js/random-state-scramble.js?v=20261004p"></script>
+    <script src="js/script.js?v=20261004p"></script>
 </body>
 
 </html>
