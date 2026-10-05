@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-04.*
+*Last updated 2026-10-05.*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,35 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (end of 2026-10-04, after the thirteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-05, after the fourteenth pass):** read this first.
+- Fourteenth pass: the README gained a long-term goal ("worst-case search
+  with all settings enabled must complete in under 1 minute"). Writeups:
+  §4.36 (performance and the search time limit) and §4.37 (alg_speed on all
+  19 pro solves). Summary:
+  1. **Worst case measured** (`tools/worst-case-bench.js`: every colour,
+     every advanced option, 500/call): one root search is 378 engine calls,
+     roughly 3.4 hours of engine time. Pro-move-set XXXCross is 116-494 s per
+     call and pseudo XXXCross 45-81 s, so per-call speedups alone cannot
+     reach 1 minute.
+  2. **Search time limit** (new setting, default 60 s): the engine checks a
+     per-call deadline itself; calls start cheapest first, and late calls
+     return what they found. Root search with every setting, browser (cold):
+     **48 s** (was hours); Node worst warm step 56.5 s at depth 1, 45.7 s at
+     depth 5. Default-config output is byte-identical (57,100 root results).
+  3. **JS post-processing** was the next wall (530k candidates): rewrote
+     `optimizeCrossSolution` (2^n masks → DFS; was 41% of the time), cached
+     replay prefixes and `nodeByLabels`, and each call is post-processed as
+     soon as it finishes. Root with a 20 s limit: 174 s → 67 s → within limit.
+  4. **Engines:** pseudo pairs bound (heavy pseudo XXXCross 31.7 → 24.8 s), a
+     cross+edge bound in matched XXXCross (no measurable gain, kept since it
+     is cheap and exact), pseudo engine on a worker pool in the browser. Both
+     binaries byte-identical on batteries (`tools/engine-battery.js`).
+  5. **alg_speed:** penalties fitted on #1-#11 hold up out of sample on
+     #12-#19 (later steps in top 10: 9/22 → 16/22). Refits on all 19 (several
+     losses, an outlier-robust one included) do not beat them under CV, so
+     `STEP_PENALTIES` is unchanged. Two tool bugs fixed (§4.37).
+
+**Previous handoff (end of 2026-10-04, after the thirteenth pass):**
 - All work is committed and pushed (GitHub `main`; the local branch is
   `master`, so push with `git push origin master:main`).
 - Thirteenth pass: search performance (§4.34) and `alg_speed` per-step
@@ -313,6 +341,10 @@ node cube_tree_website/test/browser-globals.test.js
 node cube_tree_website/test/random-state-scramble.test.js
 node cube_tree_website/test/pro-references.test.js
 node cube_tree_website/test/search-scheduler.test.js
+node cube_tree_website/test/search-budget.test.js
+# engine rebuilds: node cube_tree_website/tools/engine-battery.js [--pseudo] --solver <old solver.js> --out old.json,
+#   then the same without --solver and with --compare old.json (must say "all calls identical")
+# worst case: node cube_tree_website/tools/worst-case-bench.js --scrambles 2 --depth 1|5
 # slow-ish, real WASM: node cube_tree_website/test/lookahead-e2e.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
@@ -338,7 +370,22 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**Reasonable next tasks (as of the thirteenth pass):**
+**Reasonable next tasks (as of the fourteenth pass):**
+1. Make the cut tail smaller under the 60 s limit (§4.36 "What is cut"):
+   pro-move-set XXXCross (100-500 s per call) and pseudo XXXCross (~25-60 s)
+   are what the limit drops. Ideas measured but not done: a face-turn
+   search + post-hoc pro spellings (complete in 12 s where the pro search
+   takes 494 s for a capped subset, but it misses slice-like spellings such
+   as `L l'`); multi-goal search sharing one traversal across slot sets.
+2. JS tail after the engine deadline is ~10-17 s with ~500k candidates
+   (`SEARCH_ENGINE_SHARE` 0.75 leaves room for it). Cheaper per-candidate
+   work (isSlotSolved/MCC/spelling replays) would let engines use more time.
+3. Cold first search: prune-table builds (seconds, not interruptible) count
+   against the limit; persisting tables (IndexedDB) would remove that.
+4. Root-step ranking is still the alg_speed gap (0-2/19 root pro steps in the
+   top 10, §4.37); needs more root data or an inspection-planning model.
+
+**Older next tasks (thirteenth pass):**
 1. **Out-of-sample check of the alg_speed penalties on pro solves #12-#19**
    (never seen by the fit): rebuild the `--app` pools for all 19 solves, then
    compare the top-10 rate on #12-#19 under `--no-penalty` vs default. If it
@@ -1732,6 +1779,138 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.37 (2026-10-05, fourteenth pass): alg_speed on all 19 pro solves — penalties kept, tools fixed
+
+Data: pro solves #12-#19 (added by the user at the end of the thirteenth pass)
+give 66 segments in total (19 root, 47 later). App pools rebuilt for all 19
+(`tools/pro-ranking.js --app --sample 0`, ~11 min).
+
+**Out-of-sample check** of `STEP_PENALTIES`, which were fitted on #1-#11 only:
+
+| pro steps in the app's top 10 | no penalties | STEP_PENALTIES |
+|---|---|---|
+| #1-#11 later steps (in-sample) | 12/25 | 23/25 |
+| #12-#19 later steps (never seen) | 9/22 | 16/22 |
+| root steps, all 19 | 0/19 | 2/19 |
+| all 66 | 21/66 | 41/66 |
+
+**Refits on all 19** (leave-one-solve-out CV, `tools/fit-step-penalties.js`):
+
+| variant | CV top 10 | CV mean log10 rank |
+|---|---|---|
+| production weights (fit on #1-#11) | 41/66 (in/out of sample mix) | 1.035 |
+| logistic loss (as §4.35) | 40/66 | 1.057 |
+| logistic, corrected tool (committed steps' penalties counted) | 39/66 | 1.093 |
+| corrected tool + constant per-step cost ("step") | 39/66 (step weight fits to 0.00 in every fold) | 1.093 |
+| sigmoid loss (bounded, outlier-robust; new `--loss sigmoid`) | 41/66 | 1.052 |
+| + x-rotation feature | 40/66 | 1.059 |
+| stronger L2 (0.01) | 36/66 | 1.211 |
+| sigmoid + stronger L2 | 36/66 | 1.259 |
+
+On the held-out #12-#19 alone, production gets 17/30 (mean log10 rank 1.074)
+and the CV refits 17-18/30 (1.087-1.097). **No refit is better, so
+`STEP_PENALTIES` is unchanged.** Weights refitted on 19 solves stay in the same
+ranges (e.g. B 1.07-2.57, mid-step y 3.52-4.16 per fold), which suggests the
+penalties capture something real rather than noise in the first 11 solves.
+Human variance: a pro's step that is simply slower than the best alternative
+should rank lower; the bounded sigmoid loss caps each such step's pull on the
+weights, and it ties the logistic loss. So the current fit is not being
+dragged by outliers either. A constant per-step cost (a recognition pause,
+"step" feature, now in the fit tool) fits to zero: no evidence for it. The
+rows above the "corrected tool" ones were computed before the fit-tool fix
+below; the comparison against production is unchanged either way.
+
+**Tool bugs fixed:**
+- `tools/pro-ranking.js` rebuilt the pools (~10 min) on every run even with a
+  valid cache (an `else` bound to the wrong `if`).
+- `tools/fit-step-penalties.js` scored only the current step's penalty
+  features, while the app adds every committed step's penalties too. That
+  matters when candidates solve different numbers of pieces. The fit tool now
+  includes them, and its production-weight ranks match `pro-ranking.js --app`
+  exactly (41/66). New options: `--loss sigmoid`, `--weights` (evaluate fixed
+  weights), `--seed`.
+
+### 4.36 DONE (2026-10-05, fourteenth pass): worst-case search time — search time limit, engine deadline, JS post-processing
+
+README goal (new): worst-case search with all settings enabled under 1
+minute. New benchmark `tools/worst-case-bench.js` (all colours; xcross,
+xxcross, xxxcross, multislotting, full pseudo, cross_opt, pro moves; 500/call;
+optional look-ahead; engines on a Node worker-thread pool,
+`tools/node-engine-pool.js`, like the browser's).
+
+**Measured worst case before this pass** (no limit): one root search plans
+378 engine calls (per colour: 15 matched + 48 pseudo). Per call: pro XXXCross
+116-494 s, pseudo XXXCross 45-81 s, everything else 3-8 s, about 3.4 hours of
+engine time in all. That is ~70x too slow for 1 minute on 3 workers.
+
+**Engine work (exact, outputs byte-identical on batteries):**
+- Pseudo engine: pairs-only bound (24^4 table of two corners + two edges,
+  seeded at the goal's four D offsets) in xxcross/xxxcross. Heaviest battery
+  call 31.7 → 24.8 s.
+- Matched engine: "cross + one edge" tables in xxxcross. No measurable gain
+  (6.77 → 6.64 s); the corner and pair bounds already dominate. Kept (cheap,
+  exact); not added to the other classes.
+- **Face search vs pro move set (measured, not adopted):** a face-turn XXXCross
+  at length 13 enumerates its complete solution set (35) in 12 s, where the
+  pro-move-set call spends 494 s on 500 spellings of a few of them. But the
+  pro search also emits slice-like spellings (`L l'`, `r ... l'`) whose
+  face form only appears unmerged (e.g. `L L`), so face search + post-hoc
+  spellings cannot reproduce it exactly (7471 of 8349 physical pro solutions
+  of one xcross call have no merged face equivalent in the face set).
+
+**The guarantee: a search time limit** (index.html "search time limit (s)",
+default 60, 0 = none; `SolveSession.timeBudgetMs`):
+- Engine-side deadline (`setDeadlineCheck`, `Module._deadline`): the search
+  checks the clock every 16384 nodes and ends like a capped call. A cancel
+  message would not work here: the worker only sees it at the once-per-depth
+  yield, which can be minutes apart. A call that starts after its deadline is
+  skipped by the helper. Tested: a 494 s pro XXXCross call stops at 3.0 s
+  with a 3 s deadline; the next call on the same engine is normal.
+- Bridge: engines get 75% of the budget (`SEARCH_ENGINE_SHARE`; 85% left too
+  little for the JS tail); calls start cheapest first (`callCostRank`) but
+  are consumed in plan order, so completed calls give the same output as
+  without a limit. Results carry `truncatedCalls`; the UI status line says
+  when the limit was reached. Look-ahead: the step's own search gets 50%,
+  follow-ups the rest; rows whose follow-up search was cut get
+  `lookaheadTruncated`; a cut search is not kept in the memo (committing that
+  step searches it again in full).
+
+**JS post-processing** was the next wall: ~500k candidates at the root.
+Profile (20 s limit): 174 s total, `findFaceTurnName` 41%.
+- `optimizeCrossSolution`: DFS over convertible positions with orientation
+  indices instead of 2^n masks × 54-element permutation compares. Same
+  output and order (test against the original on 300 random algs).
+- `replayFacelets` caches the scramble + rotation + committed-path state;
+  `nodeByLabels` uses a per-tree index.
+- Each call's solutions are post-processed as soon as that call finishes
+  (overlapping the engines), joined in plan order at the end.
+- Result: 174 s → 67 s at a 20 s limit; at 60 s, within the limit (below).
+
+**Results** (same scramble set; 3 engine workers):
+
+| measurement | before | after |
+|---|---|---|
+| Node, all settings, root (cold), 60 s limit | ~3.4 h engine time (no limit) | 62.0 s |
+| Node, all settings, worst warm step, depth 1 | – | 56.5 s |
+| Node, all settings, worst warm step, look-ahead depth 5 | – | 45.7 s |
+| Browser (headless Chrome), all settings, root (cold) | – | 48.0 s, 490,124 results |
+| Browser, default config, root (cold) | 12.6 s, 57,100 results | 11.2 s, 57,100 results |
+
+**What is cut** under the limit with every option on: ~230-290 of 378 root
+calls (mostly pseudo multi-pair and pro XXXCross); the common Cross/XCross/
+XXCross matched results finish. The cold first search slightly exceeds 60 s
+in Node (62 s) because prune-table builds are not interruptible.
+
+**Verification:** no-limit output identical to HEAD, compared field by field
+on 8 searches (pro + cross_opt with two colours, full pseudo, cross_opt; 2-3
+steps each, `git archive HEAD` vs working tree). Battery identical for both
+engines. All fast suites plus the new `test/search-budget.test.js`;
+slot-mapping, colour-orientation, `lookahead-e2e.js`,
+`solver-bridge-e2e.js --pro` (2/2) and `--pseudo --pick full` (2/2, 3
+full-pseudo-only steps): 0 warnings, 0 bad finals, 0 frame failures. Browser:
+0 console errors, the new engine version fetched. `ENGINE_VERSION`
+20261005-deadline1, page cache-buster `?v=20261005a`.
 
 ### 4.35 DONE (2026-10-04, thirteenth pass): alg_speed tuned so pro steps rank near the top
 

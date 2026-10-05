@@ -221,6 +221,10 @@ function rotationIndex(rotation) {
     return q;
 }
 const FACE_TURN_SET = new Set(FACE_TURNS);
+/** Orientation index of composePerm(ROT_PERMS[a], ROT_PERMS[b]). */
+function composeRotationIndex(a, b) {
+    return ROT_MUL[a][b];
+}
 
 function canonicalizeForEngine(prefixRotation, alg) {
     const tokens = [prefixRotation, alg].filter(Boolean).join(' ')
@@ -363,5 +367,8 @@ if (typeof module !== 'undefined' && module.exports) {
         rotationSpellings,
         inspectionWideVariants,
         rotationName,
+        rotationIndex,
+        composeRotationIndex,
+        conjugateToken,
     };
 }

@@ -46,6 +46,22 @@ listed here with the date of the change.
   rotation, which consumes no move); `create_prune_table()` precomputes, per
   centre state, the ordered list of distinct base moves instead of re-trying
   every move/rotation combination per cell (same table).
+- **2026-10-05** `crossSolver/solver.cpp`, `pseudoCrossSolver/pseudo.cpp`:
+  a per-call search deadline (`setDeadlineCheck()`, `deadlineHit()`, and
+  `Module._deadline` in epoch ms, read by an `EM_JS` clock check every 16384
+  search nodes). When it passes, the search stops like a capped one ("Search
+  finished." with the solutions found so far). It is off unless enabled, so
+  default output is unchanged. `crossSolver/solver.cpp`: "cross + one edge"
+  prune tables (`edge_prune_table()`, shared like the corner tables) as an
+  extra admissible bound in the xxxcross search. `pseudoCrossSolver/pseudo.cpp`:
+  a pairs-only admissible bound (`pair_prune_table()`, seeded at the goal's
+  four D offsets) in the xxcross and xxxcross searches. Outputs verified
+  byte-identical to the previous binaries on call batteries
+  (`tools/engine-battery.js`, both engines).
+- **2026-10-05** `crossSolver/worker-persistent.js`, `solver-helper.js`,
+  `solver-helper-node.js`, `pseudoCrossSolver/worker3.js`, `solver-helper.js`,
+  `solver-helper-node.js`: pass the `deadline` option to the engine, and skip
+  (resolve with no solutions) a call that starts after its deadline.
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

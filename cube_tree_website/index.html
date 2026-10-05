@@ -44,6 +44,10 @@
                 solutions per search
                 <input type="number" id="max-solutions" value="500" min="1" max="5000">
             </label>
+            <label title="Each step's search (look-ahead included) stops after this many seconds and shows the best results found so far. 0 = no limit.">
+                search time limit (s)
+                <input type="number" id="time-limit" value="60" min="0" max="3600">
+            </label>
 
             <div class="lookahead-config">
                 <label title="Re-rank the top results of each step by the combined TPP of the best sequence of this many steps (this step + searched follow-ups)">
@@ -145,9 +149,9 @@
         </div>
     </div>
 
-    <script src="js/facelet-cube.js?v=20261004r"></script>
-    <script src="js/random-state-scramble.js?v=20261004r"></script>
-    <script src="js/script.js?v=20261004r"></script>
+    <script src="js/facelet-cube.js?v=20261005a"></script>
+    <script src="js/random-state-scramble.js?v=20261005a"></script>
+    <script src="js/script.js?v=20261005a"></script>
 </body>
 
 </html>

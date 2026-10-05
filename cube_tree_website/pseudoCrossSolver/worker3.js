@@ -11,11 +11,15 @@ const solverPromise = new Promise(resolve => {
 importScripts('pseudo.js' + (self.location.search || ''));
 
 self.onmessage = async function (event) {
-	const { scr, rot, slot, pslot, num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mcString, noopMoves } = event.data;
+	const { scr, rot, slot, pslot, num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mcString, noopMoves, deadline } = event.data;
 	try {
 		const Module = await solverPromise;
 		// cube-tree modification: per-call no-op move set, reset every call.
 		if (typeof Module.setNoopMoves === 'function') Module.setNoopMoves(noopMoves || '');
+		// cube-tree modification: per-call deadline (epoch ms, 0 = none), checked
+		// inside the search (pseudo.cpp setDeadlineCheck, PROJECT_STATUS §4.36).
+		Module._deadline = deadline || 0;
+		if (typeof Module.setDeadlineCheck === 'function') Module.setDeadlineCheck(!!deadline);
 		Module.solve(scr, rot, slot, pslot, num, len, move_restrict, post_alg, center_offset, max_rot_count, ma2, mcString);
 	} catch (e) {
 		self.postMessage("Error");

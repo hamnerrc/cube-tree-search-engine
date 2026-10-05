@@ -150,6 +150,8 @@ class PseudoSolverHelperNode {
 
     const slot = edgeSlots.join(' ');
     const pslot = cornerSlots.join(' ');
+    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
+    if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
 
     return this._doSolve(() => {
       // cube-tree modification: per-call no-op move set (pseudo.cpp
@@ -157,6 +159,10 @@ class PseudoSolverHelperNode {
       if (typeof this.Module.setNoopMoves === 'function') {
         this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
       }
+      // cube-tree modification: per-call deadline (epoch ms, 0 = none),
+      // checked inside the search (pseudo.cpp setDeadlineCheck, §4.36).
+      this.Module._deadline = options.deadline || 0;
+      if (typeof this.Module.setDeadlineCheck === 'function') this.Module.setDeadlineCheck(!!options.deadline);
       return this.Module.solve(
       scramble, rotation, slot, pslot, maxSolutions, maxLength,
       this._restStr(allowedMoves), postAlg,

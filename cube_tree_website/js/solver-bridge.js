@@ -136,11 +136,20 @@ function proEngineOptions(rotation) {
 /** A cross-solved node whose solved corners/edges are exactly these labels. */
 function nodeByLabels(session, corners, edges) {
   const key = JSON.stringify([corners.slice().sort(), edges.slice().sort()]);
-  for (const n of session.tree.nodes) {
-    if (n.state.cross_solved && JSON.stringify([(n.state.corners || []).slice().sort(), (n.state.edges || []).slice().sort()]) === key) return n.id;
+  // First matching cross-solved node, indexed once per tree (§4.36).
+  let index = nodeByLabelsIndex.get(session.tree);
+  if (!index) {
+    index = new Map();
+    for (const n of session.tree.nodes) {
+      if (!n.state.cross_solved) continue;
+      const k = JSON.stringify([(n.state.corners || []).slice().sort(), (n.state.edges || []).slice().sort()]);
+      if (!index.has(k)) index.set(k, n.id);
+    }
+    nodeByLabelsIndex.set(session.tree, index);
   }
-  return null;
+  return index.has(key) ? index.get(key) : null;
 }
+const nodeByLabelsIndex = typeof WeakMap !== 'undefined' ? new WeakMap() : new Map();
 
 // U-layer turns may leave every goal piece in place (positioning other
 // pieces, e.g. the U in "R' U R'" instead of "R2"); upstream engine rejected
@@ -281,10 +290,23 @@ const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
  * being checked, since the SAME priorPath text is reused by every later
  * step's own luck check once committed.
  */
+// Every candidate of a search replays the same scramble + rotation + committed
+// path before its own moves; that prefix state is cached (a few dozen distinct
+// prefixes per search: colours x inspection variants), so only the
+// candidate's own moves are replayed (PROJECT_STATUS.md §4.36).
+const REPLAY_PREFIX_LIMIT = 256;
+const replayPrefixCache = new Map();
 function replayFacelets(scramble, rotation, priorPath, coreAlg) {
   // facelet-cube.js replays wide/slice moves natively (magiccube-verified,
   // §4.19), so the committed text is replayed exactly as a human reads it.
-  return applyAlgorithm(SOLVED_FACELETS, [scramble, rotation, priorPath, coreAlg].filter(Boolean).join(' '));
+  const prefix = `${scramble}|${rotation}|${priorPath}`;
+  let start = replayPrefixCache.get(prefix);
+  if (start === undefined) {
+    start = applyAlgorithm(SOLVED_FACELETS, [scramble, rotation, priorPath].filter(Boolean).join(' '));
+    if (replayPrefixCache.size >= REPLAY_PREFIX_LIMIT) replayPrefixCache.delete(replayPrefixCache.keys().next().value);
+    replayPrefixCache.set(prefix, start);
+  }
+  return coreAlg ? applyAlgorithm(start, coreAlg) : start;
 }
 
 /**
@@ -383,11 +405,32 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
 }
 
 /** Pseudo-engine counterpart of solverCallFor: independent edge and corner home-slot lists. */
-function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS) {
+function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, deadline = 0) {
   const toLetters = list => list.slice().sort();
   return pseudoHelper.solvePseudo(scramble, toLetters(edges), toLetters(corners), {
     maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '', noopMoves: NOOP_MOVES,
+    ...(deadline ? { deadline } : {}),
   });
+}
+
+// Search time budget (README "Performance goal", PROJECT_STATUS.md §4.36):
+// with session.timeBudgetMs set, every engine call of a search gets a
+// deadline the engine checks itself; a call still running then returns the
+// solutions it found so far (shortest first), and calls not started yet are
+// skipped. The engines get this share of the budget; the rest is left for
+// post-processing the last calls' solutions. With look-ahead, the step's own
+// search gets LOOKAHEAD_FIRST_SHARE of it and the follow-up searches the rest.
+const SEARCH_ENGINE_SHARE = 0.75;
+const LOOKAHEAD_FIRST_SHARE = 0.5;
+function budgetDeadline(session, share, start = Date.now()) {
+  const budget = session && session.timeBudgetMs > 0 ? session.timeBudgetMs : 0;
+  return budget ? start + budget * share : 0;
+}
+// Rough relative cost of an engine call, for the start order under a budget:
+// cheap calls first, so a deadline cuts the expensive tail (pseudo, more
+// pairs, the pro move set, longer limits), not the common results.
+function callCostRank(p, proMoves) {
+  return p.allCorners.length + (p.isPseudo ? 1.5 : 0) + (proMoves && !p.isPseudo ? 0.5 : 0) + p.maxLength / 100;
 }
 
 class SolveSession {
@@ -408,6 +451,7 @@ class SolveSession {
     this.stepAlgs = []; // each committed step's core alg (rotation-stripped)
     this.committedRows = []; // display rows for the solve-so-far
     this.searchMemo = new Map(); // memoSearch results, shared with fork()s
+    this.timeBudgetMs = 0; // per-search time budget (0 = none); see SEARCH_ENGINE_SHARE
   }
 
   /**
@@ -521,8 +565,10 @@ function serialEngine(helper) {
  * `pseudoHelper` (optional) is a pseudoCrossSolver helper; without one,
  * pseudo (mismatched) targets are skipped.
  */
-async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
+async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline) {
   const isRoot = session.isAtRoot;
+  // Absolute deadline (epoch ms) for this search's engine calls; 0 = none.
+  if (deadline === undefined) deadline = budgetDeadline(session, SEARCH_ENGINE_SHARE);
   let edges = session.outgoingEdges();
 
   {
@@ -648,25 +694,41 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   // scheduler-gated helper runs them in parallel on several engine workers;
   // a plain helper gets them one at a time (serialEngine). Results are still
   // consumed in plan order below, so the output is the same either way.
+  // Under a time budget the calls START cheapest first (callCostRank), so the
+  // deadline lands on the expensive tail; they are still consumed in plan
+  // order, so whatever finishes gives the same output as without a budget.
   const engine = serialEngine(helper);
   const pseudoEngine = serialEngine(pseudoHelper);
-  for (const p of plan) {
+  const startOrder = deadline
+    ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
+    : plan;
+  for (const p of startOrder) {
+    const extra = { ...(session.proMoves ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
     p.raw = Promise.resolve().then(() => (p.isPseudo
-      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions)
-      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions,
-        session.proMoves ? proEngineOptions(p.callRotation) : {})))
+      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline)
+      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra)))
+      .then((r) => { p.doneAt = Date.now(); return r; })
       .catch((err) => { console.error('Solver error', err); return null; });
   }
+  let truncatedCalls = 0;
 
-  // Pass 3: post-process each call's solutions, in plan order.
-  for (const p of plan) {
+  // Pass 3: post-process each call's solutions as soon as that call
+  // finishes, so the JS work overlaps the engine calls still running
+  // (PROJECT_STATUS.md §4.36); each call's candidates are kept apart and
+  // joined in plan order below, so the output is the same as processing the
+  // calls one by one in plan order.
+  const processCall = async (p) => {
+    const candidates = p.candidates = [];
     const {
       edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges,
       color, baseRotation, callRotation, postAlgForCall,
     } = p;
     if (onStatus) onStatus(`Searching ${edgeLabel(pairCount, isRoot, isPseudo)}${color ? ' (' + color + ')' : ''}...`);
     const raw = await p.raw;
-    if (raw === null) continue;
+    if (raw === null) return;
+    // Finished at or after the deadline without reaching its cap: cut short
+    // (or skipped) by the time budget, so its list may be incomplete.
+    if (deadline && p.doneAt >= deadline && raw.length < p.effectiveMaxSolutions) truncatedCalls++;
 
     // The engine prefixes every returned solution with `rotation + ' ' +
     // postAlg` verbatim (see solver.cpp) -- strip exactly that known
@@ -909,7 +971,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
         }
       }
     }
-  }
+  };
+  await Promise.all(plan.map(p => p.raw.then(() => processCall(p))));
+  for (const p of plan) for (const c of p.candidates || []) candidates.push(c);
 
   // D-alignment (pseudo) can collapse two distinct raw solver results into
   // the same final algorithm, and rotation spellings can differ only in the
@@ -918,12 +982,15 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
   candidates.sort((a, b) => a.tpp - b.tpp);
   const normalize = typeof commuteNormalize === 'function' ? commuteNormalize : (x => x);
   const seenCandidates = new Set();
-  return candidates.filter(c => {
+  const out = candidates.filter(c => {
     const key = `${c.targetNodeId}|${c.rotation}|${normalize(c.coreAlg)}`;
     if (seenCandidates.has(key)) return false;
     seenCandidates.add(key);
     return true;
   });
+  // How many engine calls the time budget cut short (absent = complete).
+  if (truncatedCalls) out.truncatedCalls = truncatedCalls;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -943,7 +1010,7 @@ const SEARCH_MEMO_LIMIT = 48;
  * in session.searchMemo -- shared by every fork, so the look-ahead's searches
  * are reused once the user commits one of the candidates it explored.
  */
-function memoSearch(session, helper, onStatus, pseudoHelper) {
+function memoSearch(session, helper, onStatus, pseudoHelper, deadline) {
   const memo = session.searchMemo || (session.searchMemo = new Map());
   const key = `${session.currentNodeId}|${session.rotation}|${session.scoredPath}`;
   if (memo.has(key)) {
@@ -952,9 +1019,12 @@ function memoSearch(session, helper, onStatus, pseudoHelper) {
     memo.set(key, hit);
     return hit;
   }
-  const promise = searchCurrentNode(session, helper, onStatus, pseudoHelper);
+  const promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline);
   memo.set(key, promise);
-  promise.catch(() => { if (memo.get(key) === promise) memo.delete(key); });
+  // A search the time budget cut short is not reused (committing that step
+  // later searches it again in full); neither is a failed one.
+  promise.then((r) => { if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key); },
+    () => { if (memo.get(key) === promise) memo.delete(key); });
   while (memo.size > SEARCH_MEMO_LIMIT) memo.delete(memo.keys().next().value);
   return promise;
 }
@@ -965,21 +1035,23 @@ function memoSearch(session, helper, onStatus, pseudoHelper) {
  * cumulative, so that IS the combined TPP of the sequence), null when the
  * session is already complete, tpp Infinity when no continuation was found.
  */
-async function bestContinuation(session, levels, helper, onStatus, pseudoHelper) {
+async function bestContinuation(session, levels, helper, onStatus, pseudoHelper, deadline) {
   if (session.isComplete) return null;
-  const results = await memoSearch(session, helper, onStatus, pseudoHelper);
-  if (!results.length) return { tpp: Infinity, algs: [] };
-  if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg] };
+  const results = await memoSearch(session, helper, onStatus, pseudoHelper, deadline);
+  const cut = !!results.truncatedCalls;
+  if (!results.length) return { tpp: Infinity, algs: [], truncated: cut };
+  if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg], truncated: cut };
   // Explored in parallel (an engine pool runs their searches side by side),
   // compared in rank order so ties resolve exactly as a sequential loop would.
   const top = results.slice(0, LOOKAHEAD_INNER_BREADTH);
-  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper)));
+  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline)));
   let best = null;
   top.forEach((c, i) => {
     const sub = subs[i];
     const tpp = sub ? sub.tpp : c.tpp; // null: c completes Cross+F2L
     if (!best || tpp < best.tpp) best = { tpp, algs: [c.coreAlg, ...(sub ? sub.algs : [])] };
   });
+  best.truncated = cut || subs.some(sub => sub && sub.truncated);
   return best;
 }
 
@@ -994,21 +1066,32 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper)
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
-  const results = await memoSearch(session, helper, onStatus, pseudoHelper);
+  // One time budget for the whole step: its own search first, then the
+  // follow-up searches until the end of the engine share.
+  const start = Date.now();
+  const firstDeadline = budgetDeadline(session, depth > 1 ? LOOKAHEAD_FIRST_SHARE : SEARCH_ENGINE_SHARE, start);
+  const lookDeadline = budgetDeadline(session, SEARCH_ENGINE_SHARE, start);
+  const results = await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline);
   if (depth === 1 || !results.length) return results;
 
   const top = results.slice(0, breadth);
   const bests = await Promise.all(top.map((cand, i) => {
     const status = onStatus && (msg => onStatus(`Look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper);
+    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline);
   }));
   const reranked = top.map((cand, i) => ({
     ...cand,
     lookaheadTpp: bests[i] ? bests[i].tpp : cand.tpp,
     lookaheadAlgs: bests[i] ? bests[i].algs : [],
+    // The time budget cut a follow-up search short: the best sequence is
+    // the best one found in time, not necessarily the best one there is.
+    ...(bests[i] && bests[i].truncated ? { lookaheadTruncated: true } : {}),
   }));
   reranked.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
-  return reranked.concat(results.slice(breadth));
+  const out = reranked.concat(results.slice(breadth));
+  if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
+  if (reranked.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
+  return out;
 }
 
 /**
@@ -1049,5 +1132,6 @@ if (typeof module !== 'undefined' && module.exports) {
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,
     memoSearch, searchWithLookahead, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
+    SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank,
   };
 }

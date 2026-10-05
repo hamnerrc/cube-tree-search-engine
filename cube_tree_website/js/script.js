@@ -120,6 +120,9 @@ function persistAndNavigate() {
         // Solutions requested per engine call (README "Search limits":
         // as high as practical); blank/invalid falls back to the default.
         maxSolutions: parseInt(document.getElementById('max-solutions')?.value, 10) || undefined,
+        // Per-search time budget in seconds (README "Performance goal");
+        // 0 = no limit, blank/invalid = the default (60).
+        timeLimit: (() => { const v = parseInt(document.getElementById('time-limit')?.value, 10); return Number.isFinite(v) && v >= 0 ? v : 60; })(),
         // Per-category overrides (README "Granular search configuration");
         // undefined when every per-category field was left blank.
         searchConfig: readSearchConfig(),
@@ -137,9 +140,11 @@ function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions, searchConfig, lookaheadDepth, lookaheadBreadth } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions, searchConfig, lookaheadDepth, lookaheadBreadth, timeLimit } = JSON.parse(rawState);
     const maxSolutionsInput = document.getElementById('max-solutions');
     if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
+    const timeLimitInput = document.getElementById('time-limit');
+    if (timeLimitInput && Number.isFinite(timeLimit)) timeLimitInput.value = timeLimit;
     const depthInput = document.getElementById('lookahead-depth');
     if (depthInput && lookaheadDepth) depthInput.value = String(lookaheadDepth);
     const breadthInput = document.getElementById('lookahead-breadth');

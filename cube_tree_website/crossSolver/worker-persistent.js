@@ -237,6 +237,12 @@ self.onmessage = async function(event) {
     if (typeof wasmModule.setNoopMoves === 'function') {
       wasmModule.setNoopMoves(data.noopMoves ? _restStr(data.noopMoves) : '');
     }
+    // cube-tree modification: per-call deadline (epoch ms, 0 = none) that the
+    // engine checks itself (solver.cpp setDeadlineCheck, PROJECT_STATUS §4.36).
+    wasmModule._deadline = data.deadline || 0;
+    if (typeof wasmModule.setDeadlineCheck === 'function') {
+      wasmModule.setDeadlineCheck(!!data.deadline);
+    }
 
     // Call solve() with the correct argument list
     if (solverType === 'LLSubsteps') {

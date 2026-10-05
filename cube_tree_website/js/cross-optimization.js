@@ -119,50 +119,58 @@ function rotationNameFor(rhoPerm) {
     return null; // shouldn't happen once keepsCrossOnBottom has already passed
 }
 
-function optimizeCrossSolution(moves) {
-    const results = [];
-    const seen = new Set();
-    const totalSubsets = 1 << moves.length;
-
-    for (let mask = 0; mask < totalSubsets; mask++) {
-        let cumRot = IDENTITY_PERM;
-        const outTokens = [];
-        let valid = true;
-
-        for (let i = 0; i < moves.length; i++) {
-            const relabeledPerm = relabelMovePerm(MOVE_TABLE[moves[i]], cumRot);
-            const relabeledName = findFaceTurnName(relabeledPerm);
-            if (!relabeledName) { valid = false; break; }
-
-            const wantsConversion = (mask & (1 << i)) !== 0;
-            const rule = WIDE_MOVE_RULES[relabeledName];
-
-            if (wantsConversion && rule) {
-                outTokens.push(rule.wide);
-                cumRot = composePerm(cumRot, MOVE_TABLE[rule.rotation]);
-            } else if (wantsConversion && !rule) {
-                // This position's (relabeled) move has no wide equivalent
-                // (U/F/B family, or D2) -- the bit is simply ineffective,
-                // not an error; emit literally so every mask still maps to
-                // SOME valid sequence instead of silently corrupting it.
-                outTokens.push(relabeledName);
-            } else {
-                outTokens.push(relabeledName);
-            }
-        }
-
-        if (!valid) continue;
-        if (!keepsCrossOnBottom(cumRot)) continue;
-
-        const rotationName = rotationNameFor(cumRot);
-
-        const key = outTokens.join(' ') + '|' + rotationName;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        results.push({ moves: outTokens, rotation: rotationName });
+// Canonical face-turn name of any MOVE_TABLE token that is a face turn
+// (findFaceTurnName's answer), built once on first use.
+let faceNameOfToken = null;
+function canonicalFaceName(token) {
+    if (!faceNameOfToken) {
+        faceNameOfToken = new Map();
+        for (const t of Object.keys(MOVE_TABLE)) faceNameOfToken.set(t, findFaceTurnName(MOVE_TABLE[t]));
     }
+    return token ? faceNameOfToken.get(token) || null : null;
+}
 
+/*
+ * PROJECT_STATUS.md §4.36 (performance): the original enumerated all 2^n
+ * masks over the n moves, composing 54-element permutations and comparing
+ * against 18 joined permutation strings per move -- 41% of a root search's
+ * time with every option on. A bit only matters at a position whose
+ * (relabelled) move has a wide form, so this walks the choices depth-first
+ * over those positions only, with the running rotation as an index into
+ * facelet-cube.js's orientation tables. Same results, same order: the old
+ * loop kept the first (smallest) mask of each distinct output, which is the
+ * mask with only the effective bits set, so outputs are sorted by that mask.
+ * test/cross-optimization.test.js checks it against the original.
+ */
+function optimizeCrossSolution(moves) {
+    const n = moves.length;
+    const identity = rotationIndex('');
+    const found = [];
+    const tokens = new Array(n);
+    const walk = (i, rot, mask) => {
+        if (i === n) {
+            found.push({ mask, moves: tokens.slice(), rot });
+            return;
+        }
+        const name = canonicalFaceName(conjugateToken(rot, moves[i]));
+        if (!name) return; // not a pure face turn: the old loop dropped every such mask
+        tokens[i] = name;
+        walk(i + 1, rot, mask);
+        const rule = WIDE_MOVE_RULES[name];
+        if (rule) {
+            tokens[i] = rule.wide;
+            walk(i + 1, composeRotationIndex(rot, rotationIndex(rule.rotation)), mask + 2 ** i);
+        }
+    };
+    walk(0, identity, 0);
+    found.sort((a, b) => a.mask - b.mask);
+    const yNames = ['', 'y', 'y2', "y'"].map(r => [rotationIndex(r), r]);
+    const results = [];
+    for (const f of found) {
+        if (canonicalFaceName(conjugateToken(f.rot, 'D')) !== 'D') continue; // keepsCrossOnBottom
+        const named = yNames.find(([idx]) => idx === f.rot);
+        results.push({ moves: f.moves, rotation: named ? named[1] : null });
+    }
     return results;
 }
 

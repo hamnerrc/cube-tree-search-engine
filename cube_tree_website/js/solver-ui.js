@@ -29,7 +29,7 @@
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261004-pairs1';
+const ENGINE_VERSION = '20261005-deadline1';
 
 // SESSION_STATE_KEY is declared once, in script.js (loaded before this file
 // on solver.html, and needed standalone by index.html's clearScrambleData)
@@ -93,9 +93,17 @@ const ENGINE_VERSION = '20261004-pairs1';
     if (!needed || typeof PseudoSolverHelper === 'undefined') return null;
     if (!pseudoHelper) {
       try {
-        const h = new PseudoSolverHelper(`pseudoCrossSolver/worker3.js?v=${ENGINE_VERSION}`);
-        await h.init();
-        pseudoHelper = h;
+        // A pool like the matched engine's (§4.36): with full pseudo on, most
+        // of a root search's calls are pseudo ones (48 of 63 per colour).
+        const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
+          const h = new PseudoSolverHelper(`pseudoCrossSolver/worker3.js?v=${ENGINE_VERSION}`);
+          await h.init();
+          return h;
+        });
+        const settled = await Promise.allSettled(started);
+        const pool = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        if (!pool.length) throw settled[0].reason;
+        pseudoHelper = pool;
       } catch (err) {
         console.error('Failed to load pseudo solver; pseudo results disabled', err);
         return null;
@@ -111,6 +119,10 @@ const ENGINE_VERSION = '20261004-pairs1';
       const session = new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []);
       if (criteria && criteria.maxSolutions > 0) session.maxSolutions = criteria.maxSolutions;
       if (criteria && criteria.searchConfig) session.searchConfig = criteria.searchConfig;
+      // README "Performance goal": each step's search stops after the time
+      // limit (default 60 s; 0 = none) and shows what it found (§4.36).
+      const limit = criteria && Number.isFinite(criteria.timeLimit) ? criteria.timeLimit : 60;
+      session.timeBudgetMs = limit * 1000;
       session._status = 'pending'; // README "Asynchronous background searching": pending|searching|done|error
       sessions.set(index, session);
     }
@@ -187,9 +199,12 @@ const ENGINE_VERSION = '20261004-pairs1';
 
   function renderActiveResults(results) {
     renderResults(results);
-    setStatus(results.length
+    // The time limit cut some engine calls (or look-ahead searches) short.
+    const cut = results.truncatedCalls || results.lookaheadTruncated
+      ? ' Search time limit reached: showing the best results found in time.' : '';
+    setStatus((results.length
       ? (results.length > MAX_ROWS ? `${results.length} result(s); showing the top ${MAX_ROWS}.` : `${results.length} result(s).`)
-      : 'No results found for the current filters at this step.');
+      : 'No results found for the current filters at this step.') + cut);
   }
 
   // One search per (session, committed path): navigating away from a scramble

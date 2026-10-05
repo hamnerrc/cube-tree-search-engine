@@ -138,7 +138,12 @@ by where each professional step would rank in the app's own result list
 
 The penalties were fitted with leave-one-solve-out cross-validation (fit on
 all solves but one, rank the held-out one), to avoid overfitting the few
-reference solves. Further tuning should go through the same benchmark rather
+reference solves. They were fitted on solves #1-#11 and then confirmed on
+solves #12-#19, which the fit never saw; refitting on all 19 did not rank
+the pros any better, so they were kept unchanged. Professionals sometimes
+execute a slower step than the best available, and such a step should rank
+lower; the tuning targets where pro steps rank overall, not every single
+step at the top. Further tuning should go through the same benchmark rather
 than hand-picked constants.
 
 ## What the DAG edges mean
@@ -226,6 +231,24 @@ solutions, not just the shortest ones:
 `maxSolutions` (how many candidate solutions a single search returns) should
 be set as high as practical while the tool stays interactively responsive;
 there is no fixed target number yet — see PROJECT_STATUS.md.
+
+### Performance goal
+
+Long-term goal: **worst-case search execution with all settings enabled must
+complete in under 1 minute.** "All settings" means every advanced option on
+at once (XCross through XXXCross, multislotting, pseudo F2L with full pseudo,
+cross optimisation, the pro move set, every cross colour, the deepest
+look-ahead), and "search" means one step's search, from clicking a result (or
+loading a scramble) to its ranked list. Current measurements, and how far
+they are from this goal, are tracked in PROJECT_STATUS.md.
+
+The **search time limit** setting (default 60 s; 0 = no limit) is the
+guarantee behind this goal: each step's search (its look-ahead included)
+stops when the limit is reached and lists the best results found so far.
+Cheap searches run first, so the limit cuts the expensive tail (pseudo,
+XXXCross, long pro-move-set searches), not the common results. The status
+line says when the limit cut a search short. Making the searches themselves
+faster, so the limit cuts less, is the ongoing work.
 
 ### Granular search configuration
 

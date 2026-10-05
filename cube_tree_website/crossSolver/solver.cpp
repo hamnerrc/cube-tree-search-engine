@@ -24,6 +24,45 @@ EM_JS(int, solver_is_cancelled, (), {
 EM_JS(void, solver_clear_cancel, (), {
     Module._cancelRequested = false;
 });
+// cube⑂tree modification (PROJECT_STATUS.md §4.36): a per-call deadline the
+// search checks itself (Module._deadline, epoch ms, set by the helper/worker
+// before each call), so a search stops on time without needing a message to
+// get through to the worker -- the cancel message is only seen at the
+// once-per-depth yield, which can be minutes apart in a deep search. When it
+// fires, the call ends like a capped one: "Search finished." with the
+// solutions found so far (shortest first). Off (no check) unless enabled.
+EM_JS(int, solver_deadline_passed, (), {
+    return (Module._deadline > 0 && Date.now() > Module._deadline) ? 1 : 0;
+});
+static bool g_deadline_on = false;
+static unsigned int g_deadline_counter = 0;
+static bool g_deadline_hit = false;
+void setDeadlineCheck(bool on)
+{
+    g_deadline_on = on;
+    g_deadline_counter = 0;
+    g_deadline_hit = false;
+}
+bool deadlineHit()
+{
+    return g_deadline_hit;
+}
+inline bool deadline_reached()
+{
+    if (!g_deadline_on)
+    {
+        return false;
+    }
+    if (g_deadline_hit)
+    {
+        return true;
+    }
+    if ((++g_deadline_counter & 0x3FFF) == 0 && solver_deadline_passed())
+    {
+        g_deadline_hit = true;
+    }
+    return g_deadline_hit;
+}
 
 
 // Counter for throttled cancel checks in depth_limited_search.
@@ -838,6 +877,42 @@ const unsigned char *corner_prune_table(int corner_index, const std::vector<int>
     return stored.data();
 }
 
+// cube⑂tree modification (PROJECT_STATUS.md §4.36): "cross + one F2L edge"
+// tables, the edge counterpart of corner_prune_table (same size, same
+// centre-aware BFS, shared per (edge, move list)). Every multi-pair class
+// checks them as an extra admissible bound. A cell left at 255 (not reached)
+// is treated as "no bound" (0), like the corner tables' 255 guard.
+static std::map<std::pair<int, std::vector<int>>, std::vector<unsigned char>> g_edge_prune_cache;
+inline int edge_bound(const unsigned char *t, int i)
+{
+    return (!t || t[i] == 255) ? 0 : t[i];
+}
+const unsigned char *edge_prune_table(int edge_index, const std::vector<int> &move_restrict_tmp)
+{
+    auto key = std::make_pair(edge_index, move_restrict_tmp);
+    auto it = g_edge_prune_cache.find(key);
+    if (it != g_edge_prune_cache.end())
+    {
+        return it->second.data();
+    }
+    std::vector<unsigned char> table(24 * 22 * 20 * 18 * 24, 255);
+    std::vector<unsigned char> scratch;
+    std::vector<int> moves = move_restrict_tmp;
+    solver_yield();
+    if (solver_is_cancelled())
+    {
+        return nullptr;
+    }
+    create_prune_table(187520, edge_index, 24 * 22 * 20 * 18, 24, 20, g_xcross_multi_move_table, g_edge_move_table, table, moves, scratch, g_center_move_table);
+    if (solver_is_cancelled())
+    {
+        return nullptr;
+    }
+    std::vector<unsigned char> &stored = g_edge_prune_cache[key];
+    stored = std::move(table);
+    return stored.data();
+}
+
 // cube⑂tree modification (2026-10-04, PROJECT_STATUS.md §4.34): an extra
 // admissible lower bound for multi-pair searches -- the distance to solve the
 // given F2L pairs' corners and edges alone (no cross), over 24^(2k) states
@@ -1007,6 +1082,10 @@ struct cross_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -1523,6 +1602,10 @@ struct xcross_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index3, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -2076,6 +2159,10 @@ struct xxcross_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index5, int arg_index6, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -2650,6 +2737,9 @@ struct xxxcross_search
     const unsigned char *pair_table12 = nullptr; // §4.34 pairs bound
     const unsigned char *pair_table13 = nullptr; // §4.34 pairs bound
     const unsigned char *pair_table23 = nullptr; // §4.34 pairs bound
+    const unsigned char *edge_table1 = nullptr; // §4.36 cross + edge bound
+    const unsigned char *edge_table2 = nullptr;
+    const unsigned char *edge_table3 = nullptr;
     std::vector<int> alg;
     std::vector<std::string> restrict;
     std::vector<int> move_restrict;
@@ -2697,6 +2787,10 @@ struct xxxcross_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index7, int arg_index8, int arg_index9, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -2742,6 +2836,10 @@ struct xxxcross_search
                 continue;
             }
             if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index8_tmp) * 24 + index6_tmp) * 24 + index9_tmp] >= depth)
+            {
+                continue;
+            }
+            if (edge_bound(edge_table1, index1_tmp * 24 + index7_tmp) >= depth || edge_bound(edge_table2, index1_tmp * 24 + index8_tmp) >= depth || edge_bound(edge_table3, index1_tmp * 24 + index9_tmp) >= depth)
             {
                 continue;
             }
@@ -2902,6 +3000,10 @@ struct xxxcross_search
                 continue;
             }
             if (pair_table23 && pair_table23[(((index4_tmp) * 24 + index8_tmp) * 24 + index6_tmp) * 24 + index9_tmp] > depth)
+            {
+                continue;
+            }
+            if (edge_bound(edge_table1, index1_tmp * 24 + index7_tmp) > depth || edge_bound(edge_table2, index1_tmp * 24 + index8_tmp) > depth || edge_bound(edge_table3, index1_tmp * 24 + index9_tmp) > depth)
             {
                 continue;
             }
@@ -3088,6 +3190,9 @@ struct xxxcross_search
         pair_table12 = pair_prune_table({index2, index7, index4, index8}, move_restrict_tmp);
         pair_table13 = pair_prune_table({index2, index7, index6, index9}, move_restrict_tmp);
         pair_table23 = pair_prune_table({index4, index8, index6, index9}, move_restrict_tmp);
+        edge_table1 = edge_prune_table(index7, move_restrict_tmp);
+        edge_table2 = edge_prune_table(index8, move_restrict_tmp);
+        edge_table3 = edge_prune_table(index9, move_restrict_tmp);
         count = 0;
         int aprev_tmp = 54;
         for (int m : alg)
@@ -3239,6 +3344,9 @@ struct xxxcross_search
         pair_table12 = pair_prune_table({index2, index7, index4, index8}, move_restrict_tmp);
         pair_table13 = pair_prune_table({index2, index7, index6, index9}, move_restrict_tmp);
         pair_table23 = pair_prune_table({index4, index8, index6, index9}, move_restrict_tmp);
+        edge_table1 = edge_prune_table(index7, move_restrict_tmp);
+        edge_table2 = edge_prune_table(index8, move_restrict_tmp);
+        edge_table3 = edge_prune_table(index9, move_restrict_tmp);
         if (!prune_table3)
         {
             update("Search cancelled.");
@@ -3397,6 +3505,10 @@ struct xxxxcross_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -4180,6 +4292,10 @@ struct LL_substeps_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int arg_index_cp, int arg_index_co, int arg_index_ep, int arg_index_eo, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -4994,6 +5110,10 @@ struct LL_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int arg_index_cp, int arg_index_co, int arg_index_ep, int arg_index_eo, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -5800,6 +5920,10 @@ struct LL_AUF_search
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int arg_index_cp, int arg_index_co, int arg_index_ep, int arg_index_eo, int depth, int center, int rot_count, int aprev)
     {
+        if (deadline_reached())
+        {
+            return true;
+        }
         if (depth >= 9)
         {
             if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
@@ -7113,6 +7237,8 @@ EMSCRIPTEN_BINDINGS(my_module)
 {
     emscripten::function("solve", &controller);
     emscripten::function("setCancelCheckMask", &setCancelCheckMask);
+    emscripten::function("setDeadlineCheck", &setDeadlineCheck);
+    emscripten::function("deadlineHit", &deadlineHit);
     emscripten::function("setNoopMoves", &setNoopMoves);
 
     emscripten::class_<PersistentCrossSolver>("PersistentCrossSolver")

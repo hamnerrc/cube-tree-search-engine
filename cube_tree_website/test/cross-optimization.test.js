@@ -115,6 +115,49 @@ test('optimizeCrossSolution: a longer (10-move) realistic algorithm stays physic
   assertAllVariantsPhysicallyCorrect(['D2', "R'", 'U', 'F', "L'", 'D', 'B2', 'R', "F'", 'L']);
 });
 
+// The original 2^n-mask implementation (before PROJECT_STATUS.md §4.36),
+// kept as the reference the faster depth-first version must match exactly.
+function optimizeCrossSolutionReference(moves) {
+  const { relabelMovePerm } = require(path.join(__dirname, '..', 'js', 'cross-optimization.js'));
+  const NAMES = ['U', "U'", 'U2', 'D', "D'", 'D2', 'R', "R'", 'R2', 'L', "L'", 'L2', 'F', "F'", 'F2', 'B', "B'", 'B2'];
+  const nameOf = perm => NAMES.find(nm => MOVE_TABLE[nm].join(',') === perm.join(',')) || null;
+  const ROT = { '': IDENTITY_PERM, y: MOVE_TABLE.y, y2: MOVE_TABLE.y2, "y'": MOVE_TABLE["y'"] };
+  const results = [];
+  const seen = new Set();
+  for (let mask = 0; mask < (1 << moves.length); mask++) {
+    let cumRot = IDENTITY_PERM;
+    const out = [];
+    let valid = true;
+    for (let i = 0; i < moves.length; i++) {
+      const name = nameOf(relabelMovePerm(MOVE_TABLE[moves[i]], cumRot));
+      if (!name) { valid = false; break; }
+      const rule = WIDE_MOVE_RULES[name];
+      if ((mask & (1 << i)) && rule) {
+        out.push(rule.wide);
+        cumRot = faceletCube.composePerm(cumRot, MOVE_TABLE[rule.rotation]);
+      } else out.push(name);
+    }
+    if (!valid || !keepsCrossOnBottom(cumRot)) continue;
+    const rotation = Object.keys(ROT).find(k => ROT[k].join(',') === cumRot.join(',')) ?? null;
+    const key = out.join(' ') + '|' + rotation;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({ moves: out, rotation });
+  }
+  return results;
+}
+
+test('optimizeCrossSolution matches the original implementation exactly (300 random algs, order included)', () => {
+  const faces = ['U', "U'", 'U2', 'D', "D'", 'D2', 'R', "R'", 'R2', 'L', "L'", 'L2', 'F', "F'", 'F2', 'B', "B'", 'B2'];
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  for (let k = 0; k < 300; k++) {
+    const n = 1 + Math.floor(rnd() * 10);
+    const alg = Array.from({ length: n }, () => faces[Math.floor(rnd() * faces.length)]);
+    assert.deepStrictEqual(optimizeCrossSolution(alg), optimizeCrossSolutionReference(alg), alg.join(' '));
+  }
+});
+
 if (failures > 0) {
   console.error(`\n${failures} test(s) failed.`);
   process.exit(1);

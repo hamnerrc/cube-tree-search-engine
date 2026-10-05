@@ -13,8 +13,16 @@
  * ever becomes cheaper than MCC says -- negative weights let padding with
  * extra U turns lower the cost). Ranks are always exact (every candidate).
  *
+ * --loss sigmoid (PROJECT_STATUS.md §4.36) bounds each pair's loss, so a
+ * pro step that is simply a slow choice (human variance: pros sometimes
+ * execute a suboptimal step, which should rank lower) cannot pull the
+ * weights arbitrarily far; the default logistic loss grows without bound
+ * for such a step. --weights D=1,B=2 evaluates fixed weights instead of
+ * fitting (e.g. the production STEP_PENALTIES).
+ *
  * Usage: node tools/fit-step-penalties.js --cache <app pools json>
  *        [--use D,F,B,wideRL,wideOther,rotMidY] [--l2 0.001] [--iters 400]
+ *        [--loss logistic|sigmoid] [--weights name=v,...] [--seed 7]
  */
 'use strict';
 const fs = require('fs');
@@ -24,11 +32,14 @@ const { algSpeed } = require(path.join(__dirname, '..', 'js', 'script.js'));
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i === -1 ? d : args[i + 1]; };
 const pools = JSON.parse(fs.readFileSync(opt('cache'), 'utf8'));
-const T = 0.2, LAMBDA = +opt('l2', '0.001'), ITERS = +opt('iters', '400');
+const T = +opt('temp', '0.2'), LAMBDA = +opt('l2', '0.001'), ITERS = +opt('iters', '400');
+const LOSS = opt('loss', 'logistic');
+if (!['logistic', 'sigmoid'].includes(LOSS)) throw new Error(`unknown --loss ${LOSS}`);
 
-const NAMES = ['U', 'D', 'R', 'L', 'F', 'B', 'wideRL', 'wideOther', 'rotLead', 'rotMidY', 'rotX'];
+const NAMES = ['U', 'D', 'R', 'L', 'F', 'B', 'wideRL', 'wideOther', 'rotLead', 'rotMidY', 'rotX', 'step'];
 function counts(alg) {
   const v = new Array(NAMES.length).fill(0);
+  v[11] = 1; // 'step': a constant cost per step (recognition / look-ahead pause)
   alg.split(' ').filter(Boolean).forEach((x, i) => {
     const c = x[0];
     if ('UDRLFB'.includes(c)) v['UDRLFB'.indexOf(c)]++;
@@ -46,11 +57,15 @@ const D = use.length;
 // [base cost of the whole path, pieces, selected counts] for the pro step and every candidate.
 const data = pools.map(pl => {
   const full = a => (pl.prior ? `${pl.prior} ${a}` : a);
-  const row = ([a, p]) => [algSpeed(full(a)), p, use.map(i => counts(a)[i])];
+  // Penalties apply per step over the whole path, as in SolveSession.pathCost:
+  // the committed steps' features count too (they matter when candidates
+  // solve different numbers of pieces, e.g. a single pair vs a multislot).
+  const priorCounts = (pl.priorSteps || []).reduce((acc, x) => acc.map((v, i) => v + counts(x)[i]), new Array(NAMES.length).fill(0));
+  const row = ([a, p]) => { const c = counts(a); return [algSpeed(full(a)), p, use.map(i => c[i] + priorCounts[i])]; };
   return { solve: pl.solve, labels: pl.labels, pro: row(pl.pro), cands: pl.algs.map(row) };
 });
 
-let seed = 7;
+let seed = +opt('seed', '7');
 const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 const segs = data.map(d => {
   const [bp, pp, fp] = d.pro;
@@ -69,7 +84,9 @@ function fit(train) {
         let margin = a;
         for (let i = 0; i < D; i++) margin += w[i] * g[i];
         const sig = 1 / (1 + Math.exp(margin / T));
-        for (let i = 0; i < D; i++) grad[i] -= k * sig / T * g[i];
+        // d/dmargin of log(1 + e^(-m/T)) is -sig/T; of sigmoid(-m/T), -sig(1-sig)/T.
+        const dl = LOSS === 'sigmoid' ? sig * (1 - sig) / T : sig / T;
+        for (let i = 0; i < D; i++) grad[i] -= k * dl * g[i];
       }
     }
     for (let i = 0; i < D; i++) {
@@ -85,6 +102,18 @@ const score = (w, [b, p, f]) => { let s = b; for (let i = 0; i < D; i++) s += w[
 const rankOf = (w, d) => { const ps = score(w, d.pro); let r = 1; for (const c of d.cands) if (score(w, c) < ps) r++; return r; };
 
 const solves = [...new Set(data.map(d => d.solve))];
+const fixed = opt('weights', null);
+if (fixed) {
+  const kv = Object.fromEntries(fixed.split(',').map(x => { const [k, v] = x.split('='); return [k, +v]; }));
+  const w = use.map(i => kv[NAMES[i]] || 0);
+  const r = data.map(d => rankOf(w, d));
+  const grp = (name, f) => { const idx = data.map((d, i) => i).filter(i => f(data[i])); console.log(`${name.padEnd(12)} top 10: ${idx.filter(i => r[i] <= 10).length}/${idx.length}  mean log10 rank: ${(idx.reduce((a, i) => a + Math.log10(r[i]), 0) / idx.length).toFixed(3)}`); };
+  grp('all', () => true);
+  grp('root', d => /cross/.test(d.labels));
+  grp('later', d => !/cross/.test(d.labels));
+  data.forEach((d, i) => console.log(`  #${d.solve} ${d.labels.padEnd(22)} rank ${r[i]}`));
+  process.exit(0);
+}
 const cv = new Array(data.length);
 const foldWeights = [];
 for (const s of solves) {
@@ -99,6 +128,9 @@ const line = (name, r) => console.log(`${name.padEnd(30)} top 10: ${r.filter(x =
 line('no penalties', base);
 line('leave-one-solve-out (honest)', cv);
 line('fit on all solves (in-sample)', all);
+const isRoot = d => /cross/.test(d.labels);
+const sub = (name, r, f) => { const idx = data.map((d, i) => i).filter(i => f(data[i])); console.log(`  ${name.padEnd(28)} top 10: ${idx.filter(i => r[i] <= 10).length}/${idx.length}`); };
+sub('CV, root steps', cv, isRoot); sub('CV, later steps', cv, d => !isRoot(d));
 console.log('weights (all solves):', use.map((i, k) => `${NAMES[i]}=${wAll[k].toFixed(2)}`).join(' '));
 console.log('per-fold range:', use.map((i, k) => `${NAMES[i]} ${Math.min(...foldWeights.map(w => w[k])).toFixed(2)}..${Math.max(...foldWeights.map(w => w[k])).toFixed(2)}`).join(', '));
 data.forEach((d, i) => console.log(`  #${d.solve} ${d.labels.padEnd(22)} rank ${String(base[i]).padStart(6)} -> held-out ${cv[i]}`));

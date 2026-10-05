@@ -195,7 +195,7 @@ const fmt = s => `mean log10 rank all ${lg(s.all)}${train ? ` (train ${lg(s.trai
     const seen = {};
     for (const pl of pools) { const k = seen[pl.solve] || 0; pl.priorSteps = segsBySolve[pl.solve - 1].slice(0, k); seen[pl.solve] = k + 1; }
   }
-  else { pools = await (appMode ? buildAppPools() : buildPools()); fs.writeFileSync(cacheFile, JSON.stringify(pools)); }
+  if (!pools) { pools = await (appMode ? buildAppPools() : buildPools()); fs.writeFileSync(cacheFile, JSON.stringify(pools)); }
 
   for (const k of Object.keys(tableParams)) if (!ALG_SPEED_PARAMS.includes(k)) throw new Error(`unknown algSpeed parameter ${k}`);
   const base = rankAll(pools, tableParams);

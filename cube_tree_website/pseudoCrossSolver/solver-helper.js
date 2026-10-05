@@ -158,6 +158,8 @@ class PseudoSolverHelper {
       moveCount = '',
     } = options;
 
+    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
+    if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
     this._solutions = [];
 
     return new Promise((resolve, reject) => {
@@ -177,6 +179,7 @@ class PseudoSolverHelper {
         ma2,
         mcString: moveCount,
         noopMoves: options.noopMoves ? this._restStr(options.noopMoves) : '', // cube-tree modification
+        deadline: options.deadline || 0, // cube-tree modification: epoch ms, see worker3.js
       });
     });
   }

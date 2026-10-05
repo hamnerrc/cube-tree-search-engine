@@ -293,10 +293,14 @@ class CrossSolverHelper {
       moveAfterMove = '',
       moveCount = '',
       noopMoves = '',
+      deadline = 0,
       onProgress = null,
       onSolution = null,
       onCancel = null,
     } = options;
+
+    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
+    if (deadline && Date.now() >= deadline) return Promise.resolve([]);
 
     this._solutions = [];
     this._onProgress = onProgress;
@@ -320,6 +324,7 @@ class CrossSolverHelper {
         moveAfterMove,
         moveCount,
         noopMoves, // cube-tree modification, see worker-persistent.js
+        deadline, // cube-tree modification: epoch ms, see worker-persistent.js
       });
     });
   }

@@ -855,6 +855,43 @@ std::vector<bool> create_ma_table()
 // cube-tree modification (2026-10-04): prune tables depend only on these
 // inputs (the target index, the depth parameter, the move set and the fixed
 // move tables), so each is built once per process instead of on every call.
+// cube-tree modification (PROJECT_STATUS.md §4.36): a per-call deadline the
+// search checks itself (Module._deadline, epoch ms, set by the helper/worker
+// before each call); when it passes, the call ends like a capped one ("Search
+// finished." with the solutions found so far). Off unless enabled.
+EM_JS(int, solver_deadline_passed, (), {
+	return (Module._deadline > 0 && Date.now() > Module._deadline) ? 1 : 0;
+});
+static bool g_deadline_on = false;
+static unsigned int g_deadline_counter = 0;
+static bool g_deadline_hit = false;
+void setDeadlineCheck(bool on)
+{
+	g_deadline_on = on;
+	g_deadline_counter = 0;
+	g_deadline_hit = false;
+}
+bool deadlineHit()
+{
+	return g_deadline_hit;
+}
+inline bool deadline_reached()
+{
+	if (!g_deadline_on)
+	{
+		return false;
+	}
+	if (g_deadline_hit)
+	{
+		return true;
+	}
+	if ((++g_deadline_counter & 0x3FFF) == 0 && solver_deadline_passed())
+	{
+		g_deadline_hit = true;
+	}
+	return g_deadline_hit;
+}
+
 std::map<std::string, std::vector<unsigned char>> g_prune_cache;
 
 static std::string prune_cache_key(const char *kind, int index, int depth, std::vector<int> moves, size_t t1, size_t t2, size_t out)
@@ -881,6 +918,87 @@ void cached_prune_table_xcross(int index2, int depth, const std::vector<int> &ta
 	if (it != g_prune_cache.end()) { prune_table = it->second; return; }
 	create_prune_table_xcross(index2, depth, table1, table2, prune_table, move_restrict, tmp_array, center_move_table);
 	g_prune_cache[key] = prune_table;
+}
+
+// cube-tree modification (PROJECT_STATUS.md §4.36): the pseudo counterpart of
+// crossSolver's §4.34 pairs bound -- the distance to bring just the given
+// corners and edges (corner, edge, corner, edge) home, with the corners
+// allowed the same free D offset the goal allows (seeded at all four D
+// offsets), over 24^4 states, by BFS in the absolute frame over all 18 face
+// turns (a superset of any face-turn move list, so a lower bound). An
+// admissible bound only skips subtrees with no solution within the depth
+// limit: the solutions and their order are unchanged. Not used (nullptr) when
+// the move list has anything but face turns.
+static std::map<std::vector<int>, std::vector<unsigned char>> g_pair_prune_cache;
+const unsigned char *pair_prune_table(const std::vector<int> &pieces, const std::vector<int> &move_restrict, const std::vector<int> &corner_move_table, const std::vector<int> &edge_move_table)
+{
+	for (int mv : move_restrict)
+	{
+		if (mv >= 18)
+		{
+			return nullptr;
+		}
+	}
+	auto it = g_pair_prune_cache.find(pieces);
+	if (it != g_pair_prune_cache.end())
+	{
+		return it->second.data();
+	}
+	int n = static_cast<int>(pieces.size());
+	int size = 1;
+	for (int k = 0; k < n; ++k)
+	{
+		size *= 24;
+	}
+	std::vector<unsigned char> table(size, 255);
+	std::vector<int> frontier;
+	for (int d_move : {-1, 3, 4, 5})
+	{
+		int cell = 0;
+		for (int k = 0; k < n; ++k)
+		{
+			const std::vector<int> &t = (k % 2 == 0) ? corner_move_table : edge_move_table;
+			cell = cell * 24 + (d_move < 0 ? pieces[k] : t[pieces[k] * 27 + d_move]);
+		}
+		if (table[cell] == 255)
+		{
+			table[cell] = 0;
+			frontier.push_back(cell);
+		}
+	}
+	std::vector<int> next;
+	std::vector<int> digits(n);
+	for (int d = 0; !frontier.empty() && d < 254; ++d)
+	{
+		next.clear();
+		for (int cell : frontier)
+		{
+			int c = cell;
+			for (int k = n - 1; k >= 0; --k)
+			{
+				digits[k] = c % 24;
+				c /= 24;
+			}
+			for (int m = 0; m < 18; ++m)
+			{
+				int to = 0;
+				for (int k = 0; k < n; ++k)
+				{
+					const std::vector<int> &t = (k % 2 == 0) ? corner_move_table : edge_move_table;
+					to = to * 24 + t[digits[k] * 27 + m];
+				}
+				if (table[to] == 255)
+				{
+					table[to] = d + 1;
+					next.push_back(to);
+				}
+			}
+		}
+		frontier.swap(next);
+	}
+	std::vector<unsigned char> &stored = g_pair_prune_cache[pieces];
+	stored = std::move(table);
+	return stored.data();
 }
 
 struct cross_search
@@ -932,6 +1050,10 @@ struct cross_search
 
 	bool depth_limited_search(int arg_index1, int arg_index2, int depth, int center, int rot_count, int aprev)
 	{
+		if (deadline_reached())
+		{
+			return true;
+		}
 		for (int i : move_restrict_move)
 		{
 			if (ma2[aprev + i] || mc_tmp[i] >= mc[i])
@@ -1316,6 +1438,10 @@ struct xcross_search
 
 	bool depth_limited_search(int arg_index1, int arg_index2, int arg_index3, int depth, int center, int rot_count, int aprev)
 	{
+		if (deadline_reached())
+		{
+			return true;
+		}
 		for (int i : move_restrict_move)
 		{
 			if (ma2[aprev + i] || mc_tmp[i] >= mc[i])
@@ -1683,6 +1809,7 @@ struct xxcross_search
 	std::vector<int> multi_move_table;
 	std::vector<unsigned char> prune_table1;
 	std::vector<unsigned char> prune_table2;
+	const unsigned char *pair_table = nullptr; // §4.36 pairs bound
 	std::vector<int> alg;
 	std::vector<std::string> restrict;
 	std::vector<int> move_restrict;
@@ -1730,6 +1857,10 @@ struct xxcross_search
 
 	bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index5, int arg_index6, int depth, int center, int rot_count, int aprev)
 	{
+		if (deadline_reached())
+		{
+			return true;
+		}
 		for (int i : move_restrict_move)
 		{
 			if (ma2[aprev + i] || mc_tmp[i] >= mc[i])
@@ -1749,6 +1880,10 @@ struct xxcross_search
 			index6_tmp = edge_move_table[arg_index6 + m];
 			prune2_tmp = prune_table2[index1_tmp * 24 + index4_tmp];
 			if (prune2_tmp != 255 && prune2_tmp >= depth)
+			{
+				continue;
+			}
+			if (pair_table && pair_table[((index2_tmp * 24 + index5_tmp) * 24 + index4_tmp) * 24 + index6_tmp] >= depth)
 			{
 				continue;
 			}
@@ -2049,6 +2184,7 @@ struct xxcross_search
 		index6 = single_edge_index[slot2];
 		edge_solved2 = index6;
 		cached_prune_table_xcross(index4, 20, multi_move_table, corner_move_table, prune_table2, move_restrict_tmp, tmp_array, center_move_table);
+		pair_table = pair_prune_table({index2, index5, index4, index6}, move_restrict_tmp, corner_move_table, edge_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -2135,6 +2271,9 @@ struct xxxcross_search
 	std::vector<unsigned char> prune_table1;
 	std::vector<unsigned char> prune_table2;
 	std::vector<unsigned char> prune_table3;
+	const unsigned char *pair_table12 = nullptr; // §4.36 pairs bound
+	const unsigned char *pair_table13 = nullptr;
+	const unsigned char *pair_table23 = nullptr;
 	std::vector<int> alg;
 	std::vector<std::string> restrict;
 	std::vector<int> move_restrict;
@@ -2191,6 +2330,10 @@ struct xxxcross_search
 
 	bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index7, int arg_index8, int arg_index9, int depth, int center, int rot_count, int aprev)
 	{
+		if (deadline_reached())
+		{
+			return true;
+		}
 		for (int i : move_restrict_move)
 		{
 			if (ma2[aprev + i] || mc_tmp[i] >= mc[i])
@@ -2217,6 +2360,18 @@ struct xxxcross_search
 			index9_tmp = edge_move_table[arg_index9 + m];
 			prune3_tmp = prune_table3[index1_tmp * 24 + index6_tmp];
 			if (prune3_tmp != 255 && prune3_tmp >= depth)
+			{
+				continue;
+			}
+			if (pair_table12 && pair_table12[((index2_tmp * 24 + index7_tmp) * 24 + index4_tmp) * 24 + index8_tmp] >= depth)
+			{
+				continue;
+			}
+			if (pair_table13 && pair_table13[((index2_tmp * 24 + index7_tmp) * 24 + index6_tmp) * 24 + index9_tmp] >= depth)
+			{
+				continue;
+			}
+			if (pair_table23 && pair_table23[((index4_tmp * 24 + index8_tmp) * 24 + index6_tmp) * 24 + index9_tmp] >= depth)
 			{
 				continue;
 			}
@@ -2538,6 +2693,9 @@ struct xxxcross_search
 		index9 = single_edge_index[slot3];
 		edge_solved3 = index9;
 		cached_prune_table_xcross(index6, 10, multi_move_table, corner_move_table, prune_table3, move_restrict_tmp, tmp_array, center_move_table);
+		pair_table12 = pair_prune_table({index2, index7, index4, index8}, move_restrict_tmp, corner_move_table, edge_move_table);
+		pair_table13 = pair_prune_table({index2, index7, index6, index9}, move_restrict_tmp, corner_move_table, edge_move_table);
+		pair_table23 = pair_prune_table({index4, index8, index6, index9}, move_restrict_tmp, corner_move_table, edge_move_table);
 		count = 0;
 		int aprev_tmp = 54;
 		for (int m : alg)
@@ -2958,4 +3116,6 @@ EMSCRIPTEN_BINDINGS(my_module)
 {
 	emscripten::function("solve", &controller);
 	emscripten::function("setNoopMoves", &setNoopMoves);
+	emscripten::function("setDeadlineCheck", &setDeadlineCheck);
+	emscripten::function("deadlineHit", &deadlineHit);
 }

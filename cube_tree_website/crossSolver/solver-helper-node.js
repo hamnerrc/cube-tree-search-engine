@@ -369,6 +369,8 @@ class CrossSolverHelperNode {
    */
   _doSolve(callFn, options = {}) {
     const { onProgress = null, onSolution = null, onCancel = null } = options;
+    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
+    if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
     const solutions = [];
     const origPostMessage = globalThis.postMessage;
 
@@ -399,6 +401,12 @@ class CrossSolverHelperNode {
         // setNoopMoves); always reset so settings never leak between calls.
         if (this.Module && typeof this.Module.setNoopMoves === 'function') {
           this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
+        }
+        // cube-tree modification: per-call deadline (epoch ms, 0 = none),
+        // checked inside the search (solver.cpp setDeadlineCheck, §4.36).
+        if (this.Module) {
+          this.Module._deadline = options.deadline || 0;
+          if (typeof this.Module.setDeadlineCheck === 'function') this.Module.setDeadlineCheck(!!options.deadline);
         }
         callFn();
       } catch (e) {
