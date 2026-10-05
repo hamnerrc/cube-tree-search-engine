@@ -229,6 +229,18 @@ test('pruneGraph: without multislotting, a non-root edge solving 2 pairs at once
   assert.ok(!edgeKeys(pruned).includes('N1->N3'), 'N1->N3 (2-pair multislot step) should be excluded without multislotting');
 });
 
+test('stepPenalty (PROJECT_STATUS §4.35): penalties only, step-aware rotations', () => {
+  const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
+  assert.strictEqual(stepPenalty("R U R' U'"), 0, 'R/U/L moves carry no penalty');
+  assert.strictEqual(stepPenalty("L' U L"), 0);
+  assert.strictEqual(stepPenalty("y R U R'"), 0, 'a rotation that starts the step is free');
+  assert.strictEqual(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY, 'a mid-step y is penalised');
+  assert.strictEqual(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL);
+  assert.strictEqual(stepPenalty("D' B u"), P.D + P.B + P.wideOther);
+  assert.strictEqual(stepPenalty(''), 0);
+  for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
+});
+
 // ---------------------------------------------------------------------
 
 if (failures > 0) {

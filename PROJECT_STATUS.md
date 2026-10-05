@@ -33,10 +33,19 @@ what the file already says since the twelfth pass (the uncommitted copy had
    `search-scheduler.js`. Look-ahead explores its candidates in parallel.
 3. JS: table-driven rotation helpers in `facelet-cube.js` (5.0 s → ~0.4-2 s
    of post-processing per root search).
-4. **Found:** the upstream engine's rotation-branch pruning uses `h >= depth`
-   where a rotation consumes no move (needs `h > depth`), so it can drop valid
-   mid-step-rotation solutions in pro mode. Not changed in this commit, because
-   fixing it changes (adds) results; see §4.34.
+4. **Found and measured, deliberately not adopted:** the upstream engine's
+   rotation-branch pruning uses `h >= depth` where a rotation consumes no move
+   (needs `h > depth`), and it never explores a rotation followed by the last
+   move. The fix gives a strict superset (all extras physically valid), but
+   ~2× the raw solutions, mostly y-spellings the bridge already generates.
+   That would crowd the per-call cap, and pro membership was unchanged; see §4.34.
+5. **alg_speed tuned on the pros (§4.35):** per-step penalties for D/F/B,
+   wide moves and mid-step y rotations, fitted with leave-one-solve-out
+   cross-validation against where each pro step ranks in the app's real list
+   (`tools/pro-ranking.js --app`, `tools/fit-step-penalties.js`). Pro steps in
+   the top 10: 12 → 24/36 cross-validated (25/36 in production scoring), later
+   steps 24/25. **Short of the 90% target:** root steps (XCross/XXCross from
+   inspection) stay at 2/11; see §4.35 for why.
 
 **2026-10-04 (twelfth pass): dynamic search priority, look-ahead depth, and
 `alg_speed` tuned against the pro references; plus 4 new reference solves
@@ -1693,6 +1702,109 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.35 DONE (2026-10-04, thirteenth pass): alg_speed tuned so pro steps rank near the top
+
+User request: professional reference steps in the top 10 90% of the time if
+possible, without overfitting.
+
+**Benchmark: the real app list** (`tools/pro-ranking.js --app`). For each of
+the 36 segments, the pro's earlier steps are committed in a `SolveSession`
+and `searchCurrentNode` runs with the app defaults (500 per call, xcross +
+xxcross + multislotting + pro move set, the pro's cross colour). The pro
+step's TPP is then ranked among everything listed there: all targets,
+rotations and spellings, 900-74,000 candidates per node, ranked exactly.
+Baseline (pushMult 0.8 from §4.32): **12/36 in the top 10**; root steps rank
+42-23,822.
+
+**What beats the pros** (inspected, not guessed): (1) at the root, short
+cross-only results (partial-path TPP favours cheap early pieces) and engine
+XCross/XXCross algs built from wide moves, F/B and mid-alg rotations that MCC
+prices well below the pros' choices (best XCross 8.3 vs the pro's 15.7); (2)
+later, multislots and awkward spellings (`R r' U' F' …`, `l y' U R …`).
+
+**Tried and rejected:**
+- Estimated final TPP (charge each unsolved pair the pros' mean single-pair
+  cost, 8.66): worse (9/36), because XXCross results take over the root.
+- Learned remaining-pairs terms (one, or separate root/later): no CV gain.
+- Signed per-move weights (U/R/L discounts): CV 26/36, but 7.6% of random
+  U insertions then *lowered* an alg's cost (MCC's marginal U cost is
+  sometimes below the discount), which rewards padding. Rejected.
+
+**Chosen: penalties only**, fitted with an L2-regularised pairwise logistic
+loss (the pro step should score below each candidate at its node; 400 hardest
++ 800 random candidates per node; nodes weighted equally; weights ≥ 0).
+Overfitting control: leave-one-solve-out CV (11 folds), and every number
+quoted as "honest" is the held-out rank. `STEP_PENALTIES` in script.js:
+D +1.06, F +0.86, B +2.22, r/l +2.35, other wide +3.31, mid-step y +3.70 (a
+y that starts the step is free). Per-fold weights are stable (e.g. B
+1.84-2.62, mid-step y 3.27-3.89), and the in-sample fit (24/36) equals the CV
+result (24/36). Applied per step: `SolveSession.pathCost(alg)` = MCC(path) +
+Σ stepPenalty(each committed step) + stepPenalty(alg); every TPP in
+`searchCurrentNode` uses it.
+
+**Results** (production scoring; the honest CV figure is 24/36 = 67%):
+
+| | before | after |
+|---|---|---|
+| app list: pro steps in top 10 | 12/36 | 25/36 |
+| app list: in top 3 | 9 | 17 |
+| app list: in top 500 | 28 | 33 |
+| app list: later steps in top 10 | 12/25 | 24/25 |
+| per-goal pools (§4.32): top 10 / top 500 | 22 / 29 | 26 / 35 |
+
+| segment | candidates | rank before | rank after |
+|---|---|---|---|
+| #1 xcross | 46350 | 13597 | 281 |
+| #1 2nd pair | 7374 | 83 | 2 |
+| #1 3rd pair | 2893 | 25 | 3 |
+| #1 4th pair | 1280 | 64 | 4 |
+| #2 xcross | 48234 | 423 | 164 |
+| #2 2nd pair | 6529 | 1 | 1 |
+| #2 3rd pair | 3185 | 4 | 1 |
+| #2 4th pair | 1172 | 1 | 1 |
+| #3 xcross | 53734 | 1640 | 109 |
+| #3 2nd pair | 6441 | 3 | 2 |
+| #3 3rd pair+4th pair | 3494 | 232 | 9 |
+| #4 xcross | 52631 | 223 | 1 |
+| #4 2nd pair | 6941 | 139 | 6 |
+| #4 3rd pair+4th pair | 2842 | 25 | 5 |
+| #5 xcross | 62460 | 42 | 27 |
+| #5 2nd pair | 7113 | 1 | 1 |
+| #5 3rd pair | 3134 | 1 | 1 |
+| #5 4th pair | 893 | 1 | 4 |
+| #6 xcross | 74048 | 23822 | 4599 |
+| #6 2nd pair | 6962 | 161 | 6 |
+| #6 3rd pair | 2705 | 351 | 22 |
+| #6 4th pair | 968 | 8 | 3 |
+| #7 xcross+2nd pair | 40358 | 14488 | 1612 |
+| #7 3rd pair+4th pair | 1959 | 1 | 1 |
+| #8 xxcross | 52290 | 3278 | 256 |
+| #8 3rd pair | 3165 | 1 | 1 |
+| #8 4th pair | 794 | 16 | 1 |
+| #9 xxcross | 55855 | 3433 | 450 |
+| #9 3rd/4th pairs | 3394 | 14 | 5 |
+| #10 xxcross | 60584 | 661 | 2 |
+| #10 3rd pair | 2994 | 55 | 1 |
+| #10 4th pair | 889 | 86 | 4 |
+| #11 xcross | 49406 | 8975 | 1119 |
+| #11 2nd pair | 5396 | 340 | 130 |
+| #11 3rd pair | 3556 | 7 | 2 |
+| #11 4th pair | 1184 | 3 | 1 |
+
+**Why not 90%:** 10 of the 11 misses are root steps (XCross/XXCross chosen in
+inspection; now ranked ~16-3000, previously 42-23,822). Their pools are
+~50,000 results, and what separates a pro's choice is inspection planning:
+what a human can see and plan in 15 s, which pairs are easy to track, and
+cross-colour/slot preferences. An execution-speed model does not capture
+that, and 11 root examples cannot teach it without overfitting. Ideas if this
+matters: rank root results per target type (Cross / XCross / XXCross) so a
+good XCross isn't buried under cheap crosses; or collect many more pro root
+steps before fitting anything root-specific.
+
+Verified: `script.test.js` (stepPenalty: penalties only, leading y free),
+all fast suites, `lookahead-e2e.js`, `solver-bridge-e2e.js` (pro, pseudo):
+0 warnings, 0 frame failures.
+
 ### 4.34 DONE (2026-10-04, thirteenth pass): search performance
 
 User priority: "identify and implement every possible optimization to speed
@@ -1724,12 +1836,21 @@ postAlg, repeated calls and a move-set switch in one process):
   identical), instead of trying every move × rotation per cell. Pro tables
   build ~5× faster.
 
-**Upstream bug found, not yet fixed:** the original rotation branches prune
-with `prune >= depth` on their own tables too, so they can drop valid
-solutions in which a rotation comes at a point where the cross+corner
-distance equals the remaining moves. That hurts pro-mode coverage of
-mid-step rotations. Fixing it adds results (changes output), so it is a
-separate, measured change.
+**Upstream rotation-branch bug: measured, not adopted.** The original
+rotation branches prune with `prune >= depth` on their own tables too, and at
+depth 1 they never recurse, so a rotation followed by the last move is never
+explored. The fix (`> depth`, always recurse) was built and measured on
+uncapped pro-mode calls (3 scrambles × cross/xcross/xxcross). It gave a
+**strict superset** (0 lost), and every extra solution (1.4k-104k per call)
+was physically valid. Raw counts roughly double, though (e.g. 745 → 2172),
+and the extras are mostly `... y X` spellings that `rotationSpellings`
+already produces post hoc. Under the app's per-call cap they would displace
+genuinely different algorithms, and pro-reference membership on the rotation
+segments (#5, #8, #10, #11) was identical. Dropping y from the engine instead
+was also measured and rejected: it loses y + wide-move combinations with no
+face-turn equivalent (e.g. `U2 y r' U2 B' U' l' B'`). Reverted (the rebuilt
+binary is byte-identical to the committed one). Revisit if the cap is ever
+raised, or apply it to x rotations only.
 
 **Bridge / UI:** `searchCurrentNode` now plans every call, starts them all,
 then post-processes in plan order (output identical: three steps of a

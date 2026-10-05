@@ -315,6 +315,29 @@ function altAlgs(algorithms) {
 // tuning and the held-out solves (PROJECT_STATUS.md §4.32).
 const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, destabilize: 0.5, addRegrip: 1, double: 1.65, sesliceMult: 1.25, overWorkMult: 2.25, moveblock: 0.8, rotation: 3.5 };
 
+// Per-step penalties on top of MCC (PROJECT_STATUS.md §4.35): professional
+// solutions use D/F/B turns, wide moves and mid-step y rotations less than MCC's
+// hand model predicts. Fitted with leave-one-solve-out cross-validation on the
+// pro reference solves (tools/pro-ranking.js --app), penalties only, so no
+// move ever costs less than MCC says. A rotation at the very start of a step
+// (done while looking ahead between steps) is not penalised.
+const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideOther: 3.31, rotMidY: 3.70 };
+
+/** Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum over its steps. */
+function stepPenalty(alg) {
+    let total = 0;
+    String(alg || '').split(/\s+/).filter(Boolean).forEach((t, i) => {
+        const c = t[0];
+        if (c === 'D') total += STEP_PENALTIES.D;
+        else if (c === 'F') total += STEP_PENALTIES.F;
+        else if (c === 'B') total += STEP_PENALTIES.B;
+        else if (c === 'r' || c === 'l') total += STEP_PENALTIES.wideRL;
+        else if ('fbudMES'.includes(c)) total += STEP_PENALTIES.wideOther;
+        else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
+    });
+    return total;
+}
+
 function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult = ALG_SPEED_DEFAULTS.wristMult, pushMult = ALG_SPEED_DEFAULTS.pushMult, ringMult = ALG_SPEED_DEFAULTS.ringMult, destabilize = ALG_SPEED_DEFAULTS.destabilize, addRegrip = ALG_SPEED_DEFAULTS.addRegrip, double = ALG_SPEED_DEFAULTS.double, sesliceMult = ALG_SPEED_DEFAULTS.sesliceMult, overWorkMult = ALG_SPEED_DEFAULTS.overWorkMult, moveblock = ALG_SPEED_DEFAULTS.moveblock, rotation = ALG_SPEED_DEFAULTS.rotation) {
     function test(splitSeq, lGrip, rGrip, speed) {
         let lThumb = [-1, "home"];
@@ -1093,6 +1116,8 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         algSpeed,
         ALG_SPEED_DEFAULTS,
+        STEP_PENALTIES,
+        stepPenalty,
         altAlgs,
         cleanScramble,
         isPseudoState,

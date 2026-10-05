@@ -431,6 +431,17 @@ class SolveSession {
   get rootNode() { return this.nodeMap.get(this.rootId); }
   get scoredPath() { return this.stepAlgs.join(' ').trim(); }
   /**
+   * Time of the committed path plus `alg` as the next step: MCC (algSpeed) of
+   * the whole path, plus each step's own stepPenalty (step-aware, e.g. a y at
+   * the start of a step is free; PROJECT_STATUS.md §4.35). TPP = this / pieces.
+   */
+  pathCost(alg) {
+    const path = this.scoredPath ? `${this.scoredPath} ${alg}` : alg;
+    const penalty = typeof stepPenalty === 'function'
+      ? this.stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) + stepPenalty(alg) : 0;
+    return algSpeed(path, false, false) + penalty;
+  }
+  /**
    * The committed path as the engine needs it: { rotation, moves } with
    * `moves` face turns only, in the frame the cube is physically in now.
    */
@@ -719,8 +730,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
           // it in here as well applied it twice.
           const optRotation = baseRotation;
 
-          const optScoredAlg = session.scoredPath ? session.scoredPath + ' ' + optAlg : optAlg;
-          const optTpp = algSpeed(optScoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+          const optTpp = session.pathCost(optAlg) / calculateSolvedPieces(session.rootNode, targetNode);
 
           candidates.push({
             color,
@@ -829,11 +839,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
           }
           continue;
         }
-
-        const scoredAlg = session.scoredPath
-          ? session.scoredPath + ' ' + finalCoreAlg
-          : finalCoreAlg;
-        const tppScore = algSpeed(scoredAlg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+        const tppScore = session.pathCost(finalCoreAlg) / calculateSolvedPieces(session.rootNode, targetNode);
 
         // Display label ("corners"/"edges" columns: what's NEWLY solved
         // by this step specifically, not the full cumulative claim used
@@ -878,7 +884,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
             const pairs = F2L_SLOTS.filter(sl => after[sl]);
             const nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
             if (!nodeId) continue;
-            const spTpp = algSpeed(session.scoredPath ? `${session.scoredPath} ${spelling}` : spelling, false, false)
+            const spTpp = session.pathCost(spelling)
               / calculateSolvedPieces(session.rootNode, targetNode);
             candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
           }
@@ -892,7 +898,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper) {
         // labels. §4.25.
         if (isRoot && session.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
           for (const v of inspectionWideVariants(finalCoreAlg)) {
-            const vTpp = algSpeed(v.alg, false, false) / calculateSolvedPieces(session.rootNode, targetNode);
+            const vTpp = session.pathCost(v.alg) / calculateSolvedPieces(session.rootNode, targetNode);
             candidates.push({
               ...candidate,
               rotation: rotationName(`${fullRotation} ${v.inspection}`),

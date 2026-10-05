@@ -121,15 +121,25 @@ result (see below) — those are free, since a human absorbs them during
 inspection rather than mid-solve. `y2` specifically is forbidden as a
 mid-algorithm move; it may only appear as a distance-1 inspection rotation.
 
-**Tuned for professional solutions.** Apart from the rotation cost above,
-`alg_speed` keeps MCC's constants except one, chosen as the simplest change
-that ranks the [professional reference solves](#professional-reference-solves-and-known-gaps)
-higher: finger pushes on `U`/`D` turns (`pushMult`) cost 0.8 instead of 1.3,
-favouring the `R`/`U`-heavy, "spammable" solutions professionals use. The
-choice was benchmarked by where each professional step ranks among the
-engine's alternatives (`tools/pro-ranking.js`) — tuned on the first seven
-reference solves and confirmed on the rest. Further tuning should use the same
-benchmark rather than hand-picked constants.
+**Tuned for professional solutions.** `alg_speed` is MCC with two
+benchmarked adjustments, both measured against the
+[professional reference solves](#professional-reference-solves-and-known-gaps)
+by where each professional step would rank in the app's own result list
+(`tools/pro-ranking.js --app`):
+
+1. Finger pushes on `U`/`D` turns (MCC's `pushMult`) cost 0.8 instead of 1.3.
+2. Each step pays a small extra cost for the moves professionals use less
+   than MCC's hand model predicts: `D` +1.06, `F` +0.86, `B` +2.22, wide
+   `r`/`l` +2.35, other wide moves +3.31, and a `y` rotation in the middle of
+   a step +3.70 (a rotation that *starts* a step is free: it happens while
+   looking ahead between steps). These are penalties only, so no move ever
+   costs less than MCC says. A path's time is MCC of the whole path plus the
+   penalty of each of its steps.
+
+The penalties were fitted with leave-one-solve-out cross-validation (fit on
+all solves but one, rank the held-out one), to avoid overfitting the few
+reference solves. Further tuning should go through the same benchmark rather
+than hand-picked constants.
 
 ## What the DAG edges mean
 
@@ -401,7 +411,7 @@ programs use.
 - EO-aware solving beyond what the F2L DAG already captures.
 - Automatic batch ranking across multiple scrambles at once.
 - Swapping in a fully fitted `alg_speed` model (see Provenance); only the
-  single benchmarked constant above is changed.
+  benchmarked adjustments above are applied.
 - XXXXCross as a primary, directly-offered target.
 - Cross finishing anywhere other than the bottom face.
 
@@ -423,8 +433,9 @@ record of changes made to the vendored engine code, are in
   [or18_solver_docs.html](docs/or18_solver_docs.html) for reference.
 - `alg_speed` is based on **Triangium's MCC** (move-cost/comfort) model,
   MIT-licensed (Copyright (c) 2021 trangium). cube⑂tree uses the **untuned**
-  version of this model with two changes (see Ranking, above): every move has
-  a cost, including `x` rotations, and `pushMult` is 0.8 (benchmarked against
-  the professional reference solves).
+  version of this model with these changes (see Ranking, above): every move
+  has a cost, including `x` rotations; `pushMult` is 0.8; and per-step
+  penalties for D/F/B turns, wide moves and mid-step rotations (benchmarked
+  against the professional reference solves).
 - Other utility/glue code (the DAG generator, UI, scoring plumbing) was
   originally written with AI assistance.
