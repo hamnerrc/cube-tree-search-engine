@@ -300,22 +300,38 @@ function commuteNormalize(alg) {
  * rotation (pointless) and, unless allowLeading, a leading one.
  */
 function rotationSpellings(alg, allowLeading = true) {
+    return rotationSpellingParts(alg, allowLeading).map(s => s.alg);
+}
+
+/**
+ * rotationSpellings with the inserted rotation of each: [{ alg, rotation }],
+ * same order. Strings are built from cached prefix/suffix joins (this runs for
+ * every candidate of a pro-move-set search).
+ */
+function rotationSpellingParts(alg, allowLeading = true) {
     const t = String(alg).split(/\s+/).filter(Boolean);
+    const start = allowLeading ? 0 : 1;
     // Relabelling is per token, so each token is relabelled once per rotation
     // and every suffix reuses it (was one relabelAlgForRotation per split).
-    const relabelled = {};
+    const rests = {};
     for (const r of ['y', "y'"]) {
         const ri = rotationIndex(r);
-        relabelled[r] = t.map(tok => (isMoveToken(tok) ? conjugateToken(ri, tok) : null));
+        const rel = t.map(tok => (isMoveToken(tok) ? conjugateToken(ri, tok) : null));
+        for (let i = start; i < rel.length; i++) {
+            if (rel[i] === null) throw new Error(`relabelAlgForRotation: no single token for ${t[i]} under ${r}`);
+        }
+        // rest[k] = rel[k..].join(' ')
+        const rest = new Array(t.length);
+        for (let k = t.length - 1; k >= start; k--) rest[k] = k === t.length - 1 ? rel[k] : `${rel[k]} ${rest[k + 1]}`;
+        rests[r] = rest;
     }
     const out = [];
-    for (let k = allowLeading ? 0 : 1; k < t.length; k++) {
+    let prefix = t.slice(0, start).join(' ');
+    for (let k = start; k < t.length; k++) {
         for (const r of ['y', "y'"]) {
-            const rest = relabelled[r].slice(k);
-            const bad = rest.indexOf(null);
-            if (bad !== -1) throw new Error(`relabelAlgForRotation: no single token for ${t[k + bad]} under ${r}`);
-            out.push([...t.slice(0, k), r, ...rest].join(' '));
+            out.push({ alg: prefix ? `${prefix} ${r} ${rests[r][k]}` : `${r} ${rests[r][k]}`, rotation: r });
         }
+        prefix = prefix ? `${prefix} ${t[k]}` : t[k];
     }
     return out;
 }
@@ -359,8 +375,23 @@ function inverseRotation(rotation) {
 }
 
 /** Net whole-cube rotation of an alg (as a rotation string, '' for none). */
+// Per token: the product of its primitives' rotations (what
+// canonicalizeForEngine accumulates), cached; this is called for every candidate.
+const TOKEN_NET_ROT = new Map();
 function netRotation(alg) {
-    return canonicalizeForEngine('', alg).rotation;
+    let q = ROT_IDENTITY;
+    for (const tok of String(alg).split(' ')) {
+        if (!tok) continue;
+        let r = TOKEN_NET_ROT.get(tok);
+        if (r === undefined) {
+            if (!isMoveToken(tok)) throw new Error(`facelet-cube: unrecognized move token "${tok}"`);
+            r = ROT_IDENTITY;
+            for (const p of primitiveTokens(tok)) if (ROT_OF_TOKEN[p] !== undefined) r = ROT_MUL[r][ROT_OF_TOKEN[p]];
+            TOKEN_NET_ROT.set(tok, r);
+        }
+        q = ROT_MUL[q][r];
+    }
+    return ROT_NAMES[q];
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -380,6 +411,7 @@ if (typeof module !== 'undefined' && module.exports) {
         relabelAlgForRotation,
         commuteNormalize,
         rotationSpellings,
+        rotationSpellingParts,
         inspectionWideVariants,
         rotationName,
         rotationIndex,

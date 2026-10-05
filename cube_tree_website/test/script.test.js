@@ -253,6 +253,50 @@ test('normalizeCriteria: pro move set + cross optimisation always on, retired op
   assert.deepStrictEqual(normalizeCriteria(old), old, 'idempotent');
 });
 
+test('normalizeCriteria: multislotting becomes the results-page multislot setting', () => {
+  const { normalizeCriteria, ALWAYS_ON_OPTIONS } = require(path.join(__dirname, '..', 'js', 'script.js'));
+  const old = normalizeCriteria({ advanced: ['xcross', 'multislotting'] });
+  assert.deepStrictEqual(old.advanced, ['xcross', ...ALWAYS_ON_OPTIONS]);
+  assert.deepStrictEqual(old.legacyView, { multislot: true });
+  assert.deepStrictEqual(normalizeCriteria(old), old, 'idempotent');
+});
+
+test('time limit: blank is no limit (null), never 0 or an implicit 60', () => {
+  const { normalizeCriteria, parseTimeLimit, CRITERIA_VERSION } = require(path.join(__dirname, '..', 'js', 'script.js'));
+  assert.strictEqual(parseTimeLimit(''), null);
+  assert.strictEqual(parseTimeLimit(undefined), null);
+  assert.strictEqual(parseTimeLimit('0'), null);
+  assert.strictEqual(parseTimeLimit('-5'), null);
+  assert.strictEqual(parseTimeLimit('abc'), null);
+  assert.strictEqual(parseTimeLimit('45'), 45);
+  assert.strictEqual(normalizeCriteria({ advanced: [] }).timeLimit, null, 'missing = none');
+  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: null, version: CRITERIA_VERSION }).timeLimit, null);
+  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 0 }).timeLimit, null, 'old "0 = none"');
+  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 60 }).timeLimit, null, 'the old default, saved before blank existed');
+  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 60, version: CRITERIA_VERSION }).timeLimit, 60, 'a 60 chosen now is kept');
+  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 30 }).timeLimit, 30);
+  const saved = normalizeCriteria({ advanced: [], timeLimit: 60, version: CRITERIA_VERSION });
+  assert.deepStrictEqual(normalizeCriteria(saved), saved, 'idempotent');
+});
+
+test('algSpeedPrefix/algSpeedResume equal algSpeed of the whole sequence', () => {
+  const { algSpeed, algSpeedPrefix, algSpeedResume } = require(path.join(__dirname, '..', 'js', 'script.js'));
+  const toks = ["R", "R'", "R2", "U", "U'", "U2", "L", "L'", "L2", "D", "D'", "D2", "F", "F'", "F2", "B", "B'", "B2",
+    "r", "r'", "r2", "l", "l'", "y", "y'", "x", "x'", "y2", "z", "u", "d", "M", "M'", "E", "S"];
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const alg = n => Array.from({ length: n }, () => toks[Math.floor(rnd() * toks.length)]).join(' ');
+  for (let i = 0; i < 4000; i++) {
+    const pre = alg(Math.floor(rnd() * 35));
+    const cp = algSpeedPrefix(pre);
+    for (let k = 0; k < 3; k++) {
+      const suf = alg(1 + Math.floor(rnd() * 12));
+      assert.strictEqual(algSpeedResume(cp, suf), algSpeed(pre ? `${pre} ${suf}` : suf, false, false), `${pre} | ${suf}`);
+    }
+  }
+  assert.strictEqual(algSpeedResume(algSpeedPrefix(''), "R U R'"), algSpeed("R U R'", false, false));
+});
+
 // ---------------------------------------------------------------------
 
 if (failures > 0) {

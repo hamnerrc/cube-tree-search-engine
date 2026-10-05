@@ -390,6 +390,18 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
   return null;
 }
 
+// Results-page option "no r2/l2 after step 1": later-step searches leave R2 and
+// L2 out of the engine's move set (pairs inserted with them are rarely how a
+// human solves), and results that would show them (a rotation spelling can
+// relabel F2/B2 into R2/L2) are dropped.
+const R2L2_TOKEN = /(^| )[RL]2'?(?= |$)/;
+function withoutR2L2(allowedMoves) {
+  return allowedMoves.split('_').filter(m => m !== 'R2' && m !== 'L2').join('_');
+}
+function hasR2L2(alg) {
+  return R2L2_TOKEN.test(alg);
+}
+
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
 function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, extra = {}) {
   const slots = corners.slice().sort().map(c => SLOT_INDICES[c]);
@@ -405,10 +417,10 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
 }
 
 /** Pseudo-engine counterpart of solverCallFor: independent edge and corner home-slot lists. */
-function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, deadline = 0) {
+function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, deadline = 0, allowedMoves = MOVE_RESTRICT) {
   const toLetters = list => list.slice().sort();
   return pseudoHelper.solvePseudo(scramble, toLetters(edges), toLetters(corners), {
-    maxSolutions, maxLength, rotation, allowedMoves: MOVE_RESTRICT, postAlg: postAlg || '', noopMoves: NOOP_MOVES,
+    maxSolutions, maxLength, rotation, allowedMoves, postAlg: postAlg || '', noopMoves: NOOP_MOVES,
     ...(deadline ? { deadline } : {}),
   });
 }
@@ -451,7 +463,27 @@ class SolveSession {
     this.stepAlgs = []; // each committed step's core alg (rotation-stripped)
     this.committedRows = []; // display rows for the solve-so-far
     this.searchMemo = new Map(); // memoSearch results, shared with fork()s
+    this.engineMemo = new Map(); // engine call results by exact input, shared with fork()s
     this.timeBudgetMs = 0; // per-search time budget (0 = none); see SEARCH_ENGINE_SHARE
+    // Results-page search options (they apply to the step on screen and its
+    // look-ahead, and can change from step to step):
+    this.multislot = true; // later steps may solve several pairs (if the tree has those edges)
+    this.noLaterR2L2 = false; // later steps without R2/L2 (see withoutR2L2)
+  }
+
+  /** Key of the search options above (part of every memoised search's key). */
+  get searchSettingsKey() {
+    return `${this.multislot ? '' : 'single'}${this.noLaterR2L2 ? '|noR2L2' : ''}`;
+  }
+
+  /**
+   * This session with other search options (a fork: the UI's session keeps
+   * its own). Shares the search memo, whose keys include the options.
+   */
+  withSettings(settings) {
+    const s = this.fork();
+    for (const k of ['multislot', 'noLaterR2L2']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
+    return s;
   }
 
   /**
@@ -480,9 +512,22 @@ class SolveSession {
    * the start of a step is free; PROJECT_STATUS.md §4.35). TPP = this / pieces.
    */
   pathCost(alg) {
+    // The committed path is the same for every candidate of a search: its
+    // MCC grip search (algSpeedPrefix) and step penalties are computed once
+    // per path, and each candidate only resumes from there. Exact: equal to
+    // algSpeed of the whole path (test/script.test.js).
+    const key = this.stepAlgs.join('|');
+    let base = this._costBase;
+    if (!base || base.key !== key) {
+      base = this._costBase = {
+        key,
+        mcc: typeof algSpeedPrefix === 'function' ? algSpeedPrefix(this.scoredPath) : null,
+        penalty: typeof stepPenalty === 'function' ? this.stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) : 0,
+      };
+    }
+    const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg) : 0;
+    if (base.mcc) return algSpeedResume(base.mcc, alg) + penalty;
     const path = this.scoredPath ? `${this.scoredPath} ${alg}` : alg;
-    const penalty = typeof stepPenalty === 'function'
-      ? this.stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) + stepPenalty(alg) : 0;
     return algSpeed(path, false, false) + penalty;
   }
   /**
@@ -532,6 +577,40 @@ class SolveSession {
   }
 }
 
+// The engine prefixes every returned solution with `rotation + ' ' + postAlg`
+// verbatim (see solver.cpp): strip exactly that known prefix to recover just
+// the new step's algorithm. One entry per solution, in order ('' = already
+// solved).
+function stripEnginePrefix(raw, knownPrefix) {
+  if (!raw) return null;
+  return raw.map((sol) => {
+    sol = (sol || '').trim();
+    if (knownPrefix && sol.startsWith(knownPrefix)) return sol.slice(knownPrefix.length).trim();
+    return sol;
+  });
+}
+
+// The cube state a later-step engine call starts from (scramble, then the
+// call's rotation and committed moves), as facelets; cached per search plan.
+function engineStateKey(p) {
+  return applyAlgorithm(SOLVED_FACELETS, [p.scramble, p.callRotation, p.postAlgForCall].filter(Boolean).join(' '));
+}
+
+// Engine calls already made (or running) for a session and its forks, by
+// their input (see searchCurrentNode); failed calls are not kept.
+const ENGINE_MEMO_LIMIT = 600;
+function engineCallMemo(session, key, run) {
+  if (!key) return run();
+  const memo = session.engineMemo || (session.engineMemo = new Map());
+  if (memo.has(key)) return memo.get(key);
+  const promise = run();
+  memo.set(key, promise);
+  const forget = () => { if (memo.get(key) === promise) memo.delete(key); };
+  promise.then((v) => { if (v == null) forget(); }, forget);
+  while (memo.size > ENGINE_MEMO_LIMIT) memo.delete(memo.keys().next().value);
+  return promise;
+}
+
 // A helper that runs one solve at a time (the plain Node/browser helpers reject
 // a second concurrent call) gets its calls chained; a scheduler-gated helper
 // (search-scheduler.js, `__gated`) already queues and may run several at once.
@@ -570,6 +649,14 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // Absolute deadline (epoch ms) for this search's engine calls; 0 = none.
   if (deadline === undefined) deadline = budgetDeadline(session, SEARCH_ENGINE_SHARE);
   let edges = session.outgoingEdges();
+  // Multislot off (results page): later steps solve one pair at a time -- the
+  // same edges pruneGraph drops without "multislotting", removed before
+  // anything else so the rest of the search is exactly as with that tree.
+  if (!isRoot && session.multislot === false) {
+    edges = edges.filter(e => ((e.solved_step && e.solved_step.corners) || []).length <= 1
+      && ((e.solved_step && e.solved_step.edges) || []).length <= 1);
+  }
+  const noR2L2 = !isRoot && session.noLaterR2L2 === true;
   const targetKey = (edge) => {
     const target = session.nodeMap.get(edge.target);
     return JSON.stringify([
@@ -715,9 +802,27 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     : plan;
   for (const p of startOrder) {
     const extra = { ...(session.proMoves ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
-    p.raw = Promise.resolve().then(() => (p.isPseudo
-      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline)
-      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra)))
+    if (noR2L2) extra.allowedMoves = withoutR2L2(extra.allowedMoves || MOVE_RESTRICT);
+    const pseudoMoves = noR2L2 ? withoutR2L2(MOVE_RESTRICT) : MOVE_RESTRICT;
+    const run = () => (p.isPseudo
+      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline, pseudoMoves)
+      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra));
+    // The same engine input can come up again: another look-ahead path to the
+    // same cube state (a multislot and its two single-pair halves; different
+    // moves that leave the same state), or the same step searched with other
+    // results-page options (multislot switched on reuses the single-pair
+    // calls). The matched engine's solutions depend only on the state it
+    // starts from (the postAlg boundary resets move pruning), so its calls are
+    // shared by state -- checked on real look-ahead calls: identical output
+    // for every same-state pair; pseudo calls only by exact input. Not under
+    // a time limit, where a call's output also depends on its deadline.
+    const callKey = deadline ? null : JSON.stringify(p.isPseudo
+      ? ['p', p.allEdges.slice().sort(), p.allCorners.slice().sort(), p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, pseudoMoves]
+      : ['m', p.allCorners.slice().sort(), engineStateKey(p), p.callRotation, p.maxLength, p.effectiveMaxSolutions, extra]);
+    // Solutions with this call's own "rotation postAlg" prefix stripped (the
+    // engine echoes it), so a call shared by state yields the same steps.
+    const knownPrefix = [p.callRotation, p.postAlgForCall].filter(Boolean).join(' ');
+    p.cores = engineCallMemo(session, callKey, () => Promise.resolve().then(run).then(raw => stripEnginePrefix(raw, knownPrefix)))
       .then((r) => { p.doneAt = Date.now(); return r; })
       .catch((err) => { console.error('Solver error', err); return null; });
   }
@@ -735,32 +840,17 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       color, baseRotation, callRotation, postAlgForCall,
     } = p;
     if (onStatus) onStatus(`searching ${edgeLabel(pairCount, isRoot, isPseudo).toLowerCase()}${color ? ' (' + color + ')' : ''}…`);
-    const raw = await p.raw;
-    if (raw === null) return;
+    const cores = await p.cores;
+    if (cores === null) return;
     // Finished at or after the deadline without reaching its cap: cut short
     // (or skipped) by the time budget, so its list may be incomplete.
-    if (deadline && p.doneAt >= deadline && raw.length < p.effectiveMaxSolutions) truncatedCalls++;
+    if (deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions) truncatedCalls++;
 
-    // The engine prefixes every returned solution with `rotation + ' ' +
-    // postAlg` verbatim (see solver.cpp) -- strip exactly that known
-    // prefix to recover just the new step's algorithm. Dedupe identical
-    // algorithms before altAlgs expansion — the solver commonly returns
-    // the same algorithm multiple times across its maxSolutions results.
-    const knownPrefixParts = [];
-    if (callRotation) knownPrefixParts.push(callRotation);
-    if (postAlgForCall) knownPrefixParts.push(postAlgForCall);
-    const knownPrefix = knownPrefixParts.join(' ');
-
+    // Dedupe identical algorithms before altAlgs expansion — the solver
+    // commonly returns the same algorithm multiple times across its
+    // maxSolutions results. ('' = "already solved", not a real step here.)
     const uniqueCoreAlgs = new Set();
-    for (let sol of raw) {
-      sol = (sol || '').trim();
-      if (!sol) continue; // "already solved" (empty string) — not a real step here
-      let coreAlg = sol;
-      if (knownPrefix && sol.startsWith(knownPrefix)) {
-        coreAlg = sol.slice(knownPrefix.length).trim();
-      }
-      if (coreAlg) uniqueCoreAlgs.add(coreAlg);
-    }
+    for (const coreAlg of cores) if (coreAlg) uniqueCoreAlgs.add(coreAlg);
 
     for (const coreAlg of uniqueCoreAlgs) {
       await yieldIfDue(yieldState);
@@ -849,6 +939,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
           continue;
         }
         if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
+        if (noR2L2 && hasR2L2(finalCoreAlg)) continue; // (the engine already excludes them)
 
         // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
         // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
@@ -951,22 +1042,24 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
         // changes, read off the physical result as above. At most one
         // rotation per step, as in the pro move set; never a leading one at
         // the root (that is an inspection variant). §4.20.
-        if (session.proMoves && !isPseudo && typeof rotationSpellings === 'function') {
+        // An alg that already rotates has no such spelling: the inserted y
+        // would be its second rotation (relabelling keeps rotations rotations).
+        if (session.proMoves && !isPseudo && typeof rotationSpellingParts === 'function'
+          && !finalCoreAlg.split(' ').some(t => /^[xyz]/.test(t))) {
           // Every spelling with rotation r is physically "alg, then r", so the
           // node it reaches depends only on r: replayed once per rotation, not
           // once per spelling (§4.38).
           const nodeByRotation = new Map();
-          for (const spelling of rotationSpellings(finalCoreAlg, !isRoot)) {
-            const rots = spelling.split(' ').filter(t => /^[xyz]/.test(t));
-            if (rots.length > 1) continue;
-            let nodeId = nodeByRotation.get(rots[0]);
+          for (const { alg: spelling, rotation: rot } of rotationSpellingParts(finalCoreAlg, !isRoot)) {
+            let nodeId = nodeByRotation.get(rot);
             if (nodeId === undefined) {
-              const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, `${finalCoreAlg} ${rots[0]}`));
+              const after = solvedFlags(replayFacelets(session.scramble, fullRotation, session.scoredPath, `${finalCoreAlg} ${rot}`));
               const pairs = F2L_SLOTS.filter(sl => after[sl]);
               nodeId = after.cross ? nodeByLabels(session, pairs, pairs) : null;
-              nodeByRotation.set(rots[0], nodeId);
+              nodeByRotation.set(rot, nodeId);
             }
             if (!nodeId) continue;
+            if (noR2L2 && hasR2L2(spelling)) continue;
             const spTpp = session.pathCost(spelling)
               / calculateSolvedPieces(session.rootNode, targetNode);
             candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
@@ -1001,6 +1094,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   let partialCost = 0;
   const maybeEmitPartial = () => {
     if (typeof onPartial !== 'function') return;
+    // memoSearch's emitter says whether anyone is listening; the look-ahead's
+    // own searches usually have no listener, and ranking is not free.
+    if (typeof onPartial.wanted === 'function' && !onPartial.wanted()) return;
     const t = now();
     if (lastPartial && t - lastPartial < Math.max(PARTIAL_INTERVAL_MS, 4 * partialCost)) return;
     const list = rankCandidates(plan.filter(p => p.processed));
@@ -1008,7 +1104,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     lastPartial = now();
     onPartial(list);
   };
-  await Promise.all(plan.map(p => p.raw.then(() => processCall(p)).then(() => {
+  await Promise.all(plan.map(p => p.cores.then(() => processCall(p)).then(() => {
     p.processed = true;
     maybeEmitPartial();
   })));
@@ -1064,8 +1160,21 @@ const DEFAULT_LOOKAHEAD_BREADTH = 5;
 // Below the first look-ahead level only the best few continuations of each
 // node are followed, or depth 5 would need breadth^4 searches.
 const LOOKAHEAD_INNER_BREADTH = 2;
-// Result lists can hold tens of thousands of candidates; keep the memo bounded.
-const SEARCH_MEMO_LIMIT = 48;
+// Result lists can hold tens of thousands of candidates; keep the memo bounded
+// by entries and by candidates held (~450 bytes each). A depth-5 look-ahead
+// makes ~76 searches, so the entry limit must exceed that or committing an
+// explored candidate searches it again (the old limit was 48).
+const SEARCH_MEMO_LIMIT = 200;
+const SEARCH_MEMO_CANDIDATES = 500000;
+function trimSearchMemo(memo) {
+  let held = 0;
+  for (const p of memo.values()) held += p.size || 0;
+  while (memo.size > 1 && (memo.size > SEARCH_MEMO_LIMIT || held > SEARCH_MEMO_CANDIDATES)) {
+    const oldest = memo.keys().next().value;
+    held -= memo.get(oldest).size || 0;
+    memo.delete(oldest);
+  }
+}
 
 /**
  * searchCurrentNode, memoised per (node, inspection rotation, committed path)
@@ -1077,7 +1186,12 @@ const SEARCH_MEMO_LIMIT = 48;
  */
 function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
   const memo = session.searchMemo || (session.searchMemo = new Map());
-  const key = `${session.currentNodeId}|${session.rotation}|${session.scoredPath}`;
+  // The committed steps, not just their joined text: TPP depends on where the
+  // steps start (stepPenalty: a y that starts a step is free), and e.g. a
+  // multislot "S" and the same moves committed as two single pairs reach the
+  // same node with the same text (they used to share one memo entry, so one
+  // was shown the other's TPPs).
+  const key = `${session.currentNodeId}|${session.rotation}|${session.stepAlgs.join(' | ')}|${session.searchSettingsKey || ''}`;
   if (memo.has(key)) {
     const hit = memo.get(key);
     memo.delete(key); // refresh its place in the eviction order
@@ -1094,15 +1208,20 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
     promise.latest = list;
     for (const f of listeners) f(list);
   };
+  emit.wanted = () => listeners.size > 0;
   promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit);
   promise.listeners = listeners;
   memo.set(key, promise);
   // A search the time budget cut short is not reused (committing that step
   // later searches it again in full); neither is a failed one.
   const settle = () => { promise.listeners = null; promise.latest = null; };
-  promise.then((r) => { settle(); if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key); },
-    () => { settle(); if (memo.get(key) === promise) memo.delete(key); });
-  while (memo.size > SEARCH_MEMO_LIMIT) memo.delete(memo.keys().next().value);
+  promise.then((r) => {
+    settle();
+    if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key);
+    promise.size = r.length;
+    trimSearchMemo(memo);
+  }, () => { settle(); if (memo.get(key) === promise) memo.delete(key); });
+  trimSearchMemo(memo);
   return promise;
 }
 
@@ -1158,6 +1277,11 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * carry `lookaheadPending`). The returned list is always the complete one.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
+  // Results-page search options (multislot, noLaterR2L2) for this step and
+  // its look-ahead; unset ones keep the session's.
+  if (options.multislot !== undefined || options.noLaterR2L2 !== undefined) {
+    session = session.withSettings({ multislot: options.multislot, noLaterR2L2: options.noLaterR2L2 });
+  }
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
   const filter = options.filter || null;
@@ -1243,7 +1367,7 @@ if (typeof module !== 'undefined' && module.exports) {
     stripLeadingRotation, composeRotations, checkCandidateAgainstRealCubeState,
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,
-    memoSearch, searchWithLookahead, filterResults, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
-    SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank,
+    memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
+    SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, withoutR2L2, hasR2L2, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
   };
 }

@@ -120,9 +120,10 @@ const ENGINE_VERSION = '20261005-deadline1';
       if (criteria && criteria.maxSolutions > 0) session.maxSolutions = criteria.maxSolutions;
       if (criteria && criteria.searchConfig) session.searchConfig = criteria.searchConfig;
       // README "Performance goal": each step's search stops after the time
-      // limit (default 60 s; 0 = none) and shows what it found (§4.36).
-      const limit = criteria && Number.isFinite(criteria.timeLimit) ? criteria.timeLimit : 60;
-      session.timeBudgetMs = limit * 1000;
+      // limit and shows what it found (§4.36). Blank (null) = no limit, the
+      // default; so is anything that is not a positive number.
+      const limit = criteria ? Number(criteria.timeLimit) : NaN;
+      session.timeBudgetMs = Number.isFinite(limit) && limit > 0 ? limit * 1000 : 0;
       session._status = 'pending'; // README "Asynchronous background searching": pending|searching|done|error
       sessions.set(index, session);
     }
@@ -162,7 +163,7 @@ const ENGINE_VERSION = '20261005-deadline1';
   // re-searches the current step; the depth-1 search behind it is reused.
   // ---------------------------------------------------------------------
   const DEFAULT_PAGE_SIZE = 25;
-  const view = { lookaheadDepth: 1, lookaheadBreadth: 5, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE };
+  const view = { lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, noR2L2: false, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE };
   let currentPage = 0;
   let shownResults = null; // the list on screen (complete or partial)
 
@@ -174,6 +175,8 @@ const ENGINE_VERSION = '20261005-deadline1';
     view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
     view.pageSize = Math.max(1, Math.min(500, parseInt(view.pageSize, 10) || DEFAULT_PAGE_SIZE));
     view.simplePseudo = !!view.simplePseudo;
+    view.multislot = !!view.multislot;
+    view.noR2L2 = !!view.noR2L2;
   }
 
   function saveViewPrefs() {
@@ -194,6 +197,10 @@ const ENGINE_VERSION = '20261005-deadline1';
     if (slow) slow.hidden = view.lookaheadDepth < 3;
     const wrap = document.getElementById('simple-pseudo-wrap');
     if (wrap) wrap.hidden = !pseudoOn();
+    const multi = document.getElementById('multislot');
+    if (multi) multi.checked = view.multislot;
+    const noR2L2 = document.getElementById('no-r2l2');
+    if (noR2L2) noR2L2.checked = view.noR2L2;
     const simple = document.getElementById('simple-pseudo');
     if (simple) simple.checked = view.simplePseudo;
     const size = document.getElementById('page-size');
@@ -209,6 +216,8 @@ const ENGINE_VERSION = '20261005-deadline1';
       research();
     });
     on('simple-pseudo', 'change', (e) => { view.simplePseudo = e.target.checked; research(); });
+    on('multislot', 'change', (e) => { view.multislot = e.target.checked; research(); });
+    on('no-r2l2', 'change', (e) => { view.noR2L2 = e.target.checked; research(); });
     on('page-size', 'change', (e) => {
       view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
       saveViewPrefs();
@@ -321,19 +330,23 @@ const ENGINE_VERSION = '20261005-deadline1';
 
   // Background scrambles search one step without look-ahead; the scramble
   // on screen uses the results page's look-ahead setting (reusing that
-  // single-step search when it becomes active).
+  // single-step search when it becomes active). Multislot and no-r2/l2 are
+  // search settings for every scramble.
   function searchOptions(priority) {
     const lookahead = priority === ACTIVE ? view.lookaheadDepth : 1;
     return {
       depth: lookahead,
       breadth: view.lookaheadBreadth,
       filter: pseudoOn() && view.simplePseudo ? (r => !r.fullPseudoOnly) : null,
+      multislot: view.multislot,
+      noLaterR2L2: view.noR2L2,
     };
   }
 
   function resultsFor(session, h, ph, priority) {
     const opts = searchOptions(priority);
-    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filter ? 'simple' : ''].join('|');
+    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filter ? 'simple' : '',
+      opts.multislot ? 'multi' : '', opts.noLaterR2L2 ? 'noR2L2' : ''].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
       renderScrambleStatusIfActive(session);

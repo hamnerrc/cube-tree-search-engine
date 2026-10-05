@@ -81,8 +81,9 @@ the look-ahead's searches where it can).
 
 > Look-ahead multiplies the searching per step: depth 2 adds one search per
 > re-ranked result, and **depths of 3 or more cause significant performance
-> delays** (minutes per step with the pro move set). The results page marks
-> depths of 3 or more as slow.
+> delays** (tens of seconds per step with the pro move set, up to minutes
+> with multislot or pseudo F2L on, whose multi-pair searches are the
+> expensive ones). The results page marks depths of 3 or more as slow.
 
 ## Orientation
 
@@ -174,6 +175,11 @@ applies again to later steps once cross is already solved.
   unsolved (anything XXCross or weaker), a later step may solve more than
   one of the remaining pairs at once. For example, after an XCross, the
   remaining two pairs might be solved together as one multislot step.
+  Multislotting is a **results-page toggle** (default off), not part of the
+  search configuration: it applies to the step on screen (and its
+  look-ahead) and stays as set until changed, so it can be off while
+  choosing the first pairs and switched on to explore a multislot later in
+  the same solve.
 - **Single pair** — a later step that solves exactly one remaining pair.
 
 Checkboxes in the UI **filter which DAG edges are considered** — they do not
@@ -249,9 +255,11 @@ look-ahead), and "search" means one step's search, from clicking a result (or
 loading a scramble) to its ranked list. Current measurements, and how far
 they are from this goal, are tracked in PROJECT_STATUS.md.
 
-The **search time limit** setting (default 60 s; 0 = no limit) is the
-guarantee behind this goal: each step's search (its look-ahead included)
-stops when the limit is reached and lists the best results found so far.
+The **search time limit** setting is the guarantee behind this goal. It is
+**blank by default, meaning no limit** (as is 0 or anything that is not a
+positive number); with a limit set, each step's search (its look-ahead
+included) stops when the limit is reached and lists the best results found
+so far.
 Cheap searches run first, so the limit cuts the expensive tail (pseudo,
 XXXCross, long pro-move-set searches), not the common results. The status
 line says when the limit cut a search short. Making the searches themselves
@@ -323,6 +331,14 @@ inspections (below). It is slower, and it applies to matched (non-pseudo)
 searches. In every mode, `U`-layer turns may be used to position other
 pieces even when they move no goal piece (e.g. `R' U R'` instead of `R2`).
 
+**No R2/L2 after step 1** (a results-page checkbox, default off): later
+steps -- and every look-ahead step after the first -- are searched without
+`R2` and `L2`, and no result after the first step shows them (a rotated
+spelling that would relabel a turn into `R2`/`L2` is dropped too). Pairs
+inserted with `R2`/`L2` are rarely how a human solves, and they make
+look-ahead sequences worse. It is an explicit option, not a universal rule;
+the first step is unaffected.
+
 ## Professional reference solves and known gaps
 
 [pro_references.txt](data/pro_references.txt) contains benchmark solves from
@@ -376,15 +392,17 @@ search; current measurements are in PROJECT_STATUS.md):
 
 ## Configuration and results pages
 
-The configuration page holds the search settings (colours, which step types
-to search, pseudo F2L, solutions per search, the time limit, per-type limits)
-and the scramble list. The pro move set and cross optimisation are always on.
+The configuration page holds the search settings (colours, which first-step
+types to search (xcross, xxcross, xxxcross), pseudo F2L, solutions per
+search, the time limit, per-type limits) and the scramble list. The pro move set and cross optimisation are always on.
 The interface is lowercase and minimal: options carry no inline
 explanations; an info icon next to the logo opens a short description of
 every option, on both pages. Both pages work on phones, tablets and desktops.
 
-The results page holds the per-step view settings: look-ahead (depth and
-breadth), the simple-pseudo filter, and how many results to show per page.
+The results page holds the per-step settings: look-ahead (depth and
+breadth), multislot, no R2/L2 after step 1, the simple-pseudo filter, and how
+many results to show per page. Changing one re-searches the current step
+(reusing what it can) and applies to every later step until changed.
 
 ## Results table
 

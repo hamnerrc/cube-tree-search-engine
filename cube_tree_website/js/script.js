@@ -14,8 +14,15 @@ const SEARCH_CONFIG_CATEGORIES = ['cross', 'xcross', 'xxcross', 'xxxcross', 'sin
 // Always on (no checkbox): the pro move set and cross optimisation (README
 // "Move set" / "Wide moves and Cross optimisation").
 const ALWAYS_ON_OPTIONS = ['cross_opt', 'pro_moves'];
-// Results-page view settings (look-ahead, simple-pseudo filter, page size).
+// Results-page view settings (look-ahead, multislot, no r2/l2, simple-pseudo
+// filter, page size).
 const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
+// Config-page options that became results-page settings (normalizeCriteria
+// turns a saved one into the initial view setting). The solver page's tree
+// always has the multislot edges; the results page decides if they are searched.
+const RETIRED_OPTIONS = ['simplified_pseudo', 'multislotting'];
+// Saved-criteria format; 2: the time limit is null for none (was 60 by default).
+const CRITERIA_VERSION = 2;
 
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
@@ -127,27 +134,33 @@ function persistAndNavigate() {
         // as high as practical); blank/invalid falls back to the default.
         maxSolutions: parseInt(document.getElementById('max-solutions')?.value, 10) || undefined,
         // Per-search time budget in seconds (README "Performance goal");
-        // 0 = no limit, blank/invalid = the default (60).
-        timeLimit: (() => { const v = parseInt(document.getElementById('time-limit')?.value, 10); return Number.isFinite(v) && v >= 0 ? v : 60; })(),
+        // blank (the default), 0 or invalid = no limit, stored as null.
+        timeLimit: parseTimeLimit(document.getElementById('time-limit')?.value),
         // Per-category overrides (README "Granular search configuration");
         // undefined when every per-category field was left blank.
         searchConfig: readSearchConfig(),
         scrambles
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeCriteria(searchCriteria)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeCriteria({ ...searchCriteria, version: CRITERIA_VERSION })));
     window.location.href = 'solver.html';
+}
+
+/** Time limit field -> seconds, or null for none (blank, 0 or not a number). */
+function parseTimeLimit(raw) {
+    const v = parseInt(raw, 10);
+    return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions, searchConfig, timeLimit } = JSON.parse(rawState);
+    const { colors = [], advanced = [], maxSolutions, searchConfig, timeLimit } = normalizeCriteria(JSON.parse(rawState));
     const maxSolutionsInput = document.getElementById('max-solutions');
     if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
     const timeLimitInput = document.getElementById('time-limit');
-    if (timeLimitInput && Number.isFinite(timeLimit)) timeLimitInput.value = timeLimit;
+    if (timeLimitInput) timeLimitInput.value = timeLimit > 0 ? timeLimit : '';
     restoreSearchConfigInputs(searchConfig);
 
     const checkMatching = (selector, values) => {
@@ -167,10 +180,15 @@ function restoreCheckboxState() {
  * a saved search from before keeps both, as initial view settings.
  */
 function normalizeCriteria(criteria) {
-    const advanced = (criteria.advanced || []).filter(o => o !== 'simplified_pseudo' && !ALWAYS_ON_OPTIONS.includes(o));
+    const advanced = (criteria.advanced || []).filter(o => !RETIRED_OPTIONS.includes(o) && !ALWAYS_ON_OPTIONS.includes(o));
     const out = { ...criteria, advanced: [...advanced, ...ALWAYS_ON_OPTIONS] };
     const legacy = {};
     if ((criteria.advanced || []).includes('simplified_pseudo')) legacy.simplePseudo = true;
+    if ((criteria.advanced || []).includes('multislotting')) legacy.multislot = true;
+    // Time limit: blank = none (null). Before CRITERIA_VERSION 2 the field
+    // defaulted to 60, so a stored 60 from then was the default, not a choice.
+    const limit = Number(criteria.timeLimit);
+    out.timeLimit = Number.isFinite(limit) && limit > 0 && !(limit === 60 && !(criteria.version >= 2)) ? limit : null;
     if (criteria.lookaheadDepth > 1) legacy.lookaheadDepth = criteria.lookaheadDepth;
     if (criteria.lookaheadBreadth) legacy.lookaheadBreadth = criteria.lookaheadBreadth;
     delete out.lookaheadDepth;
@@ -191,10 +209,10 @@ function loadSearchCriteria() {
 const INFO_SECTIONS = [
     ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). click a result to commit it and search the next step.'],
     ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
-    ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. multislotting: later steps that solve several pairs at once. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
+    ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
     ['always on', 'pro move set (wide r/l, one mid-step y or x rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
-    ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (0 = none). per-type limits: max solutions / move depth per step type; blank = default.'],
-    ['results', 'results appear as they are found and re-rank as the search continues. look-ahead: re-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (blank = no limit). per-type limits: max solutions / move depth per step type; blank = default.'],
+    ['results', 'results appear as they are found and re-rank as the search continues. look-ahead: re-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow. multislot: later steps may solve several pairs at once. no r2/l2 after step 1: later steps (and look-ahead) do not use r2 or l2. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
 ];
 
 function installInfoDialog() {
@@ -387,8 +405,19 @@ function stepPenalty(alg) {
     return total;
 }
 
-function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult = ALG_SPEED_DEFAULTS.wristMult, pushMult = ALG_SPEED_DEFAULTS.pushMult, ringMult = ALG_SPEED_DEFAULTS.ringMult, destabilize = ALG_SPEED_DEFAULTS.destabilize, addRegrip = ALG_SPEED_DEFAULTS.addRegrip, double = ALG_SPEED_DEFAULTS.double, sesliceMult = ALG_SPEED_DEFAULTS.sesliceMult, overWorkMult = ALG_SPEED_DEFAULTS.overWorkMult, moveblock = ALG_SPEED_DEFAULTS.moveblock, rotation = ALG_SPEED_DEFAULTS.rotation) {
-    function test(splitSeq, lGrip, rGrip, speed) {
+// Upper-cased move tokens, cached (algSpeed upper-cases every move it looks at).
+const MCC_UPPER = new Map();
+function mccUpper(t) {
+    let u = MCC_UPPER.get(t);
+    if (u === undefined) {
+        u = t.toUpperCase();
+        if (MCC_UPPER.size < 4096) MCC_UPPER.set(t, u);
+    }
+    return u;
+}
+
+function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult = ALG_SPEED_DEFAULTS.wristMult, pushMult = ALG_SPEED_DEFAULTS.pushMult, ringMult = ALG_SPEED_DEFAULTS.ringMult, destabilize = ALG_SPEED_DEFAULTS.destabilize, addRegrip = ALG_SPEED_DEFAULTS.addRegrip, double = ALG_SPEED_DEFAULTS.double, sesliceMult = ALG_SPEED_DEFAULTS.sesliceMult, overWorkMult = ALG_SPEED_DEFAULTS.overWorkMult, moveblock = ALG_SPEED_DEFAULTS.moveblock, rotation = ALG_SPEED_DEFAULTS.rotation, resume = null, stopAt = undefined) {
+    function test(splitSeq, upperSeq, lGrip, rGrip, speed) {
         let lThumb = [-1, "home"];
         let lIndex = [-1, "home"];
         let lMiddle = [-1, "home"];
@@ -416,8 +445,8 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
         }
         for (let j = 0; j < splitSeq.length; j++) {
             let move = splitSeq[j];
-            let normalMove = move.toUpperCase();
-            let prevMove = (j == 0 ? " " : splitSeq[j - 1]).toUpperCase();
+            let normalMove = upperSeq[j];
+            let prevMove = j == 0 ? " " : upperSeq[j - 1];
             if (prevSpeed !== null) {
                 firstMoveSpeed = speed
                 speed = prevSpeed
@@ -1011,9 +1040,9 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                 speed += 2.25;
             }
             if (j >= 2) {
-                if ((normalMove == "R" && move == splitSeq[j - 2] && splitSeq[j - 1].toUpperCase() == "U'") || (normalMove == "R'" && move == splitSeq[j - 2] && splitSeq[j - 1].toUpperCase() == "U")) {
+                if ((normalMove == "R" && move == splitSeq[j - 2] && upperSeq[j - 1] == "U'") || (normalMove == "R'" && move == splitSeq[j - 2] && upperSeq[j - 1] == "U")) {
                     speed -= 0.5;
-                } else if ((normalMove == "R" && move == splitSeq[j - 2] && splitSeq[j - 1].toUpperCase() == "D'" && rWrist == 1) || (normalMove == "R'" && move == splitSeq[j - 2] && splitSeq[j - 1].toUpperCase() == "D")) {
+                } else if ((normalMove == "R" && move == splitSeq[j - 2] && upperSeq[j - 1] == "D'" && rWrist == 1) || (normalMove == "R'" && move == splitSeq[j - 2] && upperSeq[j - 1] == "D")) {
                     speed -= 0.3;
                 }
             }
@@ -1035,7 +1064,7 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
         }
         return [-1, speed, lGrip, rGrip]
     }
-    let splitSeq = sequence.split(" ");
+    let splitSeq = Array.isArray(sequence) ? sequence : sequence.split(" ");
     let trueSplitSeq = [];
     for (let i = 0; i < splitSeq.length; i++) {
         if (ignoreErrors) {
@@ -1071,10 +1100,27 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
             }
         }
     }
-    let tests = [test(splitSeq, 0, 0, 0), test(splitSeq, 0, -1, 1 + addRegrip), test(splitSeq, 0, 1, 1 + addRegrip), test(splitSeq, -1, 0, 1 + addRegrip), test(splitSeq, 1, 0, 1 + addRegrip)]
+    // The grip search runs in rounds: each round simulates a few grips from
+    // one point of the sequence, the furthest-reaching one wins, and the next
+    // round starts where it had to regrip. `resume` / `stopAt` (algSpeedPrefix,
+    // algSpeedResume) pause before the first round that could look at a move
+    // at index >= stopAt and continue from there, which gives exactly the
+    // same result as scoring the whole sequence at once.
+    const fullSeq = splitSeq;
+    const fullUpper = fullSeq.map(mccUpper);
+    let offset = resume ? resume.offset : 0;
+    let starts = resume ? resume.starts : [[0, 0, 0], [0, -1, 1 + addRegrip], [0, 1, 1 + addRegrip], [-1, 0, 1 + addRegrip], [1, 0, 1 + addRegrip]];
     while (true) {
+        splitSeq = offset ? fullSeq.slice(offset) : fullSeq;
+        const upperSeq = offset ? fullUpper.slice(offset) : fullUpper;
+        const tests = new Array(starts.length);
+        for (let i = 0; i < starts.length; i++) tests[i] = test(splitSeq, upperSeq, starts[i][0], starts[i][1], starts[i][2]);
+        // A test that failed at k looked at moves up to k + 1 at most.
+        if (stopAt !== undefined && !tests.every(t => typeof t[0] === 'number' && t[0] >= 0 && offset + t[0] + 1 < stopAt)) {
+            return { offset, starts };
+        }
         for (let i = 0; i < tests.length; i++) {
-            if (tests[i][0] == "U") {
+            if (tests[i][0] === "U") { // (never true: test() returns numeric indices; was ==, which coerced on every call)
                 return tests[i]
             }
         }
@@ -1086,7 +1132,7 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
             else if (compTest[0] == bestTest[0] && compTest[1] < bestTest[1] && bestTest[0] != -1) { bestTest = compTest }
         }
         if (bestTest[0] == -1) { return Math.round(bestTest[1] * 10) / 10 }
-        tests = [];
+        starts = [];
 
         let prevMoveType = bestTest[0] >= 1 ? splitSeq[bestTest[0] - 1][0] : " ";
         let prev2Type = bestTest[0] >= 2 ? splitSeq[bestTest[0] - 2][0] : " ";
@@ -1101,7 +1147,7 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                 let leftMatch = (bestTest[2] == leftWrist);
                 let rightMatch = (bestTest[3] == rightWrist);
                 if (["X", "x", "Y", "y", "Z", "z"].includes(prevMoveType)) {
-                    tests.push(test(splitSeq.slice(bestTest[0]), leftWrist, rightWrist, bestTest[1]));
+                    starts.push([leftWrist, rightWrist, bestTest[1]]);
                 }
                 else {
                     let penalty = doubleRegrip ? (rotation * double) : 2;
@@ -1112,17 +1158,39 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
                     if (leftMatch || doubleRegrip) {
                         let rHandLatency = Math.max(0, 2 - (bestTest[1] - bestTest[5]));
                         penalty = Math.max(rHandLatency, rMoveLatency, lMoveLatency * 2)
-                        tests.push(test(splitSeq.slice(bestTest[0]), leftWrist, rightWrist, bestTest[1] + penalty + addRegrip))
+                        starts.push([leftWrist, rightWrist, bestTest[1] + penalty + addRegrip])
                     } else if (rightMatch || doubleRegrip) {
                         let lHandLatency = Math.max(0, 2 - (bestTest[1] - bestTest[4]));
                         penalty = Math.max(lHandLatency, lMoveLatency, rMoveLatency * 2)
-                        tests.push(test(splitSeq.slice(bestTest[0]), leftWrist, rightWrist, bestTest[1] + penalty + addRegrip))
+                        starts.push([leftWrist, rightWrist, bestTest[1] + penalty + addRegrip])
                     }
                 }
             }
         }
-        splitSeq = splitSeq.slice(bestTest[0]);
+        offset += bestTest[0];
     }
+}
+
+/**
+ * algSpeed of `prefix + ' ' + suffix` for many suffixes after one prefix
+ * (every candidate of a search follows the same committed path): the grip
+ * search over the prefix is done once, up to the last point the suffix
+ * cannot influence, and each suffix resumes from there. Default constants,
+ * no ignoreErrors/ignoreauf (how SolveSession.pathCost scores). Exact: the
+ * same number algSpeed(prefix + ' ' + suffix) returns.
+ */
+function algSpeedPrefix(prefix) {
+    const tokens = String(prefix || '').split(" ").filter(t => t !== "");
+    if (!tokens.length) return { tokens, state: null };
+    const state = algSpeed(tokens, false, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, null, tokens.length);
+    // Rounds never look behind their own start, so only the tail is kept.
+    return { tokens: tokens.slice(state.offset), state: { offset: 0, starts: state.starts } };
+}
+
+function algSpeedResume(checkpoint, suffix) {
+    let tokens = String(suffix || '').split(" ");
+    if (tokens.indexOf("") !== -1) tokens = tokens.filter(t => t !== "");
+    return algSpeed(checkpoint.tokens.concat(tokens), false, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, checkpoint.state);
 }
 
 function cleanScramble(str) {
@@ -1164,6 +1232,8 @@ function scoreAlgorithms(algorithms) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         algSpeed,
+        algSpeedPrefix,
+        algSpeedResume,
         ALG_SPEED_DEFAULTS,
         STEP_PENALTIES,
         stepPenalty,
@@ -1174,6 +1244,9 @@ if (typeof module !== 'undefined' && module.exports) {
         scoreAlgorithms,
         pruneGraph,
         normalizeCriteria,
+        parseTimeLimit,
+        CRITERIA_VERSION,
+        RETIRED_OPTIONS,
         ALWAYS_ON_OPTIONS
     };
 }
@@ -1200,9 +1273,7 @@ if (typeof document !== 'undefined') {
         if (!response.ok) throw new Error(`Failed to load graph data: HTTP ${response.status}`);
 
         const rawTree = await response.json();
-        const prunedTree = pruneGraph(rawTree, criteria);
-
-        localStorage.setItem('cubecrit_pruned_tree', JSON.stringify(prunedTree));
+        const prunedTree = pruneGraph(rawTree, { ...criteria, advanced: [...criteria.advanced, 'multislotting'] });
 
         if (typeof window.onPrunedTreeReady === 'function') {
             window.onPrunedTreeReady(prunedTree, criteria);

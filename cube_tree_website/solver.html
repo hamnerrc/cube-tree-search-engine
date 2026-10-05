@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261005b">
+    <link rel="stylesheet" href="styles.css?v=20261005c">
 </head>
 
 <body>
@@ -51,6 +51,12 @@
             <label>breadth
                 <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
             </label>
+            <label class="check">
+                <input type="checkbox" id="multislot"> multislot
+            </label>
+            <label class="check">
+                <input type="checkbox" id="no-r2l2"> no r2/l2 after step 1
+            </label>
             <label class="check" id="simple-pseudo-wrap" hidden>
                 <input type="checkbox" id="simple-pseudo"> simple pseudo only
             </label>
@@ -84,15 +90,15 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/script.js?v=20261005b"></script>
-    <script src="js/facelet-cube.js?v=20261005b"></script>
-    <script src="js/facelet-flags.js?v=20261005b"></script>
-    <script src="js/cross-optimization.js?v=20261005b"></script>
+    <script src="js/script.js?v=20261005c"></script>
+    <script src="js/facelet-cube.js?v=20261005c"></script>
+    <script src="js/facelet-flags.js?v=20261005c"></script>
+    <script src="js/cross-optimization.js?v=20261005c"></script>
     <script src="crossSolver/solver-helper.js"></script>
     <script src="pseudoCrossSolver/solver-helper.js"></script>
-    <script src="js/search-scheduler.js?v=20261005b"></script>
-    <script src="js/solver-bridge.js?v=20261005b"></script>
-    <script src="js/solver-ui.js?v=20261005b"></script>
+    <script src="js/search-scheduler.js?v=20261005c"></script>
+    <script src="js/solver-bridge.js?v=20261005c"></script>
+    <script src="js/solver-ui.js?v=20261005c"></script>
 </body>
 
 </html>

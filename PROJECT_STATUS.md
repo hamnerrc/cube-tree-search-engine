@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-05 (fifteenth pass).*
+*Last updated 2026-10-05 (sixteenth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,42 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-05, after the fifteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-05, after the sixteenth pass):** read this first.
+- Sixteenth pass (user task list: look-ahead speed, multislot as a results-page
+  toggle, a "no r2/l2 after step 1" option, blank = no time limit, other
+  concrete bugs). Writeup: §4.39. Summary:
+  1. **Look-ahead was main-thread-bound, not engine-bound:** at depth 5 the
+     page's JS thread was ~89% busy while the engine workers sat ~65% idle
+     (a warm engine call is ~10-100 ms; the 300-400 ms per call seen earlier
+     was workers waiting for the busy main thread). Fixed exactly (byte-
+     identical results on a 12-list snapshot): MCC checkpointed after the
+     committed path (`algSpeedPrefix`/`algSpeedResume`, 34 → ~12 µs per
+     candidate), no partial re-ranking of searches nobody watches, cheaper
+     rotation spellings/`netRotation`. Warm, 3 workers: default config depth 5
+     17.0 → 8.9 s, depth 3 4.6 → 3.2 s. Multislot-heavy look-ahead stays
+     engine-bound (a "last two pairs" multislot call is 4-11 s on its own).
+  2. **Engine-call cache** shared by a session and its forks: matched calls by
+     the cube state they start from (verified: same state → identical
+     solutions), pseudo calls by exact input, only without a time limit.
+     Multislot toggled on reuses the single-pair calls; a multislot and its
+     two single-pair halves share their follow-up calls.
+  3. **Results page:** "multislot" (default off; was a config checkbox) and
+     "no r2/l2 after step 1" (later steps and every look-ahead follow-up are
+     searched without R2/L2; spellings that relabel into R2/L2 dropped).
+     New real-engine test `test/search-options-e2e.js`.
+  4. **Time limit blank = no limit** (stored as null; 0/invalid also none; a
+     stored 60 from before the change counts as the old default).
+  5. **Bugs fixed:** the search memo key used the committed path's text, so a
+     multislot step and the same moves as two single pairs shared one search
+     and one of them showed the other's TPPs (a step-starting y is free,
+     mid-step +3.70); the memo held 48 searches but depth 5 makes ~76, so the
+     searches needed right after a commit were already evicted (now 200
+     entries / 500k candidates); solver.html wrote the whole pruned tree
+     (~1.7 MB) to localStorage under a key nothing reads, outside any
+     try/catch (a quota or private-mode error stopped the page before its
+     first search) -- removed; a missing time limit silently meant 60 s.
+
+**Previous handoff (2026-10-05, after the fifteenth pass):**
 - Fifteenth pass (user task list: live-site speed, defaults, streaming,
   per-step look-ahead, pseudo filter, results table, minimalist UI,
   responsiveness). Writeup: §4.38. Summary:
@@ -370,6 +405,7 @@ node cube_tree_website/test/pro-references.test.js
 node cube_tree_website/test/search-scheduler.test.js
 node cube_tree_website/test/search-budget.test.js
 # slow-ish, real WASM (~35 s): node cube_tree_website/test/progressive-e2e.js
+# slow-ish, real WASM (~25 s): node cube_tree_website/test/search-options-e2e.js
 # engine rebuilds: node cube_tree_website/tools/engine-battery.js [--pseudo] --solver <old solver.js> --out old.json,
 #   then the same without --solver and with --compare old.json (must say "all calls identical")
 # worst case: node cube_tree_website/tools/worst-case-bench.js --scrambles 2 --depth 1|5
@@ -398,7 +434,21 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**Reasonable next tasks (as of the fourteenth pass):**
+**Reasonable next tasks (as of the sixteenth pass):**
+1. Multislot look-ahead is engine-bound: "last two pairs" multislot calls
+   (`solveXxxxcross`, 16 moves, pro move set) take 4-11 s each, 3-pair
+   multislots from a cross similar. Needs a stronger admissible bound or
+   fewer redundant pro-move spellings inside the engine (battery-check any
+   rebuild, §4.36 tools).
+2. Every engine worker builds its own prune tables (~4.5 MB each per corner
+   and move list; "no r2/l2" is a second move list): the first look-ahead
+   after a page load pays this once per worker. Call-to-worker affinity or
+   persisted tables (IndexedDB) would cut it.
+3. The rest of the main-thread cost per candidate (~60 µs: MCC ~12 µs, facelet
+   replays for the luck check, dedupe keys, ranking) -- profile with
+   `--cpu-prof` and positionTicks as in §4.39.
+
+**Older next tasks (fourteenth pass):**
 1. Make the cut tail smaller under the 60 s limit (§4.36 "What is cut"):
    pro-move-set XXXCross (100-500 s per call) and pseudo XXXCross (~25-60 s)
    are what the limit drops. Ideas measured but not done: a face-turn
@@ -1807,6 +1857,118 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.39 DONE (2026-10-05, sixteenth pass): look-ahead speed, results-page search options, blank time limit
+
+**Where look-ahead time went.** Measured with a Node harness that runs
+`searchWithLookahead` on the 3-worker engine pool (as the app does) plus
+`--cpu-prof` on every thread; scramble `R2 U2 L D' R' F' B' R F' R F2 D2 R F2
+D2 B2 D2 L F2 D2`, white, pro move set + cross opt, 500 solutions per call,
+this machine (2 physical cores). Depth 5 = 5 + 10 + 20 + 40 follow-up searches
+(~76, fewer when sequences finish F2L early), 131 engine calls. The main
+thread was busy ~89% of the time and the engine workers ~35%: replaying the
+same 131 calls one by one on a single warm engine takes 5.4 s in total
+(9.1 s cold). The per-call "engine time" of 300-400 ms the pool reported was
+mostly a worker waiting for the busy main thread to collect its result and
+hand it the next call. Each later-step search scores ~5-7k candidates (~17
+rotation spellings per engine solution), and MCC (`algSpeed` of the whole path
+for every candidate) was half of the JS time.
+
+**Exact speedups** (12-list snapshot -- matched, multislot, full pseudo,
+look-ahead depth 2/3, 2-3 committed steps each -- byte-identical to HEAD
+after every change; `solver-bridge-e2e.js --pro` and `--pseudo`,
+`lookahead-e2e.js`, `progressive-e2e.js` all pass):
+- MCC is a greedy round-based grip search: each round simulates a few grips
+  from one point, the furthest-reaching wins, the next round starts where it
+  had to regrip. A round whose tests all fail before the last committed move
+  cannot be influenced by what follows, so `algSpeedPrefix(path)` runs the
+  committed path up to that point once and `algSpeedResume(checkpoint, alg)`
+  finishes each candidate from there (`SolveSession.pathCost`, cached per
+  committed steps). Equal to `algSpeed(path + alg)` on 40k random mixed-
+  notation sequences (`test/script.test.js` keeps 12k). With an upper-case
+  token cache and one `==` that coerced a number to "U" on every round,
+  34 → ~12 µs per candidate.
+- Partial result lists are only ranked when someone listens (memoSearch's
+  emitter); the look-ahead's own searches have no listener.
+- `rotationSpellingParts` builds spellings from cached prefix/suffix joins and
+  reports each spelling's rotation (no regex re-split per spelling); an alg
+  that already rotates has no valid spelling and skips them (same result as
+  the old "more than one rotation" check). `netRotation` uses a per-token
+  rotation table (checked equal to `canonicalizeForEngine` on 50k algs).
+
+| look-ahead, 3 workers, warm (cold) | HEAD | now |
+|---|---|---|
+| default config, root, depth 3 | 4.6 s (10.7) | 3.2 s (9.1) |
+| default config, root, depth 5 | 17.0 s (19.7) | 8.9 s (18.1) |
+| xcross + multislot, after an xcross, depth 3 | 20.6 s (32.0) | ~21 s (24.8) |
+
+Cold numbers are dominated by prune-table builds, which every worker does for
+itself. The multislot row is engine-bound: the "last two pairs" multislot
+calls (`solveXxxxcross`, 16 moves) take 4-11 s each on one warm engine; this
+pass did not change the engines.
+
+**Engine-call cache** (`engineCallMemo`, `session.engineMemo`, shared with
+forks, 600 calls): the matched engine's solutions depend only on the state
+its search starts from (the `y2 y2` postAlg boundary resets move pruning), so
+calls are shared by the facelets of scramble + rotation + committed moves.
+Verified on a real multislot look-ahead: 5 same-state groups reached through
+different move text, identical stripped output in all 5. Pseudo calls are
+shared only by exact input (no same-state pseudo pair occurred to verify).
+Only without a time limit (a deadline makes output depend on timing). The
+cache stores solutions with each call's own "rotation postAlg" prefix
+stripped (`stripEnginePrefix`), so a shared call yields the same steps.
+Multislot after a cross, depth 3: 52 → 47 calls.
+
+**Search memo.** Limit 48 → 200 searches / 500k candidates held (~450 bytes
+per candidate measured; the old worst case was about the same memory). A
+depth-5 look-ahead makes ~76 searches, so with 48 the searches needed right
+after committing an explored candidate had already been evicted.
+
+**Bug: memo shared between different step splits.** The memo key was node +
+rotation + the committed path's joined text, but TPP depends on where steps
+start (`stepPenalty`: a `y` starting a step is free, mid-step +3.70). A
+multislot "S" and the same moves committed as two single pairs reach the
+same node with the same text, so the second one searched got the first one's
+TPPs. Key now uses the committed steps; regression test in
+`test/solver-bridge.test.js` (fails on the old key).
+
+**Multislot on the results page.** The config checkbox is gone; the solver
+page always builds its tree with the multislot edges (`pruneGraph` itself is
+unchanged, so harnesses still choose with "multislotting"), and
+`SolveSession.multislot` (results page, default off, stays as set from step
+to step) drops later-step multi-pair edges first thing in
+`searchCurrentNode`, exactly as `pruneGraph` would. `search-options-e2e.js`:
+off == a tree without multislotting (step and depth-2 look-ahead, identical
+lists), on == the multislotting tree. A saved search that had multislotting
+on starts with the toggle on (`legacyView.multislot`).
+
+**No R2/L2 after step 1** (results page, default off,
+`SolveSession.noLaterR2L2`): later-step engine calls (matched and pseudo) get
+the move list without `R2`/`L2` (`withoutR2L2`), and results that show them
+anyway -- a rotation spelling can relabel `F2`/`B2` into `R2`/`L2` -- are
+dropped (`hasR2L2`). Applies to every look-ahead follow-up too, also from the
+root; the root step itself is unchanged (e2e: identical root list). Note: it
+is a different engine move list, so the engines build a second set of prune
+tables the first time it is used. Search options reach the bridge as
+`searchWithLookahead` options (`session.withSettings`), are part of the memo
+key (`searchSettingsKey`) and the results-page cache key.
+
+**Time limit.** Blank (the new default) = no limit, stored as `null`
+(`parseTimeLimit`; 0 or invalid = none too); `normalizeCriteria` maps a
+stored 60 without `version: 2` to none (60 was the old default, not a
+choice), and solver-ui no longer falls back to 60 for a missing value.
+
+**Other fix:** the solver page stored the whole pruned tree in localStorage
+(`cubecrit_pruned_tree`, ~870k characters) without a try/catch and nothing
+read it; a quota or private-mode error there ended the page's start-up before
+its first search. Removed.
+
+**Browser check** (headless Chrome, CDP): config page shows a blank time
+limit and no multislotting box; stored criteria `timeLimit: null`; root →
+commit a cross → multislot on (multislot rows appear) → no r2/l2 on (0 R2/L2
+rows of 500 shown, 151 before) → look-ahead 3 → 5 → reload (settings and
+progress restored); 0 console errors or warnings; 360 px: no horizontal
+scroll. Cache-buster `?v=20261005c`.
 
 ### 4.38 DONE (2026-10-05, fifteenth pass): live-site speed, progressive results, results-page controls, UI pass
 

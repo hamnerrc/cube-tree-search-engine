@@ -486,9 +486,140 @@ test('rootTargetByLabels: finds the root target with exactly the rotated labels 
   assert.strictEqual(rootTargetByLabels(session, ['FR', 'BR'], ['BR', 'FR']), null);
 });
 
-if (failures > 0) {
-  console.error(`\n${failures} test(s) failed.`);
-  process.exit(1);
+// ---------------------------------------------------------------------
+// Results-page search options: multislot on/off, no R2/L2 after step 1
+// (engine calls observed through a recording fake helper)
+// ---------------------------------------------------------------------
+
+const bridge = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
+
+test('withoutR2L2 removes exactly R2 and L2 from an engine move list', () => {
+  assert.strictEqual(bridge.withoutR2L2('U_U2_R_R2_R-_L_L2_L-_r_r2'), 'U_U2_R_R-_L_L-_r_r2');
+  const pro = bridge.withoutR2L2(bridge.PRO_MOVE_RESTRICT).split('_');
+  assert.ok(!pro.includes('R2') && !pro.includes('L2'));
+  assert.strictEqual(pro.length, bridge.PRO_MOVE_RESTRICT.split('_').length - 2);
+});
+
+test('hasR2L2 matches whole R2/L2 tokens only', () => {
+  for (const a of ["R2", "U L2", "R U R2 U'", "L2' U", "y R2"]) assert.ok(bridge.hasR2L2(a), a);
+  for (const a of ["r2 U", "R U R'", "F2 B2", "U2 R' L'", "l2", ""]) assert.ok(!bridge.hasR2L2(a), a);
+});
+
+test('SolveSession.withSettings: a fork with other search options, memo shared, original untouched', () => {
+  const s = new SolveSession('R U', makeTinyTree(), ['white']);
+  assert.strictEqual(s.multislot, true);
+  assert.strictEqual(s.noLaterR2L2, false);
+  const t = s.withSettings({ multislot: false, noLaterR2L2: true });
+  assert.strictEqual(t.multislot, false);
+  assert.strictEqual(t.noLaterR2L2, true);
+  assert.strictEqual(s.multislot, true, 'original keeps its options');
+  assert.strictEqual(t.searchMemo, s.searchMemo, 'memo shared');
+  assert.notStrictEqual(t.searchSettingsKey, s.searchSettingsKey);
+  assert.strictEqual(s.withSettings({}).searchSettingsKey, s.searchSettingsKey);
+});
+
+async function asyncTests() {
+  const fs = require('fs');
+  const tree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'f2l_nodes_and_edges.json'), 'utf8'));
+  const adv = ['xcross', 'multislotting', 'pro_moves'];
+  const pruned = pruneGraph(tree, { advanced: adv, colors: ['white'] });
+  const calls = [];
+  const rec = (pairs) => (...args) => { calls.push({ pairs, opts: args[args.length - 1] }); return Promise.resolve([]); };
+  const fake = {
+    solveCross: rec(0), solveXcross: rec(1), solveXxcross: rec(2), solveXxxcross: rec(3), solveXxxxcross: rec(4),
+  };
+  // A fresh engine-call cache each time, so every planned call is observed.
+  const run = async (session) => { calls.length = 0; session.engineMemo = new Map(); await bridge.searchCurrentNode(session, fake); return calls.slice(); };
+  const atRoot = new SolveSession("R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2", pruned, ['white'], adv);
+  const crossTarget = pruned.edges.find(e => e.source === atRoot.rootId && pruned.nodes.find(n => n.id === e.target).state.corners.length === 0).target;
+  const later = atRoot.fork({ rotation: 'z2', coreAlg: "R U R'", targetNodeId: crossTarget });
+
+  await atest('multislot off: a later step searches single pairs only; on: multislot calls too', async () => {
+    const on = await run(later);
+    const off = await run(later.withSettings({ multislot: false }));
+    assert.ok(on.some(c => c.pairs >= 2), 'multislot calls with the option on');
+    assert.ok(off.length > 0 && off.every(c => c.pairs === 1), 'only single pairs with it off');
+    assert.strictEqual(off.length, on.filter(c => c.pairs === 1).length);
+  });
+
+  await atest('multislot off leaves the root search unchanged', async () => {
+    const a = await run(atRoot);
+    const b = await run(atRoot.withSettings({ multislot: false }));
+    assert.deepStrictEqual(b, a);
+  });
+
+  await atest('no r2/l2: later-step engine calls lose exactly R2 and L2; the root keeps them', async () => {
+    const plain = await run(later);
+    const restricted = await run(later.withSettings({ noLaterR2L2: true }));
+    assert.strictEqual(restricted.length, plain.length);
+    restricted.forEach((c, i) => {
+      assert.strictEqual(c.opts.allowedMoves, bridge.withoutR2L2(plain[i].opts.allowedMoves));
+      assert.notStrictEqual(c.opts.allowedMoves, plain[i].opts.allowedMoves);
+    });
+    const root = await run(atRoot.withSettings({ noLaterR2L2: true }));
+    assert.deepStrictEqual(root, await run(atRoot));
+  });
+
+  await atest('engine-call cache: identical calls run once (multislot on reuses the single-pair calls); not under a time limit', async () => {
+    const s = later.withSettings({ multislot: false });
+    s.engineMemo = new Map();
+    calls.length = 0;
+    await bridge.searchCurrentNode(s, fake);
+    const singles = calls.length;
+    await bridge.searchCurrentNode(s, fake);
+    assert.strictEqual(calls.length, singles, 'the same search again makes no new engine call');
+    const on = s.withSettings({ multislot: true });
+    await bridge.searchCurrentNode(on, fake);
+    assert.ok(calls.slice(singles).length > 0 && calls.slice(singles).every(c => c.pairs >= 2), 'only the multislot calls are new');
+    calls.length = 0;
+    await bridge.searchCurrentNode(s, fake, null, null, Date.now() + 60000);
+    assert.strictEqual(calls.length, singles, 'with a deadline every call runs');
+  });
+
+  await atest('memoised searches are keyed by the committed steps, not just their joined text', async () => {
+    // Same node, same move text: two single pairs (the y starts step 2, free)
+    // vs one multislot step (the y is mid-step, penalised). Their TPPs differ,
+    // so they must not share a search.
+    const node = pruned.nodes.find(n => n.state.cross_solved && n.state.corners.length === 3).id;
+    const two = later.fork({ rotation: 'z2', coreAlg: "R U R'", targetNodeId: node });
+    two.commit({ rotation: 'z2', coreAlg: "y U R U' R'", targetNodeId: node });
+    const one = later.fork({ rotation: 'z2', coreAlg: "R U R' y U R U' R'", targetNodeId: node });
+    assert.strictEqual(two.scoredPath, one.scoredPath);
+    assert.strictEqual(two.currentNodeId, one.currentNodeId);
+    assert.ok(Math.abs((one.pathCost('U') - two.pathCost('U')) - STEP_PENALTIES.rotMidY) < 1e-9, 'TPP differs by the mid-step y penalty');
+    const a = bridge.memoSearch(two, fake);
+    const b = bridge.memoSearch(one, fake);
+    assert.notStrictEqual(a, b);
+    await Promise.all([a, b]);
+  });
+
+  await atest('memoised searches are keyed by the search options', async () => {
+    const a = bridge.memoSearch(later, fake);
+    const b = bridge.memoSearch(later.withSettings({ multislot: false }), fake);
+    const c = bridge.memoSearch(later.withSettings({ noLaterR2L2: true }), fake);
+    assert.notStrictEqual(a, b);
+    assert.notStrictEqual(a, c);
+    assert.notStrictEqual(b, c);
+    assert.strictEqual(bridge.memoSearch(later.withSettings({ multislot: true }), fake), a, 'same options -> same search');
+    await Promise.all([a, b, c]);
+  });
 }
-console.log('\nAll solver-bridge.js tests passed.');
-process.exit(0);
+
+async function atest(name, fn) {
+  try {
+    await fn();
+    console.log(`PASS: ${name}`);
+  } catch (err) {
+    failures++;
+    console.error(`FAIL: ${name}\n  ${err.stack}`);
+  }
+}
+
+asyncTests().then(() => {
+  if (failures > 0) {
+    console.error(`\n${failures} test(s) failed.`);
+    process.exit(1);
+  }
+  console.log('\nAll solver-bridge.js tests passed.');
+  process.exit(0);
+});
