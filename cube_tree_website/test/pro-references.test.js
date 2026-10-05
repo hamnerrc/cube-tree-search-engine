@@ -18,9 +18,9 @@ function test(name, fn) {
 
 const solves = P.loadProReferences();
 
-test('pro_references.txt parses into 11 solves of 2-4 steps (inspection optional)', () => {
-  assert.strictEqual(solves.length, 11);
-  for (const s of solves) assert.ok(s.steps.length >= 2 && s.steps.length <= 4, s.scramble);
+test('pro_references.txt parses into 19 solves of 2-5 steps (inspection optional)', () => {
+  assert.strictEqual(solves.length, 19);
+  for (const s of solves) assert.ok(s.steps.length >= 2 && s.steps.length <= 5, s.scramble);
   assert.strictEqual(solves[9].inspection, '', '#10 has no inspection rotation');
   assert.strictEqual(solves[8].steps.length, 2, '#9 does 3rd/4th pairs as one step');
 });
@@ -36,7 +36,7 @@ test('every reference solve ends with a white/yellow cross and all four pairs ph
     assert.ok(last.cross && last.pairs.length === 4, `solve #${i + 1}`);
     return last.crossColor;
   });
-  assert.deepStrictEqual(colors.map((c, i) => c === 'yellow' ? i + 1 : 0).filter(Boolean), [9, 10]);
+  assert.deepStrictEqual(colors.map((c, i) => c === 'yellow' ? i + 1 : 0).filter(Boolean), [9, 10, 14]);
 });
 
 test("a mid-step rotation does not look like a lost pair (#11's 2nd pair contains y')", () => {
@@ -58,7 +58,8 @@ test('segments are DAG transitions: cross solved at each end, pairs only ever ad
       assert.ok(g.after.cross, `solve #${i + 1} ${g.labels}: cross solved`);
       // Previous segment's end frame == this segment's start frame.
       assert.ok(pairs.every(p => g.afterStart.pairs.includes(p)), `solve #${i + 1} ${g.labels}: no pair lost`);
-      assert.ok(g.newPairs.length >= 1, `solve #${i + 1} ${g.labels}: progress`);
+      // A root segment may be a plain cross (#13); every later one adds a pair.
+      assert.ok(g.isRoot || g.newPairs.length >= 1, `solve #${i + 1} ${g.labels}: progress`);
       pairs = g.after.pairs;
     }
     assert.strictEqual(pairs.length, 4);
@@ -77,7 +78,7 @@ test('goal-no-op moves (pruned by the engine) are detected exactly where expecte
   solves.forEach((s, i) => P.segmentProSolve(s).forEach((g, j) => {
     if (P.goalNoopMoves(s, j).noops.length) found.push(`#${i + 1} ${g.labels.join('+')}`);
   }));
-  assert.deepStrictEqual(found, ['#3 xcross', '#3 2nd pair', '#6 xcross', '#9 xxcross', '#11 xcross']);
+  assert.deepStrictEqual(found, ['#3 xcross', '#3 2nd pair', '#6 xcross', '#9 xxcross', '#11 xcross', '#14 xxcross', '#15 xcross', '#17 xcross']);
 });
 
 if (failures) { console.log(`\n${failures} test(s) failed.`); process.exit(1); }

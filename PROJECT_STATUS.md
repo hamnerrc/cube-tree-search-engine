@@ -17,6 +17,24 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
+**WHERE WE LEFT OFF (end of 2026-10-04, after the thirteenth pass):** read this first.
+- All work is committed and pushed (GitHub `main`; the local branch is
+  `master`, so push with `git push origin master:main`).
+- Thirteenth pass: search performance (§4.34) and `alg_speed` per-step
+  penalties fitted on the pro references (§4.35); both summarised below.
+- **New data not yet used:** the user then added pro solves **#12-#19** to
+  `data/pro_references.txt` (8 solves, committed in the handoff commit). They
+  all parse and physically solve; `test/pro-references.test.js` was updated
+  for them (19 solves; #13 starts with a plain cross step; #14 is yellow;
+  #18's step labels say "cancel with...", meaning moves cancel across the
+  pro's step boundary, and the segmenter merges those steps). **None of the
+  benchmarks (§4.32/§4.35 numbers, 36 segments) include them.** They are a
+  ready-made out-of-sample test of `STEP_PENALTIES`, which were fitted on #1-#11.
+- Benchmark caches live outside the repo (they are big). Rebuild with
+  `node tools/pro-ranking.js --app --sample 0 --cache <file>` (~4-5 min with
+  the real engine), then refit or evaluate with
+  `node --max-old-space-size=8000 tools/fit-step-penalties.js --cache <file>`.
+
 **2026-10-04 (thirteenth pass): performance, root search 100 s → 5 s in the
 browser, identical results.** Writeup in §4.34. The user also confirmed pro
 solve #10's 4th pair on a physical cube: `y U2' L' U L U' L' U L`, which is
@@ -295,6 +313,7 @@ node cube_tree_website/test/browser-globals.test.js
 node cube_tree_website/test/random-state-scramble.test.js
 node cube_tree_website/test/pro-references.test.js
 node cube_tree_website/test/search-scheduler.test.js
+# slow-ish, real WASM: node cube_tree_website/test/lookahead-e2e.js
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 # very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
@@ -319,15 +338,27 @@ verified to still solve cross — though for this specific scramble the plain
 (unconverted) result still happens to win on TPP; see §4.13 for scrambles
 where the optimised variant wins outright.
 
-**Reasonable next tasks (as of the twelfth pass):**
-- Look-ahead cost: depth 3+ with the pro move set is minutes per step. Ideas:
-  a smaller `maxSolutions` for look-ahead-only searches, or running the
-  look-ahead after the plain results are shown (render, then re-rank).
-- `alg_speed` root ranks: pro xcrosses still rank ~1000-8000 in their pools
-  because MCC is additive per move and the pros' xcrosses are longer than the
-  pool's best. Any further tuning must go through `tools/pro-ranking.js`
-  with a held-out split.
-- §4.28's open browser-worker finding is still open.
+**Reasonable next tasks (as of the thirteenth pass):**
+1. **Out-of-sample check of the alg_speed penalties on pro solves #12-#19**
+   (never seen by the fit): rebuild the `--app` pools for all 19 solves, then
+   compare the top-10 rate on #12-#19 under `--no-penalty` vs default. If it
+   holds up, refit on all 19 with `tools/fit-step-penalties.js` (leave-one-
+   solve-out CV) and update `STEP_PENALTIES` only if the CV result improves.
+   User target: pro steps in the top 10 90% of the time; currently 24/36
+   cross-validated; root steps are the gap (§4.35).
+2. Re-run `test/pro-references-e2e.js --config extended` for #12-#19
+   (membership in the search tree; use `--only N`, and `--max 20000` for speed).
+3. Root-step ranking (§4.35 "Why not 90%"): needs more pro root examples or a
+   model of inspection planning; ranking within target type was measured
+   and barely helps (3/11 vs 2/11).
+4. Look-ahead cost: depth 3+ is still heavy. Ideas: render plain results
+   first and re-rank when look-ahead finishes; a smaller `maxSolutions` for
+   look-ahead-only searches.
+5. Engine rotation-branch fix (§4.34): measured and not adopted; revisit if
+   the per-call cap is raised, or apply it to x rotations only.
+6. Remaining perf: root XXXCross (~11 s per call); persisting prune tables
+   in IndexedDB would remove the ~3-5 s cold start per page load.
+7. §4.28's open browser-worker finding is still open.
 
 **Older list (eighth pass):**
 0. pro_references.txt gaps (§4.20): non-cross-on-D inspection orientations

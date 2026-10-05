@@ -90,3 +90,58 @@ F' B R2' U' F R U' L U L' U' D' // xcross
 L U L' y' U L' U' L // 2nd pair
 R U R' U' R U R' // 3rd pair
 U R' U' R U' R' U R // 4th pair
+
+R F2 B R' F D2 L' R2 U' L2 U' F2 B2 D B2 U2 F2 U2 L2 B' D'
+x2 // inspection
+U' R' r' U' D r U D R2' D' // xcross
+L' U L R' U' R U R' U R // 2nd pair
+U' L' U L // 3rd pair
+U R U2' R' U R U' R' // 4th pair
+
+B' L' U' D2 L' D R U' F L2 B2 D B2 U D B2 R2 B2 U L2 D2
+x' z2 // inspection
+U' r' U' B' R2 B' R' D // cross
+R' F R F' // 1st pair
+U L U L' // 2nd pair
+U' L' U L U' L' U' L // 3rd pair
+y U' R U2' R' U R U' R' // 4th pair
+
+R F U L' B L' F2 R2 F' D2 F2 L2 B' L2 U2 B' D2 L' F'
+D' U' B2 F L2 R' F R L' U L U' D // xxcross
+U' L U2 L' U' L U L' // 3rd pair
+U R U' R' y U' L' U L // 4th pair
+
+B U2 F' U' L U' D B R' F2 R U2 R2 D2 B2 D2 R2 D2 L' B2 F
+z2 y // inspection
+U' D B' L U L' U' D R // xcross
+U2' R U R' // 2nd pair
+L' U' L R' U R // 3rd pair
+y' U R U' R2' F R F' // 4th pair
+
+F2 D' R' D2 R2 L2 D R U L2 F U2 B L2 B2 L2 D2 F' B2 U2 R2
+x' z2 // inspection
+D' r' U' L' D' U' L2 F' // xcross
+U L' U L2 U L' // 2nd pair
+U' R U' R' // 3rd pair
+y' R U' R' U R' F R F' // 4th pair
+
+B' D B' R U L D2 B2 U' B U R2 U' F2 R2 F2 R2 U F2 L2 D
+x // inspection
+r' U' F r2 F U' R' U R U' D' // xcross
+R' F R F' R U' R' // 2nd pair
+U2' L' U L x' U L' U' r // 3rd pair
+U L' U' L // 4th pair
+
+L2 D' R F R B2 D L R2 F L2 F R2 L2 B L2 U2 R2 B L2 R
+z2 y // inspection
+F' R2' B R U D L R' F' R2 // xcross cancel with...
+U R' // 2nd pair
+U' L' U2 L U2' L' U2 L2 // 3rd pair cancel with...
+U' L' // 4th pair
+
+U R L' F' R2 B U2 R F L2 D' B2 R2 F2 R2 U F2 R2 L2 F2 U
+x2 y // inspection
+R U' F D U D R D' // xcross
+y' U L' U' L U R U' R' // 2nd pair
+U R' U' R U L' U L // 3rd pair
+R' U' R // 4th pair
