@@ -501,7 +501,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // Only one page of rows is rendered; ranking still covers every result.
-  function renderResults(results) {
+  function renderResults(results, emptyText = 'no results yet.') {
     shownResults = results;
     const tbody = document.getElementById('results-body');
     if (!tbody) return;
@@ -509,6 +509,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     currentPage = Math.max(0, Math.min(currentPage, pages - 1));
     const offset = currentPage * view.pageSize;
     tbody.innerHTML = '';
+    if (!results.length) {
+      tbody.innerHTML = `<tr class="placeholder-row"><td colspan="9">${escapeHtml(emptyText)}</td></tr>`;
+    }
     results.slice(offset, offset + view.pageSize).forEach((r, i) => {
       const cells = [
         String(offset + i + 1),
@@ -578,7 +581,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function renderActiveResults(results, partial = false) {
     shownOwner = activeStepKey();
-    renderResults(results);
+    renderResults(results, partial ? 'no results yet.' : 'no results at this step with the current settings. try multislot, another filter, or undo.');
     // The time limit cut some engine calls (or look-ahead searches) short.
     const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
     // Some engine calls failed (the worker is restarted): results are missing.
@@ -736,6 +739,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       h = await ensureHelper();
     } catch (err) {
       setStatus('failed to load the solver: ' + err.message, 'error');
+      renderMessageRow('the solver could not be loaded. reload the page to try again.', 'placeholder-row');
       return;
     }
     if (myToken !== searchToken) return;
@@ -750,7 +754,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     try {
       results = await activePromise;
     } catch (err) {
-      if (myToken === searchToken) setStatus('search failed: ' + err.message, 'error');
+      if (myToken === searchToken) {
+        setStatus('search failed: ' + err.message, 'error');
+        renderMessageRow('this search failed. undo, change a setting or reload to try again.', 'placeholder-row');
+      }
       return;
     }
     if (myToken !== searchToken) return;

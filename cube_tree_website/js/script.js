@@ -213,6 +213,8 @@ const INFO_SECTIONS = [
     ['always on', 'pro move set (wide r/l, one mid-step y or x rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
     ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (blank = no limit). per-type limits: max solutions / move depth per step type; blank = default.'],
     ['results', 'results appear as they are found and re-rank as the search continues. look-ahead: re-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow. multislot: later steps may solve several pairs at once. no r2/l2 after step 1: later steps (and look-ahead) do not use r2 or l2. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['solution', 'the committed steps, labelled like a reconstruction. copy puts the scramble and the solution on the clipboard; cubedb opens them on cubedb.net for playback.'],
+    ['background', 'every scramble keeps searching while you look at another one, or at another tab. browsers give background tabs less cpu, so searches there are slower (chrome\'s energy saver may pause them until you come back).'],
 ];
 
 function installInfoDialog() {

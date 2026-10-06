@@ -860,7 +860,7 @@ button:disabled {
 
     /* Card: "#rank  alg  tpp" on top, the other columns below. */
     .results-table tbody tr {
-        grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+        grid-template-columns: 2.6rem minmax(0, 1fr) minmax(0, 1fr) auto;
     }
 
     .results-table td.col-6 {
@@ -898,6 +898,11 @@ button:disabled {
     .results-table td.col-2,
     .results-table td.col-4 {
         grid-column: 3 / 5;
+    }
+
+    .results-table td.col-2::before,
+    .results-table td.col-4::before {
+        min-width: 3rem;
     }
 
     .results-table td.col-8 {
