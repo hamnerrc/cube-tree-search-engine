@@ -72,6 +72,24 @@ function _solveEnded() {
   setTimeout(function() { while (!_solveBusy && _tableQueue.length) _handleTables(_tableQueue.shift()); }, 0);
 }
 
+// cube-tree modification: an engine failure (an Emscripten abort, e.g. memory
+// growth failing) after a search has paused at a yield happens inside an
+// Asyncify-resumed promise, outside the message handler's try/catch: the call
+// never reported an end, so the page waited on it forever. Report it as a
+// fatal error instead; the module may be corrupt after an abort, so every
+// later solve is refused and the page replaces the worker.
+let _broken = false;
+function _fatal(what) {
+  _broken = true;
+  if (_solveBusy) _solveEnded();
+  originalPostMessage({ type: 'error', data: 'Engine failure: ' + what, fatal: true });
+}
+self.addEventListener('unhandledrejection', function(event) {
+  event.preventDefault();
+  var r = event.reason;
+  _fatal((r && r.message) || String(r));
+});
+
 globalThis.postMessage = function(message) {
   if (typeof message !== 'string') return;
   if (message === 'Search finished.' || message === 'Search cancelled.' || message === 'Already solved.' || message.startsWith('Error')) {
@@ -226,6 +244,11 @@ self.onmessage = async function(event) {
 
     if (data.type !== 'solve') return;
 
+    if (_broken) {
+      originalPostMessage({ type: 'error', data: 'Engine failure: worker needs a restart', fatal: true });
+      return;
+    }
+
     // --- Module ready check ---
     if (!wasmModule) {
       originalPostMessage({ type: 'error', data: 'Solver not initialized yet' });
@@ -306,6 +329,8 @@ self.onmessage = async function(event) {
     }
 
   } catch (e) {
+    // A WebAssembly trap (abort, out of memory) leaves the module unusable.
+    if (typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError) { _fatal(e.message); return; }
     if (_solveBusy) _solveEnded();
     originalPostMessage({ type: 'error', data: e.message || 'Unknown worker error' });
   }

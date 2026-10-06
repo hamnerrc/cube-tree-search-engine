@@ -115,11 +115,14 @@ class CrossSolverHelper {
 
         this._worker.onmessage = (event) => this._handleMessage(event.data, resolve, reject);
         this._worker.onerror = (err) => {
+          // cube-tree modification: an uncaught worker error is fatal (fatal: true).
+          const error = new Error((err && err.message) || 'Engine worker error');
+          error.fatal = true;
           if (this._reject) {
-            this._reject(err);
+            this._reject(error);
             this._clearState();
           } else {
-            reject(err);
+            reject(error);
           }
         };
       } catch (e) {
@@ -148,7 +151,13 @@ class CrossSolverHelper {
       this._worker.terminate();
       this._worker = null;
       this._ready = false;
+      // cube-tree modification: settle what the terminated worker never will.
+      if (this._reject) this._reject(Object.assign(new Error('Engine worker terminated'), { fatal: true }));
       this._clearState();
+      if (this._tableRequests) {
+        for (const done of this._tableRequests.values()) done(null);
+        this._tableRequests.clear();
+      }
     }
   }
 
@@ -338,7 +347,7 @@ class CrossSolverHelper {
   }
   /** @returns {Promise<{key: string, data: Uint8Array}[]>} copies of those tables */
   getTables(keys) {
-    return this._tableRequest({ type: 'getTables', keys });
+    return this._tableRequest({ type: 'getTables', keys }).then(t => t || []);
   }
   /** Hands tables to the engine; resolves with how many it kept. */
   putTables(tables) {
@@ -401,6 +410,8 @@ class CrossSolverHelper {
 
     if (msg.type === 'error') {
       const err = new Error(msg.data);
+      // cube-tree modification: the worker's engine is unusable (see worker-persistent.js).
+      if (msg.fatal) err.fatal = true;
       if (this._reject) {
         this._reject(err);
         this._clearState();

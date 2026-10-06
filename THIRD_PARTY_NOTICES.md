@@ -89,6 +89,14 @@ listed here with the date of the change.
   only yields to the event loop when 25 ms have passed since the last yield
   (it used to wait for a timer once per search depth). Verified on the call
   battery and 281 recorded look-ahead calls (identical output).
+- **2026-10-06** `crossSolver/worker-persistent.js`: an engine failure after
+  a search has paused at a yield (e.g. an Emscripten abort inside an
+  Asyncify-resumed call) is reported as an `error` message with
+  `fatal: true` instead of leaving the call without an end, a WebAssembly
+  trap in the handler is reported the same way, and later solves on that
+  worker are refused. `crossSolver/solver-helper.js`: a fatal error (or an
+  uncaught worker error) rejects with `err.fatal`; `terminate()` settles the
+  in-flight call and pending table requests. Search behaviour is unchanged.
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

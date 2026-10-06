@@ -29,7 +29,7 @@
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261005-dag1';
+const ENGINE_VERSION = '20261006-fatal1';
 
 // The cache-buster this script was loaded with (solver.html's ?v=...), passed
 // on to the post-processing workers so they load the same script versions.
@@ -145,6 +145,27 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       .finally(() => tableSyncs.delete(h));
   }
 
+  // A fresh worker for a pool member whose engine failed, with the stored
+  // prune tables (it starts without the ones its predecessor had built).
+  async function restartEngine(h) {
+    if (!h._restarting) {
+      h._restarting = (async () => {
+        try {
+          console.error('Engine worker failed; restarting it');
+          h.terminate();
+          await h.init();
+          const tables = await loadStoredTables();
+          if (tables.length && typeof h.putTables === 'function') await h.putTables(tables);
+        } catch (err) {
+          console.error('Engine worker restart failed', err);
+        } finally {
+          h._restarting = null;
+        }
+      })();
+    }
+    return h._restarting;
+  }
+
   async function ensureHelper() {
     if (!helper) {
       helper = (async () => {
@@ -165,7 +186,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         for (const h of pool) {
           for (const m of ['solveCross', 'solveXcross', 'solveXxcross', 'solveXxxcross', 'solveXxxxcross']) {
             const solve = h[m].bind(h);
-            h[m] = (...args) => solve(...args).finally(() => syncTablesFrom(h, pool));
+            // A fatal engine failure (an abort; see worker-persistent.js)
+            // replaces the worker before its pool slot is free again, so the
+            // next call runs on a working engine; this call still fails.
+            h[m] = (...args) => Promise.resolve()
+              .then(() => solve(...args))
+              .catch(async (err) => {
+                if (err && err.fatal) await restartEngine(h);
+                throw err;
+              })
+              .finally(() => syncTablesFrom(h, pool));
           }
         }
         return pool;
@@ -551,11 +581,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderResults(results);
     // The time limit cut some engine calls (or look-ahead searches) short.
     const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
+    // Some engine calls failed (the worker is restarted): results are missing.
+    const failed = results.failedCalls ? ` · ${results.failedCalls} solver call${results.failedCalls > 1 ? 's' : ''} failed, results incomplete (undo and redo to retry)` : '';
     let msg;
     if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
     else if (partial) msg = `${count(results.length)} results so far · searching…`;
     else msg = results.length ? `${count(results.length)} results` : 'no results for the current filters at this step';
-    setStatus(msg + cut, partial ? 'busy' : 'done');
+    setStatus(msg + cut + failed, partial ? 'busy' : results.failedCalls ? 'error' : 'done');
   }
 
   // One search per (session, committed path, view settings): navigating away

@@ -605,6 +605,25 @@ async function asyncTests() {
     assert.strictEqual(bridge.memoSearch(atRoot.withSettings({ multislot: false, noLaterR2L2: true }), fake), r, 'the root search does not depend on them');
     await Promise.all([a, b, c]);
   });
+
+  await atest('failed engine calls mark the list (failedCalls) and the search is not memoised', async () => {
+    const broken = Object.fromEntries(Object.keys(fake).map(m => [m, () => Promise.reject(Object.assign(new Error('Engine failure'), { fatal: true }))]));
+    const s = later.fork();
+    s.searchMemo = new Map();
+    s.engineMemo = new Map();
+    const origError = console.error;
+    console.error = () => {}; // the bridge logs each failed call
+    let first;
+    try {
+      first = await bridge.memoSearch(s, broken);
+    } finally {
+      console.error = origError;
+    }
+    assert.ok(first.failedCalls > 0, 'failed calls counted');
+    assert.strictEqual(bridge.filterResults(first, () => true).failedCalls, first.failedCalls, 'filters keep the mark');
+    const again = await bridge.memoSearch(s, fake);
+    assert.ok(!again.failedCalls && again !== first, 'searched again with a working engine');
+  });
 }
 
 async function atest(name, fn) {

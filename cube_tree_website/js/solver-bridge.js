@@ -844,6 +844,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       .catch((err) => { console.error('Solver error', err); return null; });
   }
   let truncatedCalls = 0;
+  // Engine calls that failed (an engine error or a crashed worker): the list
+  // is missing their results, so it is marked and not memoised.
+  let failedCalls = 0;
 
   // Pass 3: post-process each call's solutions as soon as that call
   // finishes, so the JS work overlaps the engine calls still running
@@ -856,7 +859,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     const { isPseudo, pairCount, color } = p;
     if (onStatus) onStatus(`searching ${edgeLabel(pairCount, isRoot, isPseudo).toLowerCase()}${color ? ' (' + color + ')' : ''}…`);
     const cores = await p.cores;
-    if (cores === null) return;
+    if (cores === null) { failedCalls++; return; }
     // Finished at or after the deadline without reaching its cap: cut short
     // (or skipped) by the time budget, so its list may be incomplete.
     if (deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions) truncatedCalls++;
@@ -894,6 +897,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   const out = rankCandidates(plan);
   // How many engine calls the time budget cut short (absent = complete).
   if (truncatedCalls) out.truncatedCalls = truncatedCalls;
+  if (failedCalls) out.failedCalls = failedCalls;
   return out;
 }
 
@@ -1311,7 +1315,7 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   const settle = () => { promise.listeners = null; promise.latest = null; };
   promise.then((r) => {
     settle();
-    if (r.truncatedCalls && memo.get(key) === promise) memo.delete(key);
+    if ((r.truncatedCalls || r.failedCalls) && memo.get(key) === promise) memo.delete(key);
     promise.size = r.length;
     trimSearchMemo(memo);
   }, () => { settle(); if (memo.get(key) === promise) memo.delete(key); });
@@ -1339,6 +1343,7 @@ function filterResults(results, filter) {
   if (!filter) return results;
   const out = results.filter(filter);
   if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
+  if (results.failedCalls) out.failedCalls = results.failedCalls;
   return out;
 }
 
@@ -1430,6 +1435,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
     done.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
     const out = done.concat(pending, results.slice(breadth));
     if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
+    if (results.failedCalls) out.failedCalls = results.failedCalls;
     if (done.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
     if (!final) out.lookaheadPending = pending.length;
     return out;
