@@ -2009,6 +2009,13 @@ offload, wide-moves, dag-search, slot-mapping, color-orientation e2e;
 `pro-references-e2e.js`: 44/66 professional segments in the search tree
 (engine output unchanged, so this is the standing figure).
 
+**Worst case (README goal: < 1 min).** `worst-case-bench.js --budget 0
+--no-pseudo --depth 1` (every colour, xcross..xxxcross, multislot, pro
+moves, no time limit): root 165 s cold, 471k results (was ~3.4 h of engine
+time, §4.36); the next step 1.0 s. Still over a minute without the time
+limit, and pseudo calls (face-turn engine, no DAG gain) are unchanged --
+the time limit remains the guarantee.
+
 ### 4.40 DONE (2026-10-05, seventeenth pass): solver performance -- Asyncify, shared prune tables, post-processing workers
 
 **Measuring first.** Main-thread CPU profiles (inspector API, so the WASM
