@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-05 (eighteenth pass).*
+*Last updated 2026-10-06 (nineteenth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,35 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-05, after the eighteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-06, after the nineteenth pass):** read this first.
+- Nineteenth pass (user task list: finish interrupted work, Cubedb export,
+  UI polish toward release, background-tab reliability, anything else
+  needed). Writeup: §4.42. The previous session had left only the user's
+  Cubedb example link (end of `data/pro_references.txt`) uncommitted;
+  all tests passed at the start.
+  1. **Cubedb export:** `solutionLines`/`cubedbUrl` (solver-bridge.js),
+     the user's example link rebuilt byte for byte
+     (`test/cubedb-export.test.js`); real-engine round trip
+     (`test/cubedb-export-e2e.js`); a generated link loads and parses on
+     cubedb.net (headless Chrome).
+  2. **Results page polish:** labelled solution panel (copy / cubedb /
+     undo), progress bar and placeholder rows, error and empty states, tab
+     title shows a running search, phone cards, primary button on the
+     config page.
+  3. **Bugs fixed:** stale result rows stayed clickable after a commit /
+     undo / scramble switch (could commit a candidate of another step or
+     scramble); an engine abort after a yield hung the search forever
+     (now reported, the worker is replaced, the list is marked and not
+     memoised); solver.html without a saved search sat idle.
+  4. **Background tabs (measured, §4.42):** searches continue in hidden
+     tabs; Chrome gives hidden tabs' workers ~3x less CPU (OS priority, not
+     timers -- a MessageChannel engine yield was tried and made no
+     difference, so it was reverted) and Energy Saver may freeze them; a
+     frozen-then-resumed search finishes with identical results. Nothing a
+     page can legitimately do about either; the tab title and info dialog
+     now tell the user.
+
+**Previous handoff (2026-10-05, after the eighteenth pass):**
 - Eighteenth pass (user task list: look-ahead too slow, especially breadth
   10; wide moves gone from first-step results; other README issues).
   Writeup: §4.41.
@@ -1934,6 +1962,72 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.42 DONE (2026-10-06, nineteenth pass): Cubedb export, results-page polish, search reliability
+
+**Cubedb export.** The user added a reference link to the end of
+`data/pro_references.txt` (the pro-references parser ignores it: the line
+holds `//` but no solve is open). Format, from that link: `puzzle=3x3`,
+`scramble=` and `alg=` with spaces as `_`, primes as `-`, then
+`encodeURIComponent` (`//` -> `%2F%2F`, newline -> `%0A`; parentheses stay).
+`solutionLines(session)` writes the committed solve like the reference file
+(`<rotation> // inspection`, first step labelled by type, later steps by the
+pairs solved after them: `2nd pair`, `3rd/4th pairs`, `(pseudo)` marked);
+`cubedbUrl(scramble, lines)` builds the link. Verified: the example link is
+rebuilt byte for byte; three complete real-engine solves (four colours with
+an inspection rotation; a wide first step + multislot; a pseudo step and its
+repair) decode back, the way Cubedb reads them, to moves that physically
+solve cross + F2L; a generated link loads on cubedb.net and shows the
+scramble, all labelled lines and the move count.
+
+**UI.** The solution textarea became a labelled step list with copy (scramble
++ lines, clipboard API with a fallback), cubedb and undo; a progress bar
+while a search runs, placeholder rows, distinct empty/failed messages,
+`searching… ·` / `failed ·` in the tab title, phone result cards with
+rank/alg/tpp on top, right-aligned tabular rank and tpp columns, a primary
+search button, and the config page's duplicated "generate" label removed.
+`solver-helper.js` script tags had no cache-buster (now `?v=`).
+Screenshots checked at 1280, 820 and 390 px.
+
+**Bugs fixed.**
+- Stale clickable rows: after a commit, undo or scramble switch, the old list
+  stayed on screen (and clickable) until the new search's first partial list,
+  so a click committed a candidate of another node or another scramble.
+  Now the table is replaced at once and each rendered list remembers the
+  scramble + steps it belongs to (`shownOwner`); clicks on a stale list do
+  nothing. Browser-checked.
+- Engine abort hang: an abort inside an Asyncify-resumed call is an
+  unhandled rejection in the worker, outside its try/catch, so the call
+  never ended and its pool slot hung forever (reproduced by injecting such a
+  failure into the page's engine workers over CDP: the step and the next one
+  stayed "searching…"). Now reported as a fatal error, the worker is
+  replaced (stored prune tables re-loaded), the search's list carries
+  `failedCalls` (status line, not memoised, so redoing the step retries).
+  After the fix the same injection gives "148 results · 1 solver call
+  failed…" and the next step searches normally. Test in
+  `test/solver-bridge.test.js`.
+- `solver.html` opened without a saved search (or with the DAG failing to
+  load) now says so instead of showing nothing.
+
+**Background tabs (measured, headless Chrome 150 on macOS, CDP).**
+- Hidden-tab throttling exists for main-thread *and worker* timers
+  (chained `setTimeout(0)` in a worker: 13 ticks in 10 s, up to 4.7 s each
+  with intensive throttling); `MessageChannel` messages are not throttled.
+  The page's search path uses no main-thread timers (messages + promises
+  only); the engine yields with `setTimeout` once per 25 ms.
+- A 10.5 s engine call took 18.1 s hidden. Replacing the engine's timer
+  yield with a MessageChannel yield (rebuilt, byte-identical battery) gave
+  18.5 s: no gain, so it was **reverted**. The cause is CPU: a pure busy
+  loop in a worker ran 3.1 s visible, 10.2 s hidden, 3.1 s visible again
+  (2x even with `--disable-renderer-backgrounding`) -- Chrome/macOS
+  deprioritise hidden tabs' processes.
+- Chrome's Energy Saver freezes CPU-heavy tabs hidden for 5 min; its
+  documented exemptions (calls, device APIs, locks that block another
+  context) are nothing this page can legitimately claim. A search frozen
+  for 10 s mid-way (`Page.setWebLifecycleState`) resumed and finished with
+  the same 25,145 / 25,873 results as a visible run.
+- So searches do continue in the background, just slower; the info dialog
+  says so and the tab title shows when a search is still running.
 
 ### 4.41 DONE (2026-10-05, eighteenth pass): look-ahead speed (goal-DAG engine search, best-first look-ahead) and wide first steps
 

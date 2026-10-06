@@ -1279,8 +1279,13 @@ if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', async () => {
         installInfoDialog();
         if (document.getElementById('scramble-input')) {
-            restoreTextareaState();
-            restoreCheckboxState();
+            // A corrupt saved blob only loses the restored values, not the page.
+            try {
+                restoreTextareaState();
+                restoreCheckboxState();
+            } catch (err) {
+                console.warn('Saved settings could not be restored', err);
+            }
         }
 
         if (!window.location.pathname.endsWith('solver.html')) return;
