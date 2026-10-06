@@ -1283,18 +1283,39 @@ if (typeof document !== 'undefined') {
 
         if (!window.location.pathname.endsWith('solver.html')) return;
 
-        const criteria = loadSearchCriteria();
-        if (!criteria) {
-            scrambleController.init([]);
+        // The solver page cannot search without a saved search (opened
+        // directly) or without the DAG; say so instead of sitting idle.
+        const showSetupError = (msg) => {
+            const status = document.getElementById('search-status');
+            if (status) status.textContent = msg;
+            const box = document.getElementById('search-state');
+            if (box) box.dataset.state = 'error';
+        };
+
+        let criteria = null;
+        try {
+            criteria = loadSearchCriteria();
+        } catch (err) {
+            criteria = null;
+        }
+        if (!criteria || !criteria.scrambles?.length) {
+            const display = document.getElementById('scramble-display');
+            if (display) display.textContent = 'no scrambles yet';
+            showSetupError('no search set up yet: go back to choose the options and scrambles.');
             return;
         }
 
         scrambleController.init(criteria.scrambles);
 
-        const response = await fetch('data/f2l_nodes_and_edges.json');
-        if (!response.ok) throw new Error(`Failed to load graph data: HTTP ${response.status}`);
-
-        const rawTree = await response.json();
+        let rawTree;
+        try {
+            const response = await fetch('data/f2l_nodes_and_edges.json');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            rawTree = await response.json();
+        } catch (err) {
+            showSetupError(`failed to load the search graph (${err.message}). reload to try again.`);
+            return;
+        }
         const prunedTree = pruneGraph(rawTree, { ...criteria, advanced: [...criteria.advanced, 'multislotting'] });
 
         if (typeof window.onPrunedTreeReady === 'function') {

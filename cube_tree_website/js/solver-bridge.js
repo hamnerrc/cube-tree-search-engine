@@ -1476,6 +1476,47 @@ function edgeLabel(pairCount, isRoot, isPseudo) {
   return edgeTypeLabel(pairCount, isRoot, isPseudo);
 }
 
+/**
+ * The committed solve as "alg // label" lines, the way pro_references.txt
+ * and Cubedb write a solve: the inspection rotation (if any), then one line
+ * per step -- "xcross", then "2nd pair", "3rd/4th pairs" (a multislot), ...,
+ * counted by the pairs solved after the step; "(pseudo)" for a pseudo step.
+ */
+function solutionLines(session) {
+  const ordinal = n => ['1st', '2nd', '3rd', '4th'][n - 1] || `${n}th`;
+  const lines = session.rotation ? [`${session.rotation} // inspection`] : [];
+  let pairs = 0;
+  session.committedRows.forEach((row, i) => {
+    const before = pairs;
+    const node = session.nodeMap.get(row.targetNodeId);
+    pairs = node ? (node.state.corners || []).length : before + (row.corners || []).length;
+    const pseudo = /pseudo/i.test(row.type || '');
+    let label;
+    if (i === 0) label = ['cross', 'xcross', 'xxcross', 'xxxcross'][pairs] || `cross + ${pairs} pairs`;
+    else if (pairs - before <= 1) label = `${ordinal(pairs)} pair`;
+    else label = `${ordinal(before + 1)}/${ordinal(pairs)} pairs`;
+    if (pseudo) label += ' (pseudo)';
+    if (row.coreAlg) lines.push(`${row.coreAlg} // ${label}`);
+  });
+  return lines;
+}
+
+/**
+ * A Cubedb (cubedb.net) link that replays `lines` on `scramble`. Cubedb keeps
+ * the whole solve in the URL: spaces as "_", primes as "-", the rest
+ * URL-encoded ("//" comments, one line per step), as in the reference link
+ * at the end of data/pro_references.txt.
+ */
+function cubedbUrl(scramble, lines) {
+  const enc = s => encodeURIComponent(String(s).replace(/'/g, '-').replace(/ /g, '_'));
+  return `https://cubedb.net/?puzzle=3x3&scramble=${enc(cleanAlgText(scramble))}&alg=${enc(lines.map(cleanAlgText).join('\n'))}`;
+}
+
+/** Single spaces, no padding (Cubedb shows "_" runs literally). */
+function cleanAlgText(s) {
+  return String(s).trim().replace(/[ \t]+/g, ' ');
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SolveSession, searchCurrentNode, SLOT_INDICES, COLOR_ROTATIONS,
@@ -1486,5 +1527,6 @@ if (typeof module !== 'undefined' && module.exports) {
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, withoutR2L2, hasR2L2, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
+    solutionLines, cubedbUrl,
   };
 }

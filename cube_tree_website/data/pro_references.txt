@@ -145,3 +145,10 @@ R U' F D U D R D' // xcross
 y' U L' U' L U R U' R' // 2nd pair
 U R' U' R U L' U L // 3rd pair
 R' U' R // 4th pair
+
+
+
+
+EXAMPLE FOR CUBEDB LINK FORMAT:
+
+https://cubedb.net/?puzzle=3x3&scramble=U-_L2_U_L2_B2_D-_U-_B2_L2_U-_F-_L2_D_R2_U_L_B-_D2_F2_D2_R-&alg=x-_z-_%2F%2F_inspection%0Ar-_F_R2_r-_U_r_D_F2_%2F%2F_xxcross%0AU-_U-_U-_R-_U_R_%2F%2F_3rd_pair%0AU-_R_U_R-_%2F%2F_4th_pair%0AR_U_R-_U_R_U2-_R-_%2F%2F_OLL(CP)%0AU_%2F%2F_AUF

@@ -447,6 +447,16 @@ triggers a fresh search from the resulting node. Multiple scrambles are
 solved completely independently of one another, each with its own result
 table — results are never merged or compared across different scrambles.
 
+The solution so far is shown above the results one step per line, labelled
+the way the professional reference solves are (`z y // inspection`,
+`… // xcross`, `… // 2nd pair`, `… // 3rd/4th pairs` for a multislot). It
+can be copied as text (scramble first) or **exported to
+[Cubedb](https://cubedb.net)**: a link opens the scramble and the labelled
+solution there for playback. Cubedb keeps the whole solve in the link
+itself (spaces as `_`, primes as `-`, the rest URL-encoded), in the same
+format as the example link at the end of
+[pro_references.txt](data/pro_references.txt).
+
 Generated scrambles are random-state (a uniformly random cube state, solved
 with a two-phase search and inverted), the same approach WCA scramble
 programs use.

@@ -51,9 +51,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   let searchToken = 0; // bumped on every navigation/click to discard stale async results
 
   function statusEl() { return document.getElementById('search-status'); }
-  function setStatus(msg) {
+  // kind: 'busy' (a search is running: progress bar), 'done' or 'error'.
+  function setStatus(msg, kind = 'busy') {
     const el = statusEl();
     if (el) el.textContent = msg || '';
+    const box = document.getElementById('search-state');
+    if (box) box.dataset.state = kind;
   }
 
   function escapeHtml(s) {
@@ -302,11 +305,52 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return sessions.get(index);
   }
 
+  // The committed solve, one labelled line per step as in pro_references.txt
+  // ("alg // label"), with copy and a Cubedb link (solutionLines/cubedbUrl).
   function renderPath(session) {
-    const ta = document.getElementById('solution-output');
-    if (!ta) return;
-    const parts = session.committedRows.map(r => r.coreAlg);
-    ta.value = session.rotation ? `[${session.rotation}]  ` + parts.join(' ') : parts.join(' ');
+    const lines = solutionLines(session);
+    const list = document.getElementById('solution-steps');
+    if (list) {
+      list.innerHTML = lines.map((line) => {
+        const [alg, label] = line.split(' // ');
+        return `<li><span class="step-alg">${escapeHtml(alg)}</span><span class="step-label">${escapeHtml(label || '')}</span></li>`;
+      }).join('');
+    }
+    const empty = document.getElementById('solution-empty');
+    if (empty) empty.hidden = lines.length > 0;
+    const link = document.getElementById('cubedb-link');
+    if (link) link.href = cubedbUrl(session.scramble, lines);
+    const copy = document.getElementById('copy-btn');
+    if (copy) copy.disabled = !lines.length;
+  }
+
+  function bindSolutionActions() {
+    const copy = document.getElementById('copy-btn');
+    if (!copy) return;
+    copy.addEventListener('click', async () => {
+      const session = sessions.get(activeIndex);
+      if (!session) return;
+      const text = [session.scramble, ...solutionLines(session)].join('\n');
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch (err) {
+        // No clipboard API (http, old browser): the classic textarea fallback.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        ta.remove();
+      }
+      copy.textContent = ok ? 'copied' : 'copy failed';
+      clearTimeout(copy._reset);
+      copy._reset = setTimeout(() => { copy.textContent = 'copy'; }, 1500);
+    });
   }
 
   function renderUndoButton(session) {
@@ -316,13 +360,23 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   const STATUS_LABELS = { pending: 'queued', searching: 'searching…', done: 'ready', error: 'search failed' };
 
+  const PAGE_TITLE = typeof document !== 'undefined' ? document.title : '';
+
   function renderScrambleStatus() {
     const el = document.getElementById('scramble-status');
-    if (!el) return;
     const session = sessions.get(activeIndex);
     const status = !session ? 'pending' : session.isComplete ? 'done' : (session._status || 'pending');
-    el.textContent = STATUS_LABELS[status] || '';
-    el.className = 'scramble-status scramble-status-' + status;
+    if (el) {
+      el.textContent = STATUS_LABELS[status] || '';
+      el.className = 'scramble-status scramble-status-' + status;
+    }
+    // Also in the tab title: a search keeps running in a background tab
+    // (more slowly: browsers give hidden tabs less CPU), and the tab strip
+    // shows when it is done.
+    if (typeof document !== 'undefined') {
+      const prefix = status === 'searching' ? 'searching… · ' : status === 'error' ? 'failed · ' : '';
+      document.title = prefix + PAGE_TITLE;
+    }
   }
 
   function renderScrambleStatusIfActive(session) {
@@ -338,6 +392,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const view = { lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, noR2L2: false, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE };
   let currentPage = 0;
   let shownResults = null; // the list on screen (complete or partial)
+  // The scramble and step the list on screen belongs to: a click on a row
+  // of a list that is no longer current (a step committed or undone, another
+  // scramble shown) must not commit it to the wrong node.
+  let shownOwner = null;
+  function activeStepKey() {
+    const s = sessions.get(activeIndex);
+    return s ? `${activeIndex}|${s.rotation}|${s.stepAlgs.join(' | ')}` : null;
+  }
 
   function loadViewPrefs(crit) {
     let saved = null;
@@ -432,8 +494,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const tr = document.createElement('tr');
       tr.tabIndex = 0;
       tr.innerHTML = cells.map((c, k) => `<td data-label="${COLUMNS[k]}" class="col-${k}${c === '-' ? ' empty' : ''}">${escapeHtml(c)}</td>`).join('');
-      tr.addEventListener('click', () => handleResultClick(r));
-      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleResultClick(r); });
+      const owner = shownOwner;
+      const commit = () => { if (owner && owner === activeStepKey()) handleResultClick(r); };
+      tr.addEventListener('click', commit);
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); });
       tbody.appendChild(tr);
     });
     renderPagination(results.length, pages);
@@ -465,17 +529,25 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     );
   }
 
-  function renderSolved() {
+  // One row of text instead of results (solved, or no list yet). Old rows
+  // must never stay clickable once the step they belong to is gone.
+  function renderMessageRow(text, cls) {
     shownResults = null;
+    shownOwner = null;
     const tbody = document.getElementById('results-body');
-    if (tbody) tbody.innerHTML = '<tr class="solved-row"><td colspan="9">cross + f2l solved.</td></tr>';
+    if (tbody) tbody.innerHTML = `<tr class="${cls}"><td colspan="9">${escapeHtml(text)}</td></tr>`;
     const nav = document.getElementById('pagination');
     if (nav) nav.innerHTML = '';
+  }
+
+  function renderSolved() {
+    renderMessageRow('cross + f2l solved. copy the solution or open it on cubedb above.', 'solved-row');
   }
 
   const count = (n) => n.toLocaleString('en-US');
 
   function renderActiveResults(results, partial = false) {
+    shownOwner = activeStepKey();
     renderResults(results);
     // The time limit cut some engine calls (or look-ahead searches) short.
     const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
@@ -483,7 +555,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
     else if (partial) msg = `${count(results.length)} results so far · searching…`;
     else msg = results.length ? `${count(results.length)} results` : 'no results for the current filters at this step';
-    setStatus(msg + cut);
+    setStatus(msg + cut, partial ? 'busy' : 'done');
   }
 
   // One search per (session, committed path, view settings): navigating away
@@ -620,16 +692,18 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
     if (session.isComplete) {
       renderSolved();
-      setStatus('solved.');
+      setStatus('cross + f2l solved.', 'done');
       return;
     }
 
+    // Until this step's list arrives (at once if it is already known).
+    renderMessageRow(session.resultsCache ? 'searching…' : 'starting the search…', 'placeholder-row');
     setStatus('loading solver…');
     let h;
     try {
       h = await ensureHelper();
     } catch (err) {
-      setStatus('failed to load the solver: ' + err.message);
+      setStatus('failed to load the solver: ' + err.message, 'error');
       return;
     }
     if (myToken !== searchToken) return;
@@ -644,7 +718,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     try {
       results = await activePromise;
     } catch (err) {
-      if (myToken === searchToken) setStatus('search failed: ' + err.message);
+      if (myToken === searchToken) setStatus('search failed: ' + err.message, 'error');
       return;
     }
     if (myToken !== searchToken) return;
@@ -748,6 +822,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     loadViewPrefs(crit);
     syncViewControls();
     bindViewControls();
+    bindSolutionActions();
 
     const saved = loadPersistedState(crit);
     if (saved) {

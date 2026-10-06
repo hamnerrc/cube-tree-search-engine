@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261005j">
+    <link rel="stylesheet" href="styles.css?v=20261006a">
 </head>
 
 <body>
@@ -32,9 +32,15 @@
         <section class="card solution-box" aria-label="solution so far">
             <div class="card-head">
                 <h2>solution</h2>
-                <button type="button" id="undo-btn" class="undo-btn" onclick="handleUndoClick()" disabled>undo</button>
+                <div class="solution-actions">
+                    <button type="button" id="copy-btn" class="small-btn" disabled>copy</button>
+                    <a id="cubedb-link" class="small-btn link-btn" href="#" target="_blank" rel="noopener" aria-disabled="true"
+                        title="open this scramble and solution on cubedb.net">cubedb ↗</a>
+                    <button type="button" id="undo-btn" class="small-btn" onclick="handleUndoClick()" disabled>undo</button>
+                </div>
             </div>
-            <textarea id="solution-output" placeholder="click a result to commit it" rows="2" readonly></textarea>
+            <ol id="solution-steps" class="solution-steps" aria-live="polite"></ol>
+            <p id="solution-empty" class="solution-empty">click a result to commit it as the next step.</p>
         </section>
 
         <section class="results-controls" aria-label="result options">
@@ -65,7 +71,10 @@
             </label>
         </section>
 
-        <div id="search-status" class="search-status" role="status" aria-live="polite"></div>
+        <div class="search-state" id="search-state">
+            <div id="search-status" class="search-status" role="status" aria-live="polite"></div>
+            <div class="progress" aria-hidden="true"><span></span></div>
+        </div>
 
         <div class="table-wrapper">
             <table class="results-table">
@@ -90,15 +99,15 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/script.js?v=20261005j"></script>
-    <script src="js/facelet-cube.js?v=20261005j"></script>
-    <script src="js/facelet-flags.js?v=20261005j"></script>
-    <script src="js/cross-optimization.js?v=20261005j"></script>
+    <script src="js/script.js?v=20261006a"></script>
+    <script src="js/facelet-cube.js?v=20261006a"></script>
+    <script src="js/facelet-flags.js?v=20261006a"></script>
+    <script src="js/cross-optimization.js?v=20261006a"></script>
     <script src="crossSolver/solver-helper.js"></script>
     <script src="pseudoCrossSolver/solver-helper.js"></script>
-    <script src="js/search-scheduler.js?v=20261005j"></script>
-    <script src="js/solver-bridge.js?v=20261005j"></script>
-    <script src="js/solver-ui.js?v=20261005j"></script>
+    <script src="js/search-scheduler.js?v=20261006a"></script>
+    <script src="js/solver-bridge.js?v=20261006a"></script>
+    <script src="js/solver-ui.js?v=20261006a"></script>
 </body>
 
 </html>
