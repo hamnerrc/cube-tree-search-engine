@@ -8,13 +8,15 @@
  *   pool.terminate();
  *
  * The returned object has the helper's solve* methods; each call runs on a
- * free worker (queued FIFO when all are busy). It is marked `__gated`, so
+ * free worker (queued when all are busy: lowest look-ahead rank first, see
+ * withRank, then FIFO). It is marked `__gated`, so
  * solver-bridge.js's serialEngine passes it through and a search's calls run
  * side by side. Callback options (onProgress etc.) are not forwarded.
  */
 'use strict';
 const path = require('path');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
+const { compareSearchRanks } = require('../js/search-scheduler.js');
 
 const HELPERS = {
   cross: path.join(__dirname, '..', 'crossSolver', 'solver-helper-node.js'),
@@ -41,19 +43,26 @@ async function createEnginePool(kind, size) {
   const pending = new Map();
   let nextId = 0;
   const free = workers.slice();
+  // Waiting calls; the lowest look-ahead rank goes first (as in the page's
+  // search-scheduler.js), equal ranks in arrival order.
   const waiting = [];
+  const nextWaiter = () => {
+    let best = 0;
+    for (let i = 1; i < waiting.length; i++) if (compareSearchRanks(waiting[i].rank, waiting[best].rank) < 0) best = i;
+    return waiting.splice(best, 1)[0].resolve;
+  };
   for (const w of workers) {
     w.on('message', ({ id, result, error }) => {
       const p = pending.get(id); pending.delete(id);
       // Hand the worker straight to the next waiter (no window where two
       // callers can both see it free).
-      if (waiting.length) waiting.shift()(w); else free.push(w);
+      if (waiting.length) nextWaiter()(w); else free.push(w);
       if (error) p.reject(new Error(error)); else p.resolve(result);
     });
   }
-  const acquire = () => (free.length ? Promise.resolve(free.shift()) : new Promise(r => waiting.push(r)));
+  const acquire = rank => (free.length ? Promise.resolve(free.shift()) : new Promise(resolve => waiting.push({ resolve, rank })));
   const stats = [];
-  const call = (method, args) => acquire().then(w => new Promise((resolve, reject) => {
+  const call = (method, args, rank = null) => acquire(rank).then(w => new Promise((resolve, reject) => {
     const id = nextId++;
     const t0 = Date.now();
     pending.set(id, {
@@ -69,9 +78,13 @@ async function createEnginePool(kind, size) {
   }));
   // Warm every worker's module so the first search isn't charged for loading it.
   const methods = kind === 'cross' ? ['solveCross', 'solveXcross', 'solveXxcross', 'solveXxxcross', 'solveXxxxcross'] : ['solvePseudo'];
-  const pool = { __gated: true, size: workers.length, stats, terminate: () => Promise.all(workers.map(w => w.terminate())) };
-  for (const m of methods) pool[m] = (...args) => call(m, args);
-  return pool;
+  const view = (rank) => {
+    const v = { __gated: true, size: workers.length, stats, terminate: () => Promise.all(workers.map(w => w.terminate())) };
+    v.withRank = r => view(r);
+    for (const m of methods) v[m] = (...args) => call(m, args, rank);
+    return v;
+  };
+  return view(null);
 }
 
 module.exports = { createEnginePool };

@@ -75,6 +75,20 @@ listed here with the date of the change.
   `putTables()`. Search outputs verified byte-identical to the previous
   binary on the call battery (`tools/engine-battery.js`), and with imported
   tables (`test/offload-e2e.js`).
+- **2026-10-05** `crossSolver/solver.cpp` (performance; outputs verified
+  byte-identical): a goal-DAG search for the cross, xcross, xxcross,
+  xxxcross and xxxxcross classes, used when the move list has wide moves,
+  slices or rotations. The prune and goal checks depend only on the piece
+  indices, so the spellings of one piece-state path (`L` / `r`, and every
+  rotation branch) no longer each search its subtree: `dag_mask` computes,
+  memoised per (state, moves left), which physical moves still reach the goal
+  under the very same checks, and `dag_walk` replays the original depth-first
+  order, move-adjacency, move-count, rotation and centre rules and leaf
+  validation over it. `setDagSearch(false)` restores the original search
+  (`crossSolver/test/dag-search.test.js` compares both). `solver_yield()`
+  only yields to the event loop when 25 ms have passed since the last yield
+  (it used to wait for a timer once per search depth). Verified on the call
+  battery and 281 recorded look-ahead calls (identical output).
 
 ## Trangium's MCC (Movecount Coefficient) — MIT
 

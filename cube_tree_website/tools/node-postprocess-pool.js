@@ -8,13 +8,14 @@
  *   await searchCurrentNode(session, enginePool, null, pseudoPool);
  *   await post.terminate();
  *
- * Each call's solutions go to the worker with the fewest pending jobs; the
- * worker runs solver-bridge.js's postProcessCall, the same function a search
+ * Each call's solutions go to the next free worker, lowest look-ahead rank
+ * first (as in the page); the worker runs solver-bridge.js's postProcessCall, the same function a search
  * runs in-thread without a postProcessor.
  */
 'use strict';
 const path = require('path');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
+const { compareSearchRanks } = require('../js/search-scheduler.js');
 
 if (!isMainThread && workerData && workerData.postProcessPool) {
   const js = path.join(__dirname, '..', 'js');
@@ -31,28 +32,45 @@ if (!isMainThread && workerData && workerData.postProcessPool) {
   });
 }
 
+// Two, so a worker has the next call while its last result is on its way back.
+const IN_FLIGHT = 2;
+
 async function createPostProcessPool(size) {
   const workers = Array.from({ length: Math.max(1, size) }, () => {
     const w = new Worker(__filename, { workerData: { postProcessPool: true } });
     w.pending = 0;
     return w;
   });
-  const waiting = new Map();
+  const inFlight = new Map();
+  // Calls wait here, at most IN_FLIGHT per worker, lowest look-ahead rank
+  // first (as the page's pool does).
+  const queue = [];
   let nextId = 0;
+  const pump = () => {
+    for (;;) {
+      const w = workers.find(x => x.pending < IN_FLIGHT);
+      if (!w || !queue.length) return;
+      let best = 0;
+      for (let i = 1; i < queue.length; i++) if (compareSearchRanks(queue[i].rank, queue[best].rank) < 0) best = i;
+      const { ctx, job, cores, resolve, reject } = queue.splice(best, 1)[0];
+      const id = nextId++;
+      inFlight.set(id, { resolve, reject });
+      w.pending++;
+      w.postMessage({ id, ctx, job, cores });
+    }
+  };
   for (const w of workers) {
     w.on('message', ({ id, candidates, error }) => {
-      const p = waiting.get(id);
-      waiting.delete(id);
+      const p = inFlight.get(id);
+      inFlight.delete(id);
       w.pending--;
       if (error) p.reject(new Error(error)); else p.resolve(candidates);
+      pump();
     });
   }
-  const process = (ctx, job, cores) => new Promise((resolve, reject) => {
-    const w = workers.reduce((a, b) => (b.pending < a.pending ? b : a));
-    const id = nextId++;
-    waiting.set(id, { resolve, reject });
-    w.pending++;
-    w.postMessage({ id, ctx, job, cores });
+  const process = (ctx, job, cores, rank = null) => new Promise((resolve, reject) => {
+    queue.push({ ctx, job, cores, rank, resolve, reject });
+    pump();
   });
   return { process, size: workers.length, terminate: () => Promise.all(workers.map(w => w.terminate())) };
 }

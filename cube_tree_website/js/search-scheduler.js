@@ -20,6 +20,11 @@
  *    A pool runs up to one call per worker at once (PROJECT_STATUS.md §4.34).
  *  - A job's priority can change while it is queued or running (setPriority):
  *    switching scrambles promotes the newly active one and demotes the old.
+ *  - Within one priority, calls made through engine.withRank(rank) (the
+ *    look-ahead's path of candidate indices, solver-bridge.js lookaheadFork)
+ *    run lowest rank first -- the step's own calls (no rank) before any
+ *    look-ahead call, the best candidate's follow-ups before the next one's
+ *    -- and equal ranks in arrival order.
  *
  * Jobs talk to the engines only through wrap(helper), which gates the
  * helper's solve* methods (dispatching each call to a free pool member);
@@ -28,6 +33,14 @@
 'use strict';
 
 const SEARCH_PRIORITY = { BACKGROUND: 0, ACTIVE: 1 };
+
+/** Lexicographic order of look-ahead ranks (null = [] = first). */
+function compareSearchRanks(a, b) {
+  a = a || [];
+  b = b || [];
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+}
 
 function createSearchScheduler() {
   const queued = []; // jobs not started yet, FIFO
@@ -40,7 +53,10 @@ function createSearchScheduler() {
     while (g.free.length && g.waiters.length) {
       let best = 0;
       for (let i = 1; i < g.waiters.length; i++) {
-        if (g.waiters[i].job.priority > g.waiters[best].job.priority) best = i;
+        const w = g.waiters[i];
+        const b = g.waiters[best];
+        if (w.job.priority > b.job.priority
+          || (w.job.priority === b.job.priority && compareSearchRanks(w.rank, b.rank) < 0)) best = i;
       }
       const waiter = g.waiters[best];
       if (waiter.job.priority === SEARCH_PRIORITY.BACKGROUND && activeRunning()) return;
@@ -55,9 +71,9 @@ function createSearchScheduler() {
     return gates.get(engine);
   }
 
-  function gate(job, engine, size, fn) {
+  function gate(job, engine, size, fn, rank = null) {
     const g = gateFor(engine, size);
-    return new Promise(resolve => { g.waiters.push({ job, resolve }); pumpGate(g); })
+    return new Promise(resolve => { g.waiters.push({ job, resolve, rank }); pumpGate(g); })
       .then(slot => Promise.resolve()
         .then(() => fn(slot))
         .finally(() => { g.free.push(slot); pumpGates(); }));
@@ -67,17 +83,19 @@ function createSearchScheduler() {
     return engine => {
       if (!engine) return engine;
       const members = Array.isArray(engine) ? engine : [engine];
-      return new Proxy(members[0], {
+      const view = rank => new Proxy(members[0], {
         get(target, prop) {
           if (prop === '__gated') return true;
+          if (prop === 'withRank') return r => view(r);
           const value = target[prop];
           if (typeof value !== 'function') return value;
           if (typeof prop === 'string' && prop.startsWith('solve')) {
-            return (...args) => gate(job, engine, members.length, slot => members[slot][prop](...args));
+            return (...args) => gate(job, engine, members.length, slot => members[slot][prop](...args), rank);
           }
           return value.bind(target);
         },
       });
+      return view(null);
     };
   }
 
@@ -124,5 +142,5 @@ function createSearchScheduler() {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createSearchScheduler, SEARCH_PRIORITY };
+  module.exports = { createSearchScheduler, SEARCH_PRIORITY, compareSearchRanks };
 }

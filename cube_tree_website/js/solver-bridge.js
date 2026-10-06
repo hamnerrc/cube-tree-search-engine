@@ -435,10 +435,10 @@ function stepsPathCost(holder, stepAlgs, alg) {
       key,
       scoredPath,
       mcc: typeof algSpeedPrefix === 'function' ? algSpeedPrefix(scoredPath) : null,
-      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) : 0,
+      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a, i) => sum + stepPenalty(a, i === 0), 0) : 0,
     };
   }
-  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg) : 0;
+  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg, stepAlgs.length === 0) : 0;
   if (base.mcc) return algSpeedResume(base.mcc, alg) + penalty;
   const path = base.scoredPath ? `${base.scoredPath} ${alg}` : alg;
   return algSpeed(path, false, false) + penalty;
@@ -807,8 +807,13 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // Under a time budget the calls START cheapest first (callCostRank), so the
   // deadline lands on the expensive tail; they are still consumed in plan
   // order, so whatever finishes gives the same output as without a budget.
-  const engine = serialEngine(helper);
-  const pseudoEngine = serialEngine(pseudoHelper);
+  // A look-ahead search's calls carry its rank (its path of candidate indices,
+  // see searchWithLookahead) so a scheduler can run the best candidates'
+  // follow-ups first; the step's own search has none and runs before them.
+  const rank = session.lookaheadRank || null;
+  const ranked = (h) => (rank && h && typeof h.withRank === 'function' ? h.withRank(rank) : h);
+  const engine = ranked(serialEngine(helper));
+  const pseudoEngine = ranked(serialEngine(pseudoHelper));
   const startOrder = deadline
     ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
     : plan;
@@ -860,7 +865,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // pool; PROJECT_STATUS.md §4.40) -- same function, same output.
     const job = postProcessJob(session, p);
     p.candidates = session.postProcessor
-      ? await session.postProcessor(ctx, job, cores)
+      ? await session.postProcessor(ctx, job, cores, rank)
       : await postProcessCall(ctx, job, cores, yieldState);
   };
   // Progressive results (README "Results table"): while calls are still
@@ -1314,6 +1319,21 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   return promise;
 }
 
+/**
+ * `session` with candidate number `i` of its result list committed, for the
+ * look-ahead. Its searches are ranked by the path of candidate indices
+ * ([2] for the third result, [2, 0] for that one's best follow-up, ...):
+ * schedulers that understand ranks (search-scheduler.js, the page's
+ * post-processing pool) serve the lowest one first, so the look-ahead of the
+ * best results finishes first and the list re-ranks progressively instead of
+ * all at the end. Ranks only order the work; results are the same.
+ */
+function lookaheadFork(session, candidate, i) {
+  const s = session.fork(candidate);
+  s.lookaheadRank = [...(session.lookaheadRank || []), i];
+  return s;
+}
+
 /** `results` filtered by `filter` (null = all), keeping the search's flags. */
 function filterResults(results, filter) {
   if (!filter) return results;
@@ -1342,7 +1362,7 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
   // Explored in parallel (an engine pool runs their searches side by side),
   // compared in rank order so ties resolve exactly as a sequential loop would.
   const top = results.slice(0, LOOKAHEAD_INNER_BREADTH);
-  const subs = await Promise.all(top.map(c => bestContinuation(session.fork(c), levels - 1, helper, onStatus, pseudoHelper, deadline, filter, isCancelled)));
+  const subs = await Promise.all(top.map((c, i) => bestContinuation(lookaheadFork(session, c, i), levels - 1, helper, onStatus, pseudoHelper, deadline, filter, isCancelled)));
   let best = null;
   top.forEach((c, i) => {
     const sub = subs[i];
@@ -1417,7 +1437,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   if (onUpdate) onUpdate(rerank(false));
   await Promise.all(top.map((cand, i) => {
     const status = onStatus && (msg => onStatus(`look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    return bestContinuation(session.fork(cand), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
+    return bestContinuation(lookaheadFork(session, cand, i), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
       .then((best) => {
         bests[i] = best;
         if (onUpdate && bests.filter(b => b !== undefined).length < top.length) onUpdate(rerank(false));
@@ -1464,7 +1484,7 @@ if (typeof module !== 'undefined' && module.exports) {
     relabelSlotsForRotation, CORNER_CYCLE, alignPseudoAlg, replayFacelets, rootTargetByLabels, POSTALG_BOUNDARY,
     proEngineOptions, nodeByLabels, NOOP_MOVES,
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
-    postProcessCall, postProcessContext, stepsPathCost,
+    postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, withoutR2L2, hasR2L2, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
   };
 }

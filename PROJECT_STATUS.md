@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-05 (seventeenth pass).*
+*Last updated 2026-10-05 (eighteenth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,37 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-05, after the seventeenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-05, after the eighteenth pass):** read this first.
+- Eighteenth pass (user task list: look-ahead too slow, especially breadth
+  10; wide moves gone from first-step results; other README issues).
+  Writeup: §4.41.
+  1. **Look-ahead bottleneck was the engine's rotation/wide spellings.** In
+     piece terms a wide move is a face turn and a rotation changes nothing,
+     so the pro move set's `r`/`L` children and x/x'/y/y' branches all
+     re-searched the same subtrees: 93% of the nodes of a later-step call.
+     New goal-DAG search in `crossSolver/solver.cpp` (memoised per
+     (state, moves left), replaying the original DFS order and rules):
+     **byte-identical output**, battery 47.9 -> 13.9 s, 281 recorded
+     look-ahead calls 108 -> 17 s, last-pair calls 3.0 -> 0.27 s. Also the
+     per-depth `solver_yield` timer (a fixed ~10-40 ms per call) is now
+     throttled to one per 25 ms. `ENGINE_VERSION` 20261005-dag1.
+  2. **Best-first look-ahead:** search ranks (`lookaheadFork`,
+     `withRank` on gated engines, rank-ordered post-processing pool) run the
+     best candidates' follow-ups first. Browser, depth 5 / breadth 10,
+     default config: first re-ranked result ~6 s (was ~18 s), total ~15-16 s
+     (was ~20 s). Multislot (xcross+xxcross): 52 s -> ~17 s total.
+  3. **Now JS-bound:** post-processing (MCC of ~386k candidates) is ~2/3 of a
+     depth-5 breadth-10 look-ahead on this 2-core machine; see §4.41 for
+     what was measured.
+  4. **Wide moves:** not filtered anywhere -- buried by the flat +2.35
+     r/l step penalty (§4.35, commit 4a77e7c). First-step r/l now cost 1.2
+     (`STEP_PENALTIES.wideRLFirst`, LOO-CV on the pro root steps). Pro
+     benchmark (all 66 steps) mean log10 rank 1.035 -> 1.016, top 10 41 -> 42.
+     New `test/wide-moves-e2e.js` (fails with the old value).
+  5. README: stale "no-op moves" gap fixed; first-step penalty and
+     best-first look-ahead documented.
+
+**Previous handoff (2026-10-05, after the seventeenth pass):**
 - Seventeenth pass (user task: make the solver dramatically faster, exact
   output). Writeup: §4.40. Every change was checked byte-identical (engine
   batteries, full result lists of recorded searches, browser row hashes).
@@ -442,6 +472,8 @@ node cube_tree_website/test/search-budget.test.js
 #   then the same without --solver and with --compare old.json (must say "all calls identical")
 # worst case: node cube_tree_website/tools/worst-case-bench.js --scrambles 2 --depth 1|5
 # slow-ish, real WASM: node cube_tree_website/test/lookahead-e2e.js
+# slow-ish, real WASM: node cube_tree_website/test/wide-moves-e2e.js
+# real WASM, ~10 s: node cube_tree_website/crossSolver/test/dag-search.test.js (DAG search == original DFS)
 node cube_tree_website/crossSolver/test/slot-mapping.test.js   # slow-ish, hits real WASM
 node cube_tree_website/crossSolver/test/color-orientation.test.js  # slow-ish, hits real WASM
 # very slow (minutes; real WASM, full sessions, independent replay; exit!=0 on any bug):
@@ -1902,6 +1934,80 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.41 DONE (2026-10-05, eighteenth pass): look-ahead speed (goal-DAG engine search, best-first look-ahead) and wide first steps
+
+**Where look-ahead time went.** Default config, depth 5, breadth 10, root of
+`R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2`: 150 searches, 260
+engine calls (all distinct inputs, so no duplicated work), ~15 s of warm
+engine time on one engine; headless Chrome 20 s with nothing re-ranked for
+the first 13 s. With multislot (xcross + xxcross) 105 calls, 124 s of engine
+time across 3 workers, 52 s in the browser.
+
+**Engine: the pro move set searched every subtree many times.** A node
+counter (instrumented scratch build) gave only ~2M nodes/s, and on a
+last-pair `solveXxxxcross` 382k nodes unrotated, 2.23M in x/x' branches and
+3.18M in y/y' branches; 468 of its 500 solutions were rotation spellings of
+32 distinct algs. `converter` maps r -> L, l -> R, ... and rotations change
+no piece, while every prune/goal check reads piece indices only -- so `L`
+and `r`, and each rotation branch at each node, re-explored identical
+piece-state subtrees. Fix (`solver.cpp`, all five cross/F2L classes, used
+when the move list has wide moves, slices or rotations):
+`dag_mask_depth_limited_search(state, r)` = set of physical moves whose child
+passes the same checks and still reaches the goal in exactly r moves,
+memoised per (state, r) for the whole call (transpositions included; r = 1
+not stored; 4M-slot cap, ~48 MB); `dag_walk_depth_limited_search` replays the
+original DFS (same move order, `ma2` adjacency, move counts, rotation count,
+rotation-branch checks, leaf validation copied verbatim) but only descends
+where the mask allows. Byte-identical: `tools/engine-battery.js --compare`
+(47.9 -> 13.9 s; heaviest later-step pro xxxcross 28.9 -> 0.96 s), 281
+calls recorded from real look-ahead sessions on the old binary (108 -> 17 s,
+0 differ), new `crossSolver/test/dag-search.test.js` (both searches in one
+binary via `setDagSearch`). Face-only move lists keep the old DFS (the DAG
+build, without adjacency pruning, was slower there). Heavy root pro
+XXXCross (13 moves, 500 solutions): ~8.7 s per call, RSS ~200 MB.
+
+**Engine: per-call yield.** Every IDA* depth awaited a `setTimeout(0)`
+(clamped to 4 ms in browsers) -- a later-step call's median was ~40 ms, most
+of it timers. `solver_yield` now only yields when 25 ms passed since the last
+yield: median 4 ms.
+
+**Best-first look-ahead.** All candidates' follow-ups used to interleave
+FIFO, so every look-ahead finished near the end. Searches made by the
+look-ahead carry a rank (`lookaheadFork`: path of candidate indices); the
+scheduler's gates (`engine.withRank`) and the page's post-processing pool
+(at most 2 calls in flight per worker) serve the lowest rank first, the
+step's own calls before any. Same results. Browser A/B, alternating runs:
+ranks first result 5.6-8 s / total 15-19 s; without 17-19 s / 20.5-21.6 s.
+Measured and not kept: ranking only by top-level candidate (no clear
+difference within the noise); 2 post workers on this 4-thread machine
+(identical, the page is CPU-bound).
+
+**Now JS-bound.** Serial, warm: ~4.3 s engine vs 8.7 s post-processing
+(386k candidates; MCC `test`/`algSpeed` ~54%, facelet replays ~15%). Exact
+duplicate candidates are only 5%; no admissible MCC bound strong enough to
+skip candidates was found (a move can add 0 time: U/D parallel turns).
+
+**Wide moves in first steps.** They are generated (2/3 of root candidates:
+engine pro moves, cross optimisation, side-cross inspections) but the
+§4.35 flat +2.35 per r/l (commit 4a77e7c) put the best wide Cross at rank
+112 and no wide XCross in the top 100 (before 4a77e7c: wide at rank 1).
+`f`/`b` spellings at the top are honest (inspection variants of r/l algs;
+MCC scores f like F, wideOther applies). Swept a first-step-only r/l value
+on the 19 root pro steps (`tools/pro-ranking.js --app` pools):
+leave-one-solve-out CV mean log10 rank 2.279 -> 2.250, 18/19 folds pick 1.2
+(0 is worse: 2.404). `STEP_PENALTIES.wideRLFirst = 1.2`, used by
+`stepsPathCost` and `pro-ranking.js`. All 66 steps: 1.035 -> 1.016, top 10
+41 -> 42 (later steps move slightly, all up: TPP divides by piece counts).
+Best r/l result: default config #2, xcross+xxcross #6 (was 55); new
+`test/wide-moves-e2e.js` checks first page + physical replay of the top 100
+wide results, and fails with 2.35.
+
+**Verification.** All fast suites; lookahead, progressive, search-options,
+offload, wide-moves, dag-search, slot-mapping, color-orientation e2e;
+`solver-bridge-e2e.js --pro --scrambles 2 --seed 3` (0 bad finals);
+`pro-references-e2e.js`: 44/66 professional segments in the search tree
+(engine output unchanged, so this is the standing figure).
 
 ### 4.40 DONE (2026-10-05, seventeenth pass): solver performance -- Asyncify, shared prune tables, post-processing workers
 

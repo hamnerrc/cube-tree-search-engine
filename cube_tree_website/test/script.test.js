@@ -241,6 +241,24 @@ test('stepPenalty (PROJECT_STATUS §4.35): penalties only, step-aware rotations'
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
 });
 
+test('stepPenalty (PROJECT_STATUS §4.41): wide r/l cost less in the first step', () => {
+  const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
+  assert.ok(P.wideRLFirst < P.wideRL, 'first-step wide r/l are cheaper (they were buried below every face-turn first step)');
+  assert.strictEqual(stepPenalty("r U r'", true), 2 * P.wideRLFirst);
+  assert.strictEqual(stepPenalty("r U r'", false), 2 * P.wideRL);
+  assert.strictEqual(stepPenalty("r U r'"), 2 * P.wideRL, 'later steps by default');
+  assert.strictEqual(stepPenalty("D' B u", true), P.D + P.B + P.wideOther, 'only r/l change');
+  // SolveSession.pathCost: the first committed step and a root candidate use
+  // the first-step value, later ones the normal one.
+  const scriptExports = require('../js/script.js');
+  for (const k of ['algSpeed', 'algSpeedPrefix', 'algSpeedResume', 'stepPenalty']) global[k] = scriptExports[k]; // browser globals
+  const { stepsPathCost } = require('../js/solver-bridge.js');
+  const { algSpeed } = scriptExports;
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
+  near(stepsPathCost({}, [], "r U R'"), algSpeed("r U R'") + P.wideRLFirst);
+  near(stepsPathCost({}, ["r U R'"], "l U' L'"), algSpeed("r U R' l U' L'") + P.wideRLFirst + P.wideRL);
+});
+
 test('normalizeCriteria: pro move set + cross optimisation always on, retired options moved to view settings', () => {
   const { normalizeCriteria, ALWAYS_ON_OPTIONS } = require(path.join(__dirname, '..', 'js', 'script.js'));
   const fresh = normalizeCriteria({ colors: ['white'], advanced: ['xcross'] });

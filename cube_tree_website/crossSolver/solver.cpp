@@ -15,8 +15,16 @@ EM_JS(void, update, (const char *str), {
     postMessage(UTF8ToString(str));
 });
 
+// cube⑂tree modification (PROJECT_STATUS.md §4.41): yield to the event loop
+// (where a cancel message can arrive) at most every 25 ms of engine work. A
+// setTimeout per IDA* depth was a fixed ~10 ms per call in Node and more in
+// browsers (nested timers are clamped to 4 ms), most of a typical later-step
+// call; skipping it only resumes on a microtask.
 EM_ASYNC_JS(void, solver_yield, (), {
+    var now = Date.now();
+    if (Module._lastYield && now - Module._lastYield < 25) return;
     await new Promise(function(resolve) { setTimeout(resolve, 0); });
+    Module._lastYield = Date.now();
 });
 EM_JS(int, solver_is_cancelled, (), {
     return (Module._cancelRequested === true) ? 1 : 0;
@@ -76,6 +84,337 @@ static int g_cancel_check_counter = 0;
 // Cancel responsiveness is dominated by the d-loop solver_yield() (once
 // per search depth), not by this mask, so increasing it is safe.
 static int g_cancel_check_mask = 0x7FFF;
+extern std::vector<std::vector<int>> rotationMapReverse;
+extern std::vector<int> converter;
+
+// ---------------------------------------------------------------------------
+// cube⑂tree modification (PROJECT_STATUS.md §4.41): goal-DAG search.
+//
+// The search's prune and goal checks depend only on the piece indices, never
+// on the centre orientation: a wide move is a face turn in piece terms (see
+// `converter`: r -> L, l -> R, ...) and a rotation changes no piece. So the
+// original DFS re-explored the same piece-state subtree once per spelling:
+// for `L` and `r`, and again inside every rotation branch (x, x', y, y' at
+// each node of the pro move set) -- 90%+ of the nodes of a later-step search.
+//
+// Here the piece-state subtrees are searched once: dag_mask(state, r) is the
+// set of physical moves (table indices 0..26) whose child passes the very
+// same checks and still reaches the goal in exactly r moves, memoised per
+// (state, r) for the whole call (transpositions included). The walk then
+// replays the original DFS exactly -- same move order, same move-adjacency,
+// move-count, rotation-count and centre rules, same leaf validation and
+// output -- but only descends where dag_mask says a goal is reachable, which
+// is precisely where the original DFS could emit anything. Output is the
+// original's, byte for byte (tools/engine-battery.js --compare; the original
+// DFS stays available with setDagSearch(false)).
+// ---------------------------------------------------------------------------
+static bool g_dag_search = true;
+void setDagSearch(bool on)
+{
+    g_dag_search = on;
+}
+// Set when the deadline or a cancel fires inside dag_mask (results computed
+// after that are incomplete and must not be used or memoised).
+static bool g_dag_abort = false;
+
+struct DagMemo
+{
+    // Open addressing; a slot holds key + 1 (0 = empty).
+    std::vector<unsigned long long> keys;
+    std::vector<unsigned int> vals;
+    size_t used = 0;
+    static const size_t MAX_SLOTS = (size_t)1 << 22; // 48 MB; beyond that, no new entries
+    void reset()
+    {
+        keys.assign((size_t)1 << 14, 0);
+        keys.shrink_to_fit();
+        vals.assign((size_t)1 << 14, 0);
+        vals.shrink_to_fit();
+        used = 0;
+    }
+    static inline size_t mix(unsigned long long k)
+    {
+        k ^= k >> 33;
+        k *= 0xff51afd7ed558ccdULL;
+        k ^= k >> 33;
+        k *= 0xc4ceb9fe1a85ec53ULL;
+        k ^= k >> 33;
+        return (size_t)k;
+    }
+    inline bool find(unsigned long long key, unsigned int &val) const
+    {
+        const size_t mask = keys.size() - 1;
+        const unsigned long long k = key + 1;
+        for (size_t i = mix(key) & mask;; i = (i + 1) & mask)
+        {
+            if (keys[i] == k)
+            {
+                val = vals[i];
+                return true;
+            }
+            if (keys[i] == 0)
+            {
+                return false;
+            }
+        }
+    }
+    void insert(unsigned long long key, unsigned int val)
+    {
+        if ((used + 1) * 2 > keys.size())
+        {
+            if (keys.size() >= MAX_SLOTS)
+            {
+                return;
+            }
+            std::vector<unsigned long long> old_keys;
+            std::vector<unsigned int> old_vals;
+            old_keys.swap(keys);
+            old_vals.swap(vals);
+            keys.assign(old_keys.size() * 2, 0);
+            vals.assign(old_keys.size() * 2, 0);
+            used = 0;
+            for (size_t i = 0; i < old_keys.size(); ++i)
+            {
+                if (old_keys[i])
+                {
+                    insert(old_keys[i] - 1, old_vals[i]);
+                }
+            }
+        }
+        const size_t mask = keys.size() - 1;
+        const unsigned long long k = key + 1;
+        size_t i = mix(key) & mask;
+        while (keys[i] != 0 && keys[i] != k)
+        {
+            i = (i + 1) & mask;
+        }
+        if (keys[i] == 0)
+        {
+            ++used;
+        }
+        keys[i] = k;
+        vals[i] = val;
+    }
+};
+
+// Only move lists with wide moves, slices or rotations have spellings that
+// share piece-state subtrees; for plain face turns the original DFS (with its
+// move-adjacency pruning) is faster.
+inline bool dag_worthwhile(const std::vector<int> &move_restrict)
+{
+    for (int i : move_restrict)
+    {
+        if (i >= 18)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Physical moves reachable from `move_restrict_move` in any centre orientation.
+std::vector<int> dag_physical_moves(const std::vector<int> &move_restrict_move)
+{
+    std::vector<bool> seen(27, false);
+    for (const std::vector<int> &row : rotationMapReverse)
+    {
+        for (int i : move_restrict_move)
+        {
+            seen[converter[row[i]]] = true;
+        }
+    }
+    std::vector<int> out;
+    for (int m = 0; m < 27; ++m)
+    {
+        if (seen[m])
+        {
+            out.push_back(m);
+        }
+    }
+    return out;
+}
+
+// Bit m set: physical move m passes the checks from `st` with `r` moves left
+// and the goal is reachable in exactly r moves (r - 1 after it).
+template <class S>
+unsigned int dag_mask_depth_limited_search(S &s, const typename S::DagState &st, int r)
+{
+    if (g_dag_abort)
+    {
+        return 0;
+    }
+    if (deadline_reached())
+    {
+        g_dag_abort = true;
+        return 0;
+    }
+    if (r >= 9 && (++g_cancel_check_counter & g_cancel_check_mask) == 0 && solver_is_cancelled())
+    {
+        g_dag_abort = true;
+        return 0;
+    }
+    // r == 1 is cheap to recompute and the most numerous: not memoised.
+    unsigned long long key = 0;
+    if (r >= 2)
+    {
+        key = s.dag_key(st, r);
+        unsigned int v;
+        if (s.dag_memo.find(key, v))
+        {
+            return v;
+        }
+    }
+    unsigned int mask = 0;
+    typename S::DagState ch;
+    for (int m : s.dag_phys)
+    {
+        s.dag_apply(st, m, ch);
+        if (!s.dag_move_ok(ch, r))
+        {
+            continue;
+        }
+        bool alive;
+        if (r == 1)
+        {
+            alive = s.dag_goal(ch);
+        }
+        else
+        {
+            alive = dag_mask_depth_limited_search(s, ch, r - 1) != 0
+                    // a rotation as the last token, at a solved state
+                    || (r == 2 && s.dag_rot_any && s.dag_goal(ch) && s.dag_rot_ok(ch, 1));
+        }
+        if (alive)
+        {
+            mask |= 1u << m;
+        }
+    }
+    if (g_dag_abort)
+    {
+        return 0;
+    }
+    if (r >= 2)
+    {
+        s.dag_memo.insert(key, mask);
+    }
+    return mask;
+}
+
+// The original depth_limited_search, descending only where dag_mask allows.
+template <class S>
+bool dag_walk_depth_limited_search(S &s, const typename S::DagState &st, int depth, int center, int rot_count, int aprev)
+{
+    if (deadline_reached())
+    {
+        return true;
+    }
+    if (depth >= 9)
+    {
+        if ((++g_cancel_check_counter & g_cancel_check_mask) == 0)
+        {
+            if (solver_is_cancelled()) return true;
+        }
+    }
+    const unsigned int mask = dag_mask_depth_limited_search(s, st, depth);
+    if (g_dag_abort)
+    {
+        return true;
+    }
+    const std::vector<std::vector<int>> &centers = *s.dag_centers;
+    if (mask)
+    {
+        typename S::DagState ch;
+        for (int i : s.move_restrict_move)
+        {
+            if (s.ma2[aprev + i] || s.mc_tmp[i] >= s.mc[i])
+            {
+                continue;
+            }
+            const int m = converter[rotationMapReverse[center][i]];
+            if (!((mask >> m) & 1u))
+            {
+                continue;
+            }
+            s.sol.emplace_back(i);
+            s.mc_tmp[i] += 1;
+            if (depth == 1)
+            {
+                if (s.depth_limited_search_emit())
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                s.dag_apply(st, m, ch);
+                if (dag_walk_depth_limited_search(s, ch, depth - 1, centers[center][i], rot_count, i * 54))
+                {
+                    return true;
+                }
+            }
+            s.sol.pop_back();
+            s.mc_tmp[i] -= 1;
+        }
+    }
+    for (int i : s.move_restrict_rot)
+    {
+        if (s.ma2[aprev + i] || s.mc_tmp[i] >= s.mc[i])
+        {
+            continue;
+        }
+        if (rot_count >= s.max_rot_count)
+        {
+            continue;
+        }
+        if (!s.dag_rot_ok(st, depth))
+        {
+            continue;
+        }
+        // Nothing below: the original finds nothing there either.
+        if (depth == 1 ? !s.dag_goal(st) : mask == 0)
+        {
+            continue;
+        }
+        s.sol.emplace_back(i);
+        s.mc_tmp[i] += 1;
+        if (depth == 1)
+        {
+            if (s.depth_limited_search_emit())
+            {
+                return true;
+            }
+        }
+        else if (dag_walk_depth_limited_search(s, st, depth, centers[center][i], rot_count + 1, i * 54))
+        {
+            return true;
+        }
+        s.sol.pop_back();
+        s.mc_tmp[i] -= 1;
+    }
+    return false;
+}
+
+// One IDA* iteration of the walk; the memo is kept across the iterations of
+// a call (a (state, r) entry does not depend on the iteration).
+template <class S>
+bool dag_iteration(S &s, int d, int d_min, int center, int aprev)
+{
+    if (d == d_min)
+    {
+        s.dag_memo.reset();
+        s.dag_phys = dag_physical_moves(s.move_restrict_move);
+        s.dag_rot_any = !s.move_restrict_rot.empty() && s.max_rot_count > 0;
+    }
+    g_dag_abort = false;
+    typename S::DagState st;
+    s.dag_initial(st);
+    const bool stop = dag_walk_depth_limited_search(s, st, d, center, 0, aprev);
+    if (d == s.max_length || stop)
+    {
+        s.dag_memo.reset(); // release the memory between calls
+    }
+    return stop;
+}
 struct State
 {
     std::vector<int> cp;
@@ -1177,6 +1516,140 @@ struct cross_search
         prune_table_initialized = false;
     }
 
+    // ---- goal-DAG search adapters (§4.41; see dag_walk_depth_limited_search) ----
+    struct DagState
+    {
+        int v[2];
+    };
+    DagMemo dag_memo;
+    std::vector<int> dag_phys;
+    bool dag_rot_any = false;
+    const std::vector<std::vector<int>> *dag_centers = &center_move_table;
+    inline void dag_apply(const DagState &a, int m, DagState &b) const
+    {
+        b.v[0] = multi_move_table[a.v[0] * 27 + m];
+        b.v[1] = multi_move_table[a.v[1] * 27 + m];
+    }
+    // The move loop's prune checks on the child `b` (`depth` = moves left before it).
+    inline bool dag_move_ok(const DagState &b, int depth) const
+    {
+        int p = prune_table[b.v[0] * 528 + b.v[1]];
+        return !(p != 255 && p >= depth);
+    }
+    inline bool dag_goal(const DagState &b) const
+    {
+        return prune_table[b.v[0] * 528 + b.v[1]] == 0;
+    }
+    // The rotation loop's checks at `a`.
+    inline bool dag_rot_ok(const DagState &a, int depth) const
+    {
+        int p = prune_table[a.v[0] * 528 + a.v[1]];
+        return !(p != 255 && p >= depth);
+    }
+    inline unsigned long long dag_key(const DagState &a, int r) const
+    {
+        unsigned long long k = (unsigned long long)r;
+        k = k * 528ULL + (unsigned long long)a.v[0];
+        k = k * 528ULL + (unsigned long long)a.v[1];
+        return k;
+    }
+    // The search start (index* hold their values times 27 by then).
+    void dag_initial(DagState &st) const
+    {
+        st.v[0] = index1 / 27;
+        st.v[1] = index2 / 27;
+    }
+    // The original leaf validation and output for the path in `sol` (goal reached).
+    bool depth_limited_search_emit()
+    {
+        bool valid = true;
+        bool p_valid = false;
+        bool center_valid = false;
+        int l = static_cast<int>(sol.size());
+        int c = 0;
+        int rot_count_tmp = 0;
+        int center_tmp = initial_center;
+        int index1_tmp2 = index1;
+        int index2_tmp2 = index2;
+        for (int j : sol)
+        {
+            center_valid = false;
+            if (j >= 45)
+            {
+                center_tmp = center_move_table[center_tmp][j];
+                c++;
+                rot_count_tmp++;
+                if (rot_count_tmp > max_rot_count)
+                {
+                    valid = false;
+                    break;
+                }
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && center_valid && p_valid)
+                {
+                    valid = false;
+                    break;
+                }
+                continue;
+            }
+            m_tmp = converter[rotationMapReverse[center_tmp][j]];
+            center_tmp = center_move_table[center_tmp][j];
+            if (!g_noop_allowed[j] && index1_tmp2 == multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == multi_move_table[index2_tmp2 + m_tmp] * 27)
+            {
+                valid = false;
+                break;
+            }
+            else
+            {
+                c += 1;
+                index1_tmp2 = multi_move_table[index1_tmp2 + m_tmp];
+                index2_tmp2 = multi_move_table[index2_tmp2 + m_tmp];
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && prune_table[index1_tmp2 * 528 + index2_tmp2] == 0)
+                {
+                    p_valid = true;
+                    if (center_valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                index1_tmp2 *= 27;
+                index2_tmp2 *= 27;
+            }
+        }
+        if (valid && center_valid)
+        {
+            count += 1;
+            if (rotation == "")
+            {
+                tmp = post_moves + AlgToString(sol);
+            }
+            else
+            {
+                tmp = rotation + " " + post_moves + AlgToString(sol);
+            }
+            update(tmp.c_str());
+            if (count == sol_num)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool depth_limited_search(int arg_index1, int arg_index2, int depth, int center, int rot_count, int aprev)
     {
         if (deadline_reached())
@@ -1515,7 +1988,7 @@ struct cross_search
             {
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -1645,7 +2118,7 @@ struct cross_search
                 }
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -1695,6 +2168,150 @@ struct xcross_search
     xcross_search()
     {
         // move tables are in globals; prune table allocation deferred to start_search_persistent()
+    }
+
+    // ---- goal-DAG search adapters (§4.41; see dag_walk_depth_limited_search) ----
+    struct DagState
+    {
+        int v[3];
+    };
+    DagMemo dag_memo;
+    std::vector<int> dag_phys;
+    bool dag_rot_any = false;
+    const std::vector<std::vector<int>> *dag_centers = &g_center_move_table;
+    inline void dag_apply(const DagState &a, int m, DagState &b) const
+    {
+        b.v[0] = g_xcross_multi_move_table[a.v[0] * 27 + m];
+        b.v[1] = g_corner_move_table[a.v[1] * 27 + m];
+        b.v[2] = g_edge_move_table[a.v[2] * 27 + m];
+    }
+    // The move loop's prune checks on the child `b` (`depth` = moves left before it).
+    inline bool dag_move_ok(const DagState &b, int depth) const
+    {
+        int p1 = prune_table1[b.v[0] * 24 + b.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        if (pair_table && pair_table[(b.v[1]) * 24 + b.v[2]] >= depth) return false;
+        return true;
+    }
+    inline bool dag_goal(const DagState &b) const
+    {
+        return prune_table1[b.v[0] * 24 + b.v[1]] == 0 && b.v[2] == edge_solved1;
+    }
+    // The rotation loop's checks at `a`.
+    inline bool dag_rot_ok(const DagState &a, int depth) const
+    {
+        int p1 = prune_table1[a.v[0] * 24 + a.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        if (pair_table && pair_table[(a.v[1]) * 24 + a.v[2]] > depth) return false;
+        return true;
+    }
+    inline unsigned long long dag_key(const DagState &a, int r) const
+    {
+        unsigned long long k = (unsigned long long)r;
+        k = k * 190080ULL + (unsigned long long)a.v[0];
+        k = k * 24ULL + (unsigned long long)a.v[1];
+        k = k * 24ULL + (unsigned long long)a.v[2];
+        return k;
+    }
+    // The search start (index* hold their values times 27 by then).
+    void dag_initial(DagState &st) const
+    {
+        st.v[0] = index1 / 27;
+        st.v[1] = index2 / 27;
+        st.v[2] = index3 / 27;
+    }
+    // The original leaf validation and output for the path in `sol` (goal reached).
+    bool depth_limited_search_emit()
+    {
+        bool valid = true;
+        bool p_valid = false;
+        bool center_valid = false;
+        int l = static_cast<int>(sol.size());
+        int c = 0;
+        int rot_count_tmp = 0;
+        int center_tmp = initial_center;
+        int index1_tmp2 = index1;
+        int index2_tmp2 = index2;
+        int index3_tmp2 = index3;
+        for (int j : sol)
+        {
+            center_valid = false;
+            if (j >= 45)
+            {
+                center_tmp = g_center_move_table[center_tmp][j];
+                c++;
+                rot_count_tmp++;
+                if (rot_count_tmp > max_rot_count)
+                {
+                    valid = false;
+                    break;
+                }
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && center_valid && p_valid)
+                {
+                    valid = false;
+                    break;
+                }
+                continue;
+            }
+            m_tmp = converter[rotationMapReverse[center_tmp][j]];
+            center_tmp = g_center_move_table[center_tmp][j];
+            if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index3_tmp2 == g_edge_move_table[index3_tmp2 + m_tmp] * 27)
+            {
+                valid = false;
+                break;
+            }
+            else
+            {
+                c += 1;
+                index1_tmp2 = g_xcross_multi_move_table[index1_tmp2 + m_tmp];
+                index2_tmp2 = g_corner_move_table[index2_tmp2 + m_tmp];
+                index3_tmp2 = g_edge_move_table[index3_tmp2 + m_tmp];
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && (prune_table1[index1_tmp2 * 24 + index2_tmp2] == 0 && index3_tmp2 == edge_solved1))
+                {
+                    p_valid = true;
+                    if (center_valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                index1_tmp2 *= 27;
+                index2_tmp2 *= 27;
+                index3_tmp2 *= 27;
+            }
+        }
+        if (valid && center_valid)
+        {
+            count += 1;
+            if (rotation == "")
+            {
+                tmp = post_moves + AlgToString(sol);
+            }
+            else
+            {
+                tmp = rotation + " " + post_moves + AlgToString(sol);
+            }
+            update(tmp.c_str());
+            if (count == sol_num)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index3, int depth, int center, int rot_count, int aprev)
@@ -2062,7 +2679,7 @@ struct xcross_search
             {
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index3, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index3, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -2193,7 +2810,7 @@ struct xcross_search
                 }
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index3, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index3, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -2252,6 +2869,166 @@ struct xxcross_search
 
     xxcross_search()
     {
+    }
+
+    // ---- goal-DAG search adapters (§4.41; see dag_walk_depth_limited_search) ----
+    struct DagState
+    {
+        int v[5];
+    };
+    DagMemo dag_memo;
+    std::vector<int> dag_phys;
+    bool dag_rot_any = false;
+    const std::vector<std::vector<int>> *dag_centers = &g_center_move_table;
+    inline void dag_apply(const DagState &a, int m, DagState &b) const
+    {
+        b.v[0] = g_xcross_multi_move_table[a.v[0] * 27 + m];
+        b.v[1] = g_corner_move_table[a.v[1] * 27 + m];
+        b.v[2] = g_corner_move_table[a.v[2] * 27 + m];
+        b.v[3] = g_edge_move_table[a.v[3] * 27 + m];
+        b.v[4] = g_edge_move_table[a.v[4] * 27 + m];
+    }
+    // The move loop's prune checks on the child `b` (`depth` = moves left before it).
+    inline bool dag_move_ok(const DagState &b, int depth) const
+    {
+        int p1 = prune_table1[b.v[0] * 24 + b.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[b.v[0] * 24 + b.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        if (pair_table && pair_table[((b.v[1] * 24 + b.v[3]) * 24 + b.v[2]) * 24 + b.v[4]] >= depth) return false;
+        return true;
+    }
+    inline bool dag_goal(const DagState &b) const
+    {
+        return prune_table1[b.v[0] * 24 + b.v[1]] == 0 && prune_table2[b.v[0] * 24 + b.v[2]] == 0 && b.v[3] == edge_solved1 && b.v[4] == edge_solved2;
+    }
+    // The rotation loop's checks at `a`.
+    inline bool dag_rot_ok(const DagState &a, int depth) const
+    {
+        int p1 = prune_table1[a.v[0] * 24 + a.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[a.v[0] * 24 + a.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        if (pair_table && pair_table[((a.v[1] * 24 + a.v[3]) * 24 + a.v[2]) * 24 + a.v[4]] > depth) return false;
+        return true;
+    }
+    inline unsigned long long dag_key(const DagState &a, int r) const
+    {
+        unsigned long long k = (unsigned long long)r;
+        k = k * 190080ULL + (unsigned long long)a.v[0];
+        k = k * 24ULL + (unsigned long long)a.v[1];
+        k = k * 24ULL + (unsigned long long)a.v[2];
+        k = k * 24ULL + (unsigned long long)a.v[3];
+        k = k * 24ULL + (unsigned long long)a.v[4];
+        return k;
+    }
+    // The search start (index* hold their values times 27 by then).
+    void dag_initial(DagState &st) const
+    {
+        st.v[0] = index1 / 27;
+        st.v[1] = index2 / 27;
+        st.v[2] = index4 / 27;
+        st.v[3] = index5 / 27;
+        st.v[4] = index6 / 27;
+    }
+    // The original leaf validation and output for the path in `sol` (goal reached).
+    bool depth_limited_search_emit()
+    {
+        bool valid = true;
+        bool p_valid = false;
+        bool center_valid = false;
+        int l = static_cast<int>(sol.size());
+        int c = 0;
+        int rot_count_tmp = 0;
+        int center_tmp = initial_center;
+        int index1_tmp2 = index1;
+        int index2_tmp2 = index2;
+        int index4_tmp2 = index4;
+        int index5_tmp2 = index5;
+        int index6_tmp2 = index6;
+        for (int j : sol)
+        {
+            center_valid = false;
+            if (j >= 45)
+            {
+                center_tmp = g_center_move_table[center_tmp][j];
+                c++;
+                rot_count_tmp++;
+                if (rot_count_tmp > max_rot_count)
+                {
+                    valid = false;
+                    break;
+                }
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && center_valid && p_valid)
+                {
+                    valid = false;
+                    break;
+                }
+                continue;
+            }
+            m_tmp = converter[rotationMapReverse[center_tmp][j]];
+            center_tmp = g_center_move_table[center_tmp][j];
+            if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index5_tmp2 == g_edge_move_table[index5_tmp2 + m_tmp] * 27 && index6_tmp2 == g_edge_move_table[index6_tmp2 + m_tmp] * 27)
+            {
+                valid = false;
+                break;
+            }
+            else
+            {
+                c += 1;
+                index1_tmp2 = g_xcross_multi_move_table[index1_tmp2 + m_tmp];
+                index2_tmp2 = g_corner_move_table[index2_tmp2 + m_tmp];
+                index4_tmp2 = g_corner_move_table[index4_tmp2 + m_tmp];
+                index5_tmp2 = g_edge_move_table[index5_tmp2 + m_tmp];
+                index6_tmp2 = g_edge_move_table[index6_tmp2 + m_tmp];
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && (prune_table1[index1_tmp2 * 24 + index2_tmp2] == 0 && prune_table2[index1_tmp2 * 24 + index4_tmp2] == 0 && index5_tmp2 == edge_solved1 && index6_tmp2 == edge_solved2))
+                {
+                    p_valid = true;
+                    if (center_valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                index1_tmp2 *= 27;
+                index2_tmp2 *= 27;
+                index4_tmp2 *= 27;
+                index5_tmp2 *= 27;
+                index6_tmp2 *= 27;
+            }
+        }
+        if (valid && center_valid)
+        {
+            count += 1;
+            if (rotation == "")
+            {
+                tmp = post_moves + AlgToString(sol);
+            }
+            else
+            {
+                tmp = rotation + " " + post_moves + AlgToString(sol);
+            }
+            update(tmp.c_str());
+            if (count == sol_num)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index5, int arg_index6, int depth, int center, int rot_count, int aprev)
@@ -2658,7 +3435,7 @@ struct xxcross_search
             {
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index5, index6, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index5, index6, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -2806,7 +3583,7 @@ struct xxcross_search
                 }
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index5, index6, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index5, index6, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -2880,6 +3657,188 @@ struct xxxcross_search
 
     xxxcross_search()
     {
+    }
+
+    // ---- goal-DAG search adapters (§4.41; see dag_walk_depth_limited_search) ----
+    struct DagState
+    {
+        int v[7];
+    };
+    DagMemo dag_memo;
+    std::vector<int> dag_phys;
+    bool dag_rot_any = false;
+    const std::vector<std::vector<int>> *dag_centers = &g_center_move_table;
+    inline void dag_apply(const DagState &a, int m, DagState &b) const
+    {
+        b.v[0] = g_xcross_multi_move_table[a.v[0] * 27 + m];
+        b.v[1] = g_corner_move_table[a.v[1] * 27 + m];
+        b.v[2] = g_corner_move_table[a.v[2] * 27 + m];
+        b.v[3] = g_corner_move_table[a.v[3] * 27 + m];
+        b.v[4] = g_edge_move_table[a.v[4] * 27 + m];
+        b.v[5] = g_edge_move_table[a.v[5] * 27 + m];
+        b.v[6] = g_edge_move_table[a.v[6] * 27 + m];
+    }
+    // The move loop's prune checks on the child `b` (`depth` = moves left before it).
+    inline bool dag_move_ok(const DagState &b, int depth) const
+    {
+        int p1 = prune_table1[b.v[0] * 24 + b.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[b.v[0] * 24 + b.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        int p3 = prune_table3[b.v[0] * 24 + b.v[3]];
+        if (p3 != 255 && p3 >= depth) return false;
+        if (pair_table12 && pair_table12[(((b.v[1]) * 24 + b.v[4]) * 24 + b.v[2]) * 24 + b.v[5]] >= depth) return false;
+        if (pair_table13 && pair_table13[(((b.v[1]) * 24 + b.v[4]) * 24 + b.v[3]) * 24 + b.v[6]] >= depth) return false;
+        if (pair_table23 && pair_table23[(((b.v[2]) * 24 + b.v[5]) * 24 + b.v[3]) * 24 + b.v[6]] >= depth) return false;
+        if (edge_bound(edge_table1, b.v[0] * 24 + b.v[4]) >= depth || edge_bound(edge_table2, b.v[0] * 24 + b.v[5]) >= depth || edge_bound(edge_table3, b.v[0] * 24 + b.v[6]) >= depth) return false;
+        return true;
+    }
+    inline bool dag_goal(const DagState &b) const
+    {
+        return prune_table1[b.v[0] * 24 + b.v[1]] == 0 && prune_table2[b.v[0] * 24 + b.v[2]] == 0 && prune_table3[b.v[0] * 24 + b.v[3]] == 0 && b.v[4] == edge_solved1 && b.v[5] == edge_solved2 && b.v[6] == edge_solved3;
+    }
+    // The rotation loop's checks at `a`.
+    inline bool dag_rot_ok(const DagState &a, int depth) const
+    {
+        int p1 = prune_table1[a.v[0] * 24 + a.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[a.v[0] * 24 + a.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        int p3 = prune_table3[a.v[0] * 24 + a.v[3]];
+        if (p3 != 255 && p3 >= depth) return false;
+        if (pair_table12 && pair_table12[(((a.v[1]) * 24 + a.v[4]) * 24 + a.v[2]) * 24 + a.v[5]] > depth) return false;
+        if (pair_table13 && pair_table13[(((a.v[1]) * 24 + a.v[4]) * 24 + a.v[3]) * 24 + a.v[6]] > depth) return false;
+        if (pair_table23 && pair_table23[(((a.v[2]) * 24 + a.v[5]) * 24 + a.v[3]) * 24 + a.v[6]] > depth) return false;
+        if (edge_bound(edge_table1, a.v[0] * 24 + a.v[4]) > depth || edge_bound(edge_table2, a.v[0] * 24 + a.v[5]) > depth || edge_bound(edge_table3, a.v[0] * 24 + a.v[6]) > depth) return false;
+        return true;
+    }
+    inline unsigned long long dag_key(const DagState &a, int r) const
+    {
+        unsigned long long k = (unsigned long long)r;
+        k = k * 190080ULL + (unsigned long long)a.v[0];
+        k = k * 24ULL + (unsigned long long)a.v[1];
+        k = k * 24ULL + (unsigned long long)a.v[2];
+        k = k * 24ULL + (unsigned long long)a.v[3];
+        k = k * 24ULL + (unsigned long long)a.v[4];
+        k = k * 24ULL + (unsigned long long)a.v[5];
+        k = k * 24ULL + (unsigned long long)a.v[6];
+        return k;
+    }
+    // The search start (index* hold their values times 27 by then).
+    void dag_initial(DagState &st) const
+    {
+        st.v[0] = index1 / 27;
+        st.v[1] = index2 / 27;
+        st.v[2] = index4 / 27;
+        st.v[3] = index6 / 27;
+        st.v[4] = index7 / 27;
+        st.v[5] = index8 / 27;
+        st.v[6] = index9 / 27;
+    }
+    // The original leaf validation and output for the path in `sol` (goal reached).
+    bool depth_limited_search_emit()
+    {
+        bool valid = true;
+        bool p_valid = false;
+        bool center_valid = false;
+        int l = static_cast<int>(sol.size());
+        int c = 0;
+        int rot_count_tmp = 0;
+        int center_tmp = initial_center;
+        int index1_tmp2 = index1;
+        int index2_tmp2 = index2;
+        int index4_tmp2 = index4;
+        int index6_tmp2 = index6;
+        int index7_tmp2 = index7;
+        int index8_tmp2 = index8;
+        int index9_tmp2 = index9;
+        for (int j : sol)
+        {
+            center_valid = false;
+            if (j >= 45)
+            {
+                center_tmp = g_center_move_table[center_tmp][j];
+                c++;
+                rot_count_tmp++;
+                if (rot_count_tmp > max_rot_count)
+                {
+                    valid = false;
+                    break;
+                }
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && center_valid && p_valid)
+                {
+                    valid = false;
+                    break;
+                }
+                continue;
+            }
+            m_tmp = converter[rotationMapReverse[center_tmp][j]];
+            center_tmp = g_center_move_table[center_tmp][j];
+            if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index7_tmp2 == g_edge_move_table[index7_tmp2 + m_tmp] * 27 && index8_tmp2 == g_edge_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27)
+            {
+                valid = false;
+                break;
+            }
+            else
+            {
+                c += 1;
+                index1_tmp2 = g_xcross_multi_move_table[index1_tmp2 + m_tmp];
+                index2_tmp2 = g_corner_move_table[index2_tmp2 + m_tmp];
+                index4_tmp2 = g_corner_move_table[index4_tmp2 + m_tmp];
+                index6_tmp2 = g_corner_move_table[index6_tmp2 + m_tmp];
+                index7_tmp2 = g_edge_move_table[index7_tmp2 + m_tmp];
+                index8_tmp2 = g_edge_move_table[index8_tmp2 + m_tmp];
+                index9_tmp2 = g_edge_move_table[index9_tmp2 + m_tmp];
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && (prune_table1[index1_tmp2 * 24 + index2_tmp2] == 0 && prune_table2[index1_tmp2 * 24 + index4_tmp2] == 0 && prune_table3[index1_tmp2 * 24 + index6_tmp2] == 0 && index7_tmp2 == edge_solved1 && index8_tmp2 == edge_solved2 && index9_tmp2 == edge_solved3))
+                {
+                    p_valid = true;
+                    if (center_valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                index1_tmp2 *= 27;
+                index2_tmp2 *= 27;
+                index4_tmp2 *= 27;
+                index6_tmp2 *= 27;
+                index7_tmp2 *= 27;
+                index8_tmp2 *= 27;
+                index9_tmp2 *= 27;
+            }
+        }
+        if (valid && center_valid)
+        {
+            count += 1;
+            if (rotation == "")
+            {
+                tmp = post_moves + AlgToString(sol);
+            }
+            else
+            {
+                tmp = rotation + " " + post_moves + AlgToString(sol);
+            }
+            update(tmp.c_str());
+            if (count == sol_num)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index7, int arg_index8, int arg_index9, int depth, int center, int rot_count, int aprev)
@@ -3352,7 +4311,7 @@ struct xxxcross_search
             {
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index6, index7, index8, index9, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index6, index7, index8, index9, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -3522,7 +4481,7 @@ struct xxxcross_search
                 }
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index6, index7, index8, index9, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index6, index7, index8, index9, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -3598,6 +4557,208 @@ struct xxxxcross_search
 
     xxxxcross_search()
     {
+    }
+
+    // ---- goal-DAG search adapters (§4.41; see dag_walk_depth_limited_search) ----
+    struct DagState
+    {
+        int v[9];
+    };
+    DagMemo dag_memo;
+    std::vector<int> dag_phys;
+    bool dag_rot_any = false;
+    const std::vector<std::vector<int>> *dag_centers = &g_center_move_table;
+    inline void dag_apply(const DagState &a, int m, DagState &b) const
+    {
+        b.v[0] = g_xcross_multi_move_table[a.v[0] * 27 + m];
+        b.v[1] = g_corner_move_table[a.v[1] * 27 + m];
+        b.v[2] = g_corner_move_table[a.v[2] * 27 + m];
+        b.v[3] = g_corner_move_table[a.v[3] * 27 + m];
+        b.v[4] = g_corner_move_table[a.v[4] * 27 + m];
+        b.v[5] = g_edge_move_table[a.v[5] * 27 + m];
+        b.v[6] = g_edge_move_table[a.v[6] * 27 + m];
+        b.v[7] = g_edge_move_table[a.v[7] * 27 + m];
+        b.v[8] = g_edge_move_table[a.v[8] * 27 + m];
+    }
+    // The move loop's prune checks on the child `b` (`depth` = moves left before it).
+    inline bool dag_move_ok(const DagState &b, int depth) const
+    {
+        int p1 = prune_table1[b.v[0] * 24 + b.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[b.v[0] * 24 + b.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        int p3 = prune_table3[b.v[0] * 24 + b.v[3]];
+        if (p3 != 255 && p3 >= depth) return false;
+        int p4 = prune_table4[b.v[0] * 24 + b.v[4]];
+        if (p4 != 255 && p4 >= depth) return false;
+        if (pair_table12 && pair_table12[(((b.v[1]) * 24 + b.v[5]) * 24 + b.v[2]) * 24 + b.v[6]] >= depth) return false;
+        if (pair_table34 && pair_table34[(((b.v[3]) * 24 + b.v[7]) * 24 + b.v[4]) * 24 + b.v[8]] >= depth) return false;
+        if (pair_table13 && pair_table13[(((b.v[1]) * 24 + b.v[5]) * 24 + b.v[3]) * 24 + b.v[7]] >= depth) return false;
+        if (pair_table24 && pair_table24[(((b.v[2]) * 24 + b.v[6]) * 24 + b.v[4]) * 24 + b.v[8]] >= depth) return false;
+        if (pair_table14 && pair_table14[(((b.v[1]) * 24 + b.v[5]) * 24 + b.v[4]) * 24 + b.v[8]] >= depth) return false;
+        if (pair_table23 && pair_table23[(((b.v[2]) * 24 + b.v[6]) * 24 + b.v[3]) * 24 + b.v[7]] >= depth) return false;
+        return true;
+    }
+    inline bool dag_goal(const DagState &b) const
+    {
+        return prune_table1[b.v[0] * 24 + b.v[1]] == 0 && prune_table2[b.v[0] * 24 + b.v[2]] == 0 && prune_table3[b.v[0] * 24 + b.v[3]] == 0 && prune_table4[b.v[0] * 24 + b.v[4]] == 0 && b.v[5] == 0 && b.v[6] == 2 && b.v[7] == 4 && b.v[8] == 6;
+    }
+    // The rotation loop's checks at `a`.
+    inline bool dag_rot_ok(const DagState &a, int depth) const
+    {
+        int p1 = prune_table1[a.v[0] * 24 + a.v[1]];
+        if (p1 != 255 && p1 >= depth) return false;
+        int p2 = prune_table2[a.v[0] * 24 + a.v[2]];
+        if (p2 != 255 && p2 >= depth) return false;
+        int p3 = prune_table3[a.v[0] * 24 + a.v[3]];
+        if (p3 != 255 && p3 >= depth) return false;
+        int p4 = prune_table4[a.v[0] * 24 + a.v[4]];
+        if (p4 != 255 && p4 >= depth) return false;
+        if (pair_table12 && pair_table12[(((a.v[1]) * 24 + a.v[5]) * 24 + a.v[2]) * 24 + a.v[6]] > depth) return false;
+        if (pair_table34 && pair_table34[(((a.v[3]) * 24 + a.v[7]) * 24 + a.v[4]) * 24 + a.v[8]] > depth) return false;
+        if (pair_table13 && pair_table13[(((a.v[1]) * 24 + a.v[5]) * 24 + a.v[3]) * 24 + a.v[7]] > depth) return false;
+        if (pair_table24 && pair_table24[(((a.v[2]) * 24 + a.v[6]) * 24 + a.v[4]) * 24 + a.v[8]] > depth) return false;
+        if (pair_table14 && pair_table14[(((a.v[1]) * 24 + a.v[5]) * 24 + a.v[4]) * 24 + a.v[8]] > depth) return false;
+        if (pair_table23 && pair_table23[(((a.v[2]) * 24 + a.v[6]) * 24 + a.v[3]) * 24 + a.v[7]] > depth) return false;
+        return true;
+    }
+    inline unsigned long long dag_key(const DagState &a, int r) const
+    {
+        unsigned long long k = (unsigned long long)r;
+        k = k * 190080ULL + (unsigned long long)a.v[0];
+        k = k * 24ULL + (unsigned long long)a.v[1];
+        k = k * 24ULL + (unsigned long long)a.v[2];
+        k = k * 24ULL + (unsigned long long)a.v[3];
+        k = k * 24ULL + (unsigned long long)a.v[4];
+        k = k * 24ULL + (unsigned long long)a.v[5];
+        k = k * 24ULL + (unsigned long long)a.v[6];
+        k = k * 24ULL + (unsigned long long)a.v[7];
+        k = k * 24ULL + (unsigned long long)a.v[8];
+        return k;
+    }
+    // The search start (index* hold their values times 27 by then).
+    void dag_initial(DagState &st) const
+    {
+        st.v[0] = index1 / 27;
+        st.v[1] = index2 / 27;
+        st.v[2] = index4 / 27;
+        st.v[3] = index6 / 27;
+        st.v[4] = index8 / 27;
+        st.v[5] = index9 / 27;
+        st.v[6] = index10 / 27;
+        st.v[7] = index11 / 27;
+        st.v[8] = index12 / 27;
+    }
+    // The original leaf validation and output for the path in `sol` (goal reached).
+    bool depth_limited_search_emit()
+    {
+        bool valid = true;
+        bool p_valid = false;
+        bool center_valid = false;
+        int l = static_cast<int>(sol.size());
+        int c = 0;
+        int rot_count_tmp = 0;
+        int center_tmp = initial_center;
+        int index1_tmp2 = index1;
+        int index2_tmp2 = index2;
+        int index4_tmp2 = index4;
+        int index6_tmp2 = index6;
+        int index8_tmp2 = index8;
+        int index9_tmp2 = index9;
+        int index10_tmp2 = index10;
+        int index11_tmp2 = index11;
+        int index12_tmp2 = index12;
+        for (int j : sol)
+        {
+            center_valid = false;
+            if (j >= 45)
+            {
+                center_tmp = g_center_move_table[center_tmp][j];
+                c++;
+                rot_count_tmp++;
+                if (rot_count_tmp > max_rot_count)
+                {
+                    valid = false;
+                    break;
+                }
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && center_valid && p_valid)
+                {
+                    valid = false;
+                    break;
+                }
+                continue;
+            }
+            m_tmp = converter[rotationMapReverse[center_tmp][j]];
+            center_tmp = g_center_move_table[center_tmp][j];
+            if (!g_noop_allowed[j] && index1_tmp2 == g_xcross_multi_move_table[index1_tmp2 + m_tmp] * 27 && index2_tmp2 == g_corner_move_table[index2_tmp2 + m_tmp] * 27 && index4_tmp2 == g_corner_move_table[index4_tmp2 + m_tmp] * 27 && index6_tmp2 == g_corner_move_table[index6_tmp2 + m_tmp] * 27 && index8_tmp2 == g_corner_move_table[index8_tmp2 + m_tmp] * 27 && index9_tmp2 == g_edge_move_table[index9_tmp2 + m_tmp] * 27 && index10_tmp2 == g_edge_move_table[index10_tmp2 + m_tmp] * 27 && index11_tmp2 == g_edge_move_table[index11_tmp2 + m_tmp] * 27 && index12_tmp2 == g_edge_move_table[index12_tmp2 + m_tmp] * 27)
+            {
+                valid = false;
+                break;
+            }
+            else
+            {
+                c += 1;
+                index1_tmp2 = g_xcross_multi_move_table[index1_tmp2 + m_tmp];
+                index2_tmp2 = g_corner_move_table[index2_tmp2 + m_tmp];
+                index4_tmp2 = g_corner_move_table[index4_tmp2 + m_tmp];
+                index6_tmp2 = g_corner_move_table[index6_tmp2 + m_tmp];
+                index8_tmp2 = g_corner_move_table[index8_tmp2 + m_tmp];
+                index9_tmp2 = g_edge_move_table[index9_tmp2 + m_tmp];
+                index10_tmp2 = g_edge_move_table[index10_tmp2 + m_tmp];
+                index11_tmp2 = g_edge_move_table[index11_tmp2 + m_tmp];
+                index12_tmp2 = g_edge_move_table[index12_tmp2 + m_tmp];
+                for (int center_tmp2 : center_offset)
+                {
+                    if (center_tmp == center_tmp2)
+                    {
+                        center_valid = true;
+                    }
+                }
+                if (c < l && (prune_table1[index1_tmp2 * 24 + index2_tmp2] == 0 && prune_table2[index1_tmp2 * 24 + index4_tmp2] == 0 && prune_table3[index1_tmp2 * 24 + index6_tmp2] == 0 && prune_table4[index1_tmp2 * 24 + index8_tmp2] == 0 && index9_tmp2 == 0 && index10_tmp2 == 2 && index11_tmp2 == 4 && index12_tmp2 == 6))
+                {
+                    p_valid = true;
+                    if (center_valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                index1_tmp2 *= 27;
+                index2_tmp2 *= 27;
+                index4_tmp2 *= 27;
+                index6_tmp2 *= 27;
+                index8_tmp2 *= 27;
+                index9_tmp2 *= 27;
+                index10_tmp2 *= 27;
+                index11_tmp2 *= 27;
+                index12_tmp2 *= 27;
+            }
+        }
+        if (valid && center_valid)
+        {
+            count += 1;
+            if (rotation == "")
+            {
+                tmp = post_moves + AlgToString(sol);
+            }
+            else
+            {
+                tmp = rotation + " " + post_moves + AlgToString(sol);
+            }
+            update(tmp.c_str());
+            if (count == sol_num)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool depth_limited_search(int arg_index1, int arg_index2, int arg_index4, int arg_index6, int arg_index8, int arg_index9, int arg_index10, int arg_index11, int arg_index12, int depth, int center, int rot_count, int aprev)
@@ -4116,7 +5277,7 @@ struct xxxxcross_search
             {
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index6, index8, index9, index10, index11, index12, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index6, index8, index9, index10, index11, index12, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -4295,7 +5456,7 @@ struct xxxxcross_search
                 }
                 tmp = "depth=" + std::to_string(d);
                 update(tmp.c_str());
-                if (depth_limited_search(index1, index2, index4, index6, index8, index9, index10, index11, index12, d, initial_center, 0, aprev_tmp * 54))
+                if (g_dag_search && dag_worthwhile(move_restrict) ? dag_iteration(*this, d, d_min, initial_center, aprev_tmp * 54) : depth_limited_search(index1, index2, index4, index6, index8, index9, index10, index11, index12, d, initial_center, 0, aprev_tmp * 54))
                 {
                     break;
                 }
@@ -7335,6 +8496,7 @@ EMSCRIPTEN_BINDINGS(my_module)
     emscripten::function("solve", &controller);
     emscripten::function("setCancelCheckMask", &setCancelCheckMask);
     emscripten::function("setDeadlineCheck", &setDeadlineCheck);
+    emscripten::function("setDagSearch", &setDagSearch);
     emscripten::function("deadlineHit", &deadlineHit);
     emscripten::function("setNoopMoves", &setNoopMoves);
     emscripten::function("tableCacheKeys", &tableCacheKeys);

@@ -161,6 +161,35 @@ test('with a pool, background calls still wait while an active search runs', asy
   assert.ok(log.slice(first, last + 1).every(t => t.startsWith('X')), log.join(' '));
 });
 
+test('look-ahead ranks: lowest rank first among waiting calls, unranked before ranked, ties FIFO', async () => {
+  const log = [];
+  const h = fakeHelper(log, 10);
+  const s = createSearchScheduler();
+  const job = s.submit(async (wrap) => {
+    const gated = wrap(h);
+    const first = gated.solveCross('busy'); // occupies the engine while the rest queue up
+    const queued = [
+      gated.withRank([2]).solveCross('r2'),
+      gated.withRank([0, 1]).solveCross('r01'),
+      gated.withRank([1]).solveCross('r1'),
+      gated.withRank([0]).solveCross('r0a'),
+      gated.solveCross('own'),
+      gated.withRank([0]).solveCross('r0b'),
+      gated.withRank([0, 0, 5]).solveCross('r005'),
+    ];
+    await Promise.all([first, ...queued]);
+    return 'done';
+  }, ACTIVE);
+  await job.promise;
+  assert.deepStrictEqual(log, ['busy', 'own', 'r0a', 'r0b', 'r005', 'r01', 'r1', 'r2']);
+});
+
+test('compareSearchRanks orders look-ahead paths depth-first by candidate index', () => {
+  const { compareSearchRanks } = require(path.join(__dirname, '..', 'js', 'search-scheduler.js'));
+  const ranks = [[1], null, [0, 1], [0], [0, 0, 3], [], [2, 0]];
+  assert.deepStrictEqual(ranks.slice().sort(compareSearchRanks), [null, [], [0], [0, 0, 3], [0, 1], [1], [2, 0]]);
+});
+
 (async () => {
   let failures = 0;
   for (const t of tests) {

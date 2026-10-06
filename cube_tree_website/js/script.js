@@ -388,10 +388,21 @@ const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, desta
 // pro reference solves (tools/pro-ranking.js --app), penalties only, so no
 // move ever costs less than MCC says. A rotation at the very start of a step
 // (done while looking ahead between steps) is not penalised.
-const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideOther: 3.31, rotMidY: 3.70 };
+// wideRLFirst (PROJECT_STATUS.md §4.41): wide r/l in the FIRST step (cross /
+// xcross / ... from inspection, where professionals use them most) cost 1.2
+// instead of 2.35. Chosen on the root steps of the pro references with
+// leave-one-solve-out cross-validation (held-out mean log10 rank 2.279 ->
+// 2.250; 18 of 19 folds pick 1.2). Later steps barely move (their candidates
+// share the first step; only TPP's division by different piece counts lets
+// it matter): all 66 pro steps, mean log10 rank 1.035 -> 1.016.
+const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideRLFirst: 1.2, wideOther: 3.31, rotMidY: 3.70 };
 
-/** Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum over its steps. */
-function stepPenalty(alg) {
+/**
+ * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
+ * over its steps. `isFirstStep`: the alg is the solve's first step.
+ */
+function stepPenalty(alg, isFirstStep = false) {
+    const wideRL = isFirstStep ? STEP_PENALTIES.wideRLFirst : STEP_PENALTIES.wideRL;
     let total = 0;
     // (A plain loop: this runs for every candidate of every search.)
     const text = String(alg || '');
@@ -404,7 +415,7 @@ function stepPenalty(alg) {
         if (c === 'D') total += STEP_PENALTIES.D;
         else if (c === 'F') total += STEP_PENALTIES.F;
         else if (c === 'B') total += STEP_PENALTIES.B;
-        else if (c === 'r' || c === 'l') total += STEP_PENALTIES.wideRL;
+        else if (c === 'r' || c === 'l') total += wideRL;
         else if ('fbudMES'.includes(c)) total += STEP_PENALTIES.wideOther;
         else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
         i++;

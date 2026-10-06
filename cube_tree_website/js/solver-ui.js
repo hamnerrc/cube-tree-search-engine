@@ -29,7 +29,7 @@
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261005-tables1';
+const ENGINE_VERSION = '20261005-dag1';
 
 // The cache-buster this script was loaded with (solver.html's ?v=...), passed
 // on to the post-processing workers so they load the same script versions.
@@ -237,16 +237,41 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           };
           return w;
         });
-        const send = (ctx, job, cores) => new Promise((resolve, reject) => {
-          const live = workers.filter(w => !w.broken);
-          if (!live.length) { reject(new Error('no post-processing worker')); return; }
-          const w = live.reduce((a, b) => (b.pending.size < a.pending.size ? b : a));
-          const id = nextId++;
-          jobs.set(id, { resolve, reject });
-          w.pending.add(id);
-          w.postMessage({ id, ctx, job, cores });
+        // Calls wait here, not in a worker's message queue, so the lowest
+        // look-ahead rank (the best candidates' follow-ups; the step's own
+        // calls have none) is processed first, like the engine calls
+        // (search-scheduler.js). Two calls in flight per worker, so a worker
+        // has the next one while its last result is on its way back.
+        const waiting = [];
+        const pump = () => {
+          if (!workers.some(w => !w.broken)) {
+            while (waiting.length) waiting.shift().reject(new Error('no post-processing worker'));
+            return;
+          }
+          for (;;) {
+            const w = workers.find(x => !x.broken && x.pending.size < 2);
+            if (!w || !waiting.length) return;
+            let best = 0;
+            for (let i = 1; i < waiting.length; i++) if (compareSearchRanks(waiting[i].rank, waiting[best].rank) < 0) best = i;
+            const { ctx, job, cores, resolve, reject } = waiting.splice(best, 1)[0];
+            const id = nextId++;
+            jobs.set(id, { resolve, reject });
+            w.pending.add(id);
+            w.postMessage({ id, ctx, job, cores });
+          }
+        };
+        const send = (ctx, job, cores, rank) => new Promise((resolve, reject) => {
+          if (!workers.some(w => !w.broken)) { reject(new Error('no post-processing worker')); return; }
+          waiting.push({ ctx, job, cores, rank, resolve, reject });
+          pump();
         });
-        postPool = (ctx, job, cores) => send(ctx, job, cores)
+        for (const w of workers) {
+          const settle = w.onmessage;
+          w.onmessage = (e) => { settle(e); pump(); };
+          const fail = w.onerror;
+          w.onerror = (e) => { fail(e); pump(); };
+        }
+        postPool = (ctx, job, cores, rank) => send(ctx, job, cores, rank)
           .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
       } catch (err) {
         console.error('Post-processing workers unavailable; using the main thread', err);

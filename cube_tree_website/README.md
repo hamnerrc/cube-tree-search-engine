@@ -75,7 +75,10 @@ single-step search.
 Each re-ranked result shows its combined TPP and the follow-up steps of its
 best sequence. The single-step ranking is shown first, as soon as it is
 available; the top block then re-ranks on screen as each candidate's
-look-ahead finishes (candidates still being looked at show "…"). Only the clicked step is committed — the follow-ups are a
+look-ahead finishes (candidates still being looked at show "…"). The
+candidates are looked at best-first: the follow-up searches of a
+better-ranked candidate run before those of the next one, so the top of the
+list settles first. Only the clicked step is committed — the follow-ups are a
 preview, and the next search starts from the committed node as usual (reusing
 the look-ahead's searches where it can).
 
@@ -137,17 +140,21 @@ by where each professional step would rank in the app's own result list
 1. Finger pushes on `U`/`D` turns (MCC's `pushMult`) cost 0.8 instead of 1.3.
 2. Each step pays a small extra cost for the moves professionals use less
    than MCC's hand model predicts: `D` +1.06, `F` +0.86, `B` +2.22, wide
-   `r`/`l` +2.35, other wide moves +3.31, and a `y` rotation in the middle of
-   a step +3.70 (a rotation that *starts* a step is free: it happens while
-   looking ahead between steps). These are penalties only, so no move ever
-   costs less than MCC says. A path's time is MCC of the whole path plus the
-   penalty of each of its steps.
+   `r`/`l` +2.35 (+1.2 in the solve's first step, the cross or xcross from
+   inspection, where professionals use them most), other wide moves +3.31,
+   and a `y` rotation in the middle of a step +3.70 (a rotation that *starts*
+   a step is free: it happens while looking ahead between steps). These are
+   penalties only, so no move ever costs less than MCC says. A path's time is
+   MCC of the whole path plus the penalty of each of its steps.
 
 The penalties were fitted with leave-one-solve-out cross-validation (fit on
 all solves but one, rank the held-out one), to avoid overfitting the few
 reference solves. They were fitted on solves #1-#11 and then confirmed on
 solves #12-#19, which the fit never saw; refitting on all 19 did not rank
-the pros any better, so they were kept unchanged. Professionals sometimes
+the pros any better, so they were kept unchanged. The single `r`/`l` value
+had buried every wide first step below the first page of results; the
+first-step value was then chosen the same way, on the first steps of all 19
+solves. Professionals sometimes
 execute a slower step than the best available, and such a step should rank
 lower; the tuning targets where pro steps rank overall, not every single
 step at the top. Further tuning should go through the same benchmark rather
@@ -381,8 +388,10 @@ search; current measurements are in PROJECT_STATUS.md):
   rotation. Combinations with a mid-step `x` are not generated yet.
 - **Moves that do not touch any goal piece.** Professionals use moves like the
   `U` in `… R' U R'` (instead of `R2`) to position other pieces. The vendored
-  engine prunes any solution containing a move that leaves every goal piece
-  in place, and has no option to turn that off (needs an engine change).
+  engine pruned any solution containing a move that leaves every goal piece
+  in place; it is patched to allow such `U`-layer turns (see
+  THIRD_PARTY_NOTICES.md), but other moves that leave every goal piece in
+  place are still pruned.
 - **Step length.** Some professional steps exceed the search limits above
   (e.g. a 15-move XCross against the 11-move limit).
 - **Solutions per search.** Even when a professional solution is in the
