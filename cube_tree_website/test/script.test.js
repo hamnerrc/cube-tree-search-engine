@@ -229,20 +229,50 @@ test('pruneGraph: without multislotting, a non-root edge solving 2 pairs at once
   assert.ok(!edgeKeys(pruned).includes('N1->N3'), 'N1->N3 (2-pair multislot step) should be excluded without multislotting');
 });
 
-test('stepPenalty (PROJECT_STATUS §4.35, §4.46): penalties only, step-aware rotations, a cost per turn', () => {
-  const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
+test('stepPenalty (PROJECT_STATUS §4.35, §4.47): penalties only, step-aware rotations, naturalness', () => {
+  const { stepPenalty, algSurprise, STEP_PENALTIES: P } = require('../js/script.js');
   const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m || ''} ${a} vs ${b}`);
-  near(stepPenalty("R U R' U'"), 4 * P.turn, 'R/U moves cost only the per-turn cost');
-  near(stepPenalty("L' U L"), 3 * P.turn);
-  near(stepPenalty("y R U R'"), 3 * P.turn, 'a rotation that starts the step is free');
-  near(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY + 8 * P.turn, 'a mid-step y is penalised, rotations are not turns');
-  near(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL + 6 * P.turn);
-  near(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB + 3 * P.turn);
-  near(stepPenalty("M' U M"), 2 * P.wideOther + 3 * P.turn, 'slices');
-  near(stepPenalty("x R U"), 2 * P.turn, 'x is not a turn');
+  const nat = alg => P.natural * algSurprise(alg);
+  near(stepPenalty("R U R' U'"), nat("R U R' U'"), 'R/U moves cost only their naturalness');
+  near(stepPenalty("L' U L"), nat("L' U L"));
+  near(stepPenalty("y R U R'"), nat("R U R'"), 'a rotation that starts the step is free');
+  near(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY + nat("U R' U' R y U' R U R'"), 'a mid-step y is penalised');
+  near(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL + nat("F R' F' r U r'"));
+  near(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB + nat("D' B u"));
+  near(stepPenalty("M' U M"), 2 * P.wideOther + nat("M' U M"), 'slices');
   assert.strictEqual(stepPenalty(''), 0);
-  assert.ok(P.turn > 0, 'the per-turn cost fitted to the speed comparisons');
+  assert.strictEqual(stepPenalty('y'), 0, 'a lone rotation has no moves to judge');
+  assert.ok(!('turn' in P), 'the flat per-turn cost (§4.46) is replaced by naturalness');
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
+});
+
+test('algSurprise (PROJECT_STATUS §4.47): human F2L sequences are natural, machine-like ones are not', () => {
+  const { algSurprise, buildNaturalnessModel, useNaturalnessModel, PRO_STEP_ALGS } = require('../js/script.js');
+  const perMove = a => algSurprise(a) / a.split(' ').filter(t => !/^[xyz]/.test(t)).length;
+  // Familiar inserts beat sequences of individually cheap but unfamiliar moves.
+  assert.ok(algSurprise("U R U' R'") < algSurprise("U R2 U' R2"));
+  assert.ok(perMove("y' U R' U' R U2 R U R'") < 3, 'a standard F2L alg');
+  assert.ok(perMove("y U R2 U2 F R F' U2 R2") > 4, 'a machine-looking one');
+  assert.ok(algSurprise("R U' R' F' L' U2 L F") < algSurprise("R U' R' F' L2 U2 L' F"));
+  // Left-right mirrors are equally natural (the corpus is mirrored).
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m || ''} ${a} vs ${b}`);
+  near(algSurprise("R U R' U' R U R'"), algSurprise("L' U' L U L' U' L"), 'mirror');
+  near(algSurprise("U' F' U F"), algSurprise("U F U' F'"), 'mirror (F turns flip direction)');
+  // Leading rotations are free, notation variants agree, arrays are accepted.
+  near(algSurprise("y' U' L' U L"), algSurprise("U' L' U L"));
+  near(algSurprise("R2' U R"), algSurprise('R2 U R'));
+  near(algSurprise(['R', 'U', "R'"]), algSurprise("R U R'"));
+  // A mid-step rotation is a token, not a fresh start.
+  assert.ok(algSurprise("U l' x' U2 R U R' U' R") > algSurprise("U2 R U R' U' R"));
+  // Leave-one-solve-out models (tools/pro-ranking.js) see less of that solve.
+  assert.strictEqual(PRO_STEP_ALGS.length, 19);
+  const held = buildNaturalnessModel({ excludeSolve: 4 });
+  const pro4 = PRO_STEP_ALGS[3][0];
+  assert.ok(held.surprise(pro4) > algSurprise(pro4), 'held-out solve is less familiar');
+  useNaturalnessModel(held);
+  near(algSurprise(pro4), held.surprise(pro4), 'useNaturalnessModel swaps the model');
+  useNaturalnessModel(null);
+  assert.ok(algSurprise(pro4) < held.surprise(pro4), 'null restores the default model');
 });
 
 test('stepPenalty (PROJECT_STATUS §4.46): one function for every step', () => {

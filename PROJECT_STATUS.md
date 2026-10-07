@@ -17,7 +17,31 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-07, after the twenty-fourth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-07, after the twenty-fifth pass):** read this first.
+- Twenty-fifth pass (user: the ranking got worse after §4.46, the top
+  results are far less ergonomic; find a better algorithm, be creative,
+  revert only as a last resort). Writeup: §4.47.
+  1. **Diagnosis** (real engine, 30 random-state scrambles, 92 full result
+     lists re-ranked offline): §4.46's flat 0.5 per turn pushed short but
+     awkward algs up (`R U2 F U' F' R'` over `y' U R' U' R U2 R U R'`;
+     `U L2 z' U f U' L' U2 F' D'` into a first-step top 3). Both versions
+     share the deeper gap: MCC prices each finger movement on its own, not
+     how familiar the sequence is.
+  2. **Naturalness model** (`algSurprise`, `buildNaturalnessModel` in
+     js/script.js): an interpolated Kneser-Ney trigram language model of
+     cube moves, trained on standard human F2L algs (`HUMAN_F2L_ALGS`,
+     168 algs + mirrors) and the 66 pro steps (`PRO_STEP_ALGS`, x3).
+     `STEP_PENALTIES.natural` = 0.15 x surprise in bits replaces `turn`.
+     Pro benchmark (held out per solve): mean log10 rank 1.170 -> 0.967,
+     top 10 37 -> 43, top 500 58 -> 60. Comparisons (10-fold CV): held-out
+     strict accuracy 73.2% -> 76.8%.
+  3. `tools/pro-ranking.js` now scores each solve with a model trained
+     without it (`--in-sample` for the app's model).
+  Next: more answers (7b); the remaining unergonomic tops are mostly a
+  search-coverage gap (the list has no natural alg at all) -- see §4.47
+  "Not done".
+
+**Previous handoff (2026-10-07, after the twenty-fourth pass):**
 - Twenty-fourth pass (user: commit my answers, tune alg_speed on them as
   one step-independent function without overfitting, never a wide B, push,
   then wait for more data). Writeup: §4.46.
@@ -2082,6 +2106,104 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.47 DONE (2026-10-07, twenty-fifth pass): naturalness language model replaces the per-turn cost
+
+**Request.** The user found the ranking worse since §4.46: the top results
+were far less ergonomic. Asked for a new, creative way to put the fastest
+algs on top (pro solves a good reference; revert only as a last resort).
+
+**Diagnosis.** 30 random-state scrambles (seed 101, the pair-compare pool's
+configs: xcross + xxcross + cross_opt + pro moves + multislot, every third
+with pseudo) walked through `SolveSession` + `searchCurrentNode`, every
+candidate of all 92 lists kept (pieces recovered from TPP), then re-ranked
+offline under the pre-§4.46 scoring ("old"), §4.46 ("HEAD") and candidates.
+§4.46's flat 0.5 per turn trades awkward-but-short for fluent-but-longer:
+`R U2 F U' F' R'` went to #1 above `y' U R' U' R U2 R U R'`, `y F' L2 F U
+L2 U2 L U L2` into a top 5, first steps gained `U L2 z' U f U' L' U2 F' D'`
+and `U R2 L F z R' D' R2 f' D'`. Exact pro ranks (full lists, no sampling):
+old 1.020 mean log10 rank / top 10 41; HEAD 1.170 / 37. Both versions put
+machine-looking algs on top (`y U R2 U2 F R F' U2 R2`): MCC simulates each
+finger movement but has no notion of a familiar sequence, which humans
+execute as one motion (and the pro references' own note: pros prefer
+"spammable" solutions).
+
+**The model** (js/script.js, `buildNaturalnessModel`, `algSurprise`): a
+language model of cube moves. Interpolated Kneser-Ney trigram (discount
+0.75, 2% uniform floor, vocabulary: 54 move/rotation tokens + end) over the
+alg's tokens after its leading rotations (free, like stepPenalty); a mid-step
+rotation is a token (an earlier variant that restarted the context at every
+rotation let `U l' x' U2 R U R' U' R` look natural). Training algs:
+`HUMAN_F2L_ALGS` (standard F2L algorithms as commonly taught: basic
+inserts and triggers, the 41 cases with usual alternatives, back-slot and
+left-slot inserts without rotation, keyhole; written for this pass, not
+taken from the pro solves) and `PRO_STEP_ALGS` (the 66 pro steps, 3 times),
+every alg also left-right mirrored. `algSurprise` = sum of -log2 P(move |
+two previous) plus the end token; e.g. `U R' U R U2 R' U R` 14.3 bits
+(1.8 per move), `y U R2 U2 F R F' U2 R2` 44.1 (4.9 per move). Hot path: a
+trigram table indexed by token ids, filled on first use: 2.4 us per alg
+(MCC is ~25 us), identical to the reference implementation on 10k algs.
+
+**Scoring.** `stepPenalty` = the old penalties (D/F/B/wide/slice/mid-y,
+unchanged) + `STEP_PENALTIES.natural` x algSurprise; `turn` is gone. A
+familiar move costs ~0.3, an unexpected one ~1, so length still costs,
+but mostly where it breaks the flow.
+
+**Selection** (scratch harness: exact pro ranks over the cached `--app`
+pools, leave-one-solve-out for the language model; developer pairs; the
+92 lists):
+
+| model | pro all | root | later | top 10 | top 100 | top 500 | pairs right (in-sample) |
+|---|---|---|---|---|---|---|---|
+| old (pre-§4.46) | 1.020 | 2.210 | 0.539 | 41 | 51 | 59 | 29.5/56 |
+| HEAD (§4.46, turn 0.5) | 1.170 | 2.522 | 0.624 | 37 | 49 | 58 | 39/56 |
+| F2L corpus only, w 0.2 | 1.032 | 2.595 | 0.400 | 43 | 52 | 58 | 41/56 |
+| + pro steps x3, w 0.2 | 0.970 | 2.404 | 0.390 | 43 | 54 | 60 | 41/56 |
+| **+ pro steps x3, w 0.15** | **0.967** | 2.366 | 0.402 | **43** | 53 | **60** | 43/56 |
+| + pro steps x3, w 0.25 | 0.972 | 2.438 | 0.379 | 43 | 52 | 60 | 41/56 |
+
+Rejected variants: summed surprise with turn 0.5 kept (worse everywhere);
+charging only bits above a threshold (2-4 bits; no better); order 2 (root
+better, later worse), order 4 (worse); halving the old penalties (worse:
+they still carry information the corpus does not); wide r/l 1.2 or 1.8 at
+every step with the model (flat). Root steps stay behind "old", which had
+the first-step-only r/l discount the user removed (one function for every
+step); they are better than HEAD.
+
+**Developer comparisons** (`tools/fit-alg-speed.js`, 10-fold CV x3; the
+model was never fitted to them): held-out strict accuracy with `natural`
+0.15 73.2% (HEAD) -> 76.8%; fitting `natural` alone gives 0.12 (75.0%,
+log-lik -0.987, same as HEAD's fitted `turn`). 0.15 is where both sources
+agree (pro benchmark flat from 0.15 to 0.25).
+
+**Repo benchmark**: `tools/pro-ranking.js --app --sample 0` now gives each
+solve a model trained without it (`buildNaturalnessModel({ excludeSolve })`,
+`useNaturalnessModel`); `--in-sample` uses the app's. Result 1.170 / top 10
+37 / top 500 58 -> 0.967 / 43 / 60, matching the harness.
+
+**Top-5 check on the 92 lists** (HEAD -> new): later steps, top-5 entries
+with a mid-step x/z 8% -> 6%, a B turn 12% -> 10%, u/d/f 20% -> 15%, above
+4 bits per move 87% -> 76%; MCC 11.60 -> 11.41. Where a natural alg is in
+the list it now usually wins (s5.2: `y' U R' U' R U2 R U R'` and its
+mirrors fill the top 5; s2.2 `y F U F' U L' U' L` enters).
+
+**Not done / found.** Many remaining unergonomic tops have no natural
+alternative in their list at all: s10.4 (last pair, 75 candidates, the most
+natural is `y U R2 U2 F R F' U2 R2`), s6.3: the engine returns the shortest
+solutions and the 10-11 move human algs are missing. Ranking cannot fix
+that; the next lever is search coverage (e.g. a later-step pass seeded with
+the human corpus' algs, or a deeper R/U/F-restricted search for the last
+pairs). Multislot steps' piece bonus in TPP (s23.2) is the other.
+
+**Checks.** All unit suites (script.test.js: new naturalness tests; the
+solver-bridge memo test now expects the step-penalty difference, not only
+rotMidY). E2E: pro-references (44/66, unchanged), wide-spellings,
+search-options, lookahead, cubedb-export, solver-bridge (3 scrambles): all
+pass. Headless Chrome (index -> solver, two steps): no console errors,
+`algSurprise` loaded in the page. Comparison pool rebuilt with the new
+scoring (`pair-compare.js pool`, same settings: 320 lists, 17,066 algs);
+`pair-compare stats`: 43/56 answered pairs ordered right (38 under §4.46).
+Cache-buster 20261007a -> 20261007b (engine unchanged).
+
 ### 4.46 DONE (2026-10-07, twenty-fourth pass): first fit on the pairwise comparisons; one step-independent stepPenalty; never a wide B
 
 **Data.** 101 answers (89 select, 9 random, 3 repeats; answer times 3 s to
@@ -4003,7 +4125,7 @@ be done in parallel.
 7. **Train `alg_speed` on pairwise human speed comparisons, then one
    step-independent model (README "Future: one scoring algorithm for every
    step" and "Planned: training `alg_speed` on pairwise speed comparisons";
-   7a done, 7b in progress, first 7c fit done -- §4.46)**
+   7a done, 7b in progress, 7c fits §4.46 and §4.47)**
 
    *Why the change (2026-10-06, user decision):* 19 pro solves are too few
    to calibrate execution speed, and a pro's step only shows what they
@@ -4084,8 +4206,11 @@ be done in parallel.
      app to it only if it wins on held-out comparisons; document the
      result in README "Ranking" and here.
      First pass done (§4.46): one step-independent stepPenalty + `turn`
-     0.5 from 81 pairs (`tools/fit-alg-speed.js`). Refit (MCC constants,
-     other penalties) once there are a few hundred answers.
+     0.5 from 81 pairs (`tools/fit-alg-speed.js`). Second (§4.47): `turn`
+     replaced by the naturalness language model (`natural` 0.15), which
+     wins on held-out comparisons and on the pro benchmark. Refit (MCC
+     constants, other penalties, `natural`) once there are a few hundred
+     answers.
 
 8. **Visual redesign (README "Planned: visual redesign"; waiting on the
    developer's design)**

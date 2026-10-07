@@ -642,7 +642,10 @@ async function asyncTests() {
     const one = later.fork({ rotation: 'z2', coreAlg: "R U R' y U R U' R'", targetNodeId: node });
     assert.strictEqual(two.scoredPath, one.scoredPath);
     assert.strictEqual(two.currentNodeId, one.currentNodeId);
-    assert.ok(Math.abs((one.pathCost('U') - two.pathCost('U')) - STEP_PENALTIES.rotMidY) < 1e-9, 'TPP differs by the mid-step y penalty');
+    // (the mid-step y penalty and the naturalness of one step vs two, §4.47)
+    const expected = stepPenalty("R U R' y U R U' R'") - stepPenalty("R U R'") - stepPenalty("y U R U' R'");
+    assert.ok(expected > STEP_PENALTIES.rotMidY - 1e-9, 'at least the mid-step y penalty');
+    assert.ok(Math.abs((one.pathCost('U') - two.pathCost('U')) - expected) < 1e-9, 'TPP differs by the step penalties');
     const a = bridge.memoSearch(two, fake);
     const b = bridge.memoSearch(one, fake);
     assert.notStrictEqual(a, b);

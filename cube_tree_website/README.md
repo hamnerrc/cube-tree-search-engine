@@ -140,9 +140,18 @@ step of the solve:
    `r`/`l` +2.35, `u`/`d`/`f` +2.5, slices `M`/`E`/`S` +3.31, and a `y`
    rotation in the middle of a step +3.70 (a rotation that *starts* a step
    is free: it happens while looking ahead between steps).
-3. Every turn (face, wide or slice; not rotations) costs +0.5 on top of
-   MCC. This one comes from the developer's own pairwise speed judgements
-   (below): MCC alone underrated how much each extra turn slows a step.
+3. **Naturalness.** Each step also pays 0.15 x its *surprise*: how unlike
+   human F2L algorithms its move sequence is, in bits, from a small
+   language model of cube moves (a trigram model trained on the standard
+   F2L algorithms as commonly taught, their left-right mirrors, and the
+   professional reference steps). MCC prices each finger movement on its
+   own, so a string of individually cheap moves (`R2 U2 F R F' U2 R2`)
+   can look as fast as a familiar, fluent alg (`U R' U2 R U R' U' R`);
+   humans execute familiar sequences as one motion and unfamiliar ones
+   move by move. A familiar move costs little (about 2 bits), an
+   unexpected one a lot (6 or more), so this also prices length, but only
+   for moves that break the flow. A rotation that starts a step is free
+   here too; a mid-step rotation is judged like any move.
 
 These are penalties only, so no move ever costs less than MCC says. A
 path's time is MCC of the whole path plus the penalty of each of its steps.
@@ -152,19 +161,22 @@ Items 1 and 2 were fitted to the
 by where each professional step would rank in the app's own result list
 (`tools/pro-ranking.js --app`), with leave-one-solve-out cross-validation
 (fit on all solves but one, rank the held-out one) and confirmed on solves
-the fit never saw. Item 3 was fitted to the pairwise comparisons with
-cross-validation and a prior that keeps every value close to the previous
-one unless the data clearly says otherwise; fitting all the constants at
-once to the first ~80 answers was rejected as overfitting. The
-professional benchmark is now the secondary check: the per-turn cost was
-set to the lowest value that keeps nearly all of what the comparisons
-show (0.5; the fit alone suggested 0.56-0.99), because higher values rank
-the professionals' steps lower. Professionals sometimes execute a slower
+the fit never saw. Item 3 replaced a flat +0.5 per turn (fitted to the
+developer's first pairwise speed comparisons, below), which pushed short
+but awkward algs to the top. Its weight was chosen on both data sources
+without letting either see its own answers: the pro benchmark scores each
+solve with a language model trained without that solve, and the pairwise
+comparisons were checked with cross-validation (they alone fit 0.12; the
+pro benchmark is flat from 0.15 to 0.25). Against the flat per-turn cost:
+pro steps in the app's top 10 37 -> 43 of 66, mean log10 rank 1.170 ->
+0.967 (later steps 0.624 -> 0.402), held-out comparison pairs ordered right
+73% -> 77%. Professionals sometimes execute a slower
 step than the best available, and such a step should rank lower; the
 tuning targets where pro steps rank overall, not every single step at the
 top. Further tuning should go through the same tools
 (`tools/fit-alg-speed.js`, `tools/pro-ranking.js`) rather than hand-picked
-constants.
+constants; more human algs in the language model's corpus
+(`HUMAN_F2L_ALGS` in `js/script.js`) are the other lever.
 
 ### One scoring algorithm for every step
 

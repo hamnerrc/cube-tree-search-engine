@@ -389,23 +389,22 @@ const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, desta
 
 // Per-step penalties on top of MCC: one function for every step of the solve
 // (README "One scoring algorithm for every step", PROJECT_STATUS.md §4.46).
-// D/F/B, wide and slice turns and mid-step y rotations first came from the
-// pro reference solves (§4.35, §4.43; penalties only, so no move costs less
-// than MCC says); a rotation at the very start of a step (done while
-// looking ahead) is free. `turn` (§4.46) is a fixed cost per face, wide or
-// slice turn, fitted to the developer's pairwise speed comparisons
-// (tools/fit-alg-speed.js, 56 strict + 25 "too close" answers): the slower
-// alg had more turns 25 times and fewer 4 times, which MCC alone missed.
-// 10-fold cross-validation (x3, ridge prior towards the old values) put it
-// at 0.56-0.99 (held-out strict pairs right 62.5% -> 73%); fitting all 19
-// constants ordered a few more held-out pairs right but had a worse held-out
-// log-likelihood (overconfident: overfits 56 answers). 0.5 keeps
-// nearly all of the gain (in-sample: 30 -> 38 of 56 right; 0.8 gives 39)
-// and costs the pro benchmark least (tools/pro-ranking.js --app, mean log10
-// rank 0.968 -> 1.098 at 0.5, 1.172 at 0.8; top 10 39 -> 37). The former
-// first-step values (wideRLFirst 1.2, u/d/f/b at wideOther) are gone: the
-// same alg costs the same at every step (benchmark 0.929 -> 0.968).
-const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70, turn: 0.5 };
+// D/F/B, wide and slice turns and mid-step y rotations came from the pro
+// reference solves (§4.35, §4.43; penalties only, so no move costs less than
+// MCC says); a rotation at the very start of a step (done while looking
+// ahead) is free.
+// `natural` (§4.47) weighs the alg's naturalness surprise (algSurprise, in
+// bits): how unlike human F2L algorithms its move sequence is. MCC prices
+// finger mechanics move by move but cannot tell `R U R' U' R U R'` (one
+// fluent, familiar motion) from `R2 U2 F R F' U2 R2` (each move cheap, the
+// sequence unfamiliar); human execution speed depends on both. Chosen with
+// leave-one-solve-out on the pro references (tools/pro-ranking.js --app,
+// flat from 0.15 to 0.25) and cross-validated on the developer's speed
+// comparisons (tools/fit-alg-speed.js; they alone fit 0.12). Versus §4.46's
+// flat 0.5 per turn, which it replaces: pro steps' mean log10 rank 1.170 ->
+// 0.967 (later steps 0.624 -> 0.402), top 10 37 -> 43 of 66; held-out
+// comparison pairs ordered right 73.2% -> 76.8%.
+const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70, natural: 0.15 };
 
 /**
  * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
@@ -428,10 +427,351 @@ function stepPenalty(alg) {
         else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += STEP_PENALTIES.wideUDFB;
         else if (c === 'M' || c === 'E' || c === 'S') total += STEP_PENALTIES.wideOther;
         else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
-        if (c !== 'x' && c !== 'y' && c !== 'z') total += STEP_PENALTIES.turn;
         i++;
     }
+    if (i && STEP_PENALTIES.natural) total += STEP_PENALTIES.natural * algSurprise(tokens);
     return total;
+}
+
+// ---------------------------------------------------------------------------
+// Naturalness (PROJECT_STATUS.md §4.47): a move-sequence language model of
+// human F2L. An interpolated Kneser-Ney trigram over move tokens, trained on
+// HUMAN_F2L_ALGS (the standard F2L algorithms as commonly taught, plus their
+// left-right mirrors) and the pro reference steps (PRO_STEP_ALGS, counted
+// NATURALNESS.proWeight times, mirrored too). algSurprise(alg) = the alg's
+// surprise in bits, -log2 P(move | two previous moves) summed over its moves
+// and an end-of-alg token. Rotations at the start of the alg are dropped
+// (free, like in stepPenalty); later ones are tokens like any move.
+
+// Standard human F2L algorithms (front-right slot unless noted), one per line;
+// left-right mirrors are added by code. Lines starting with # are headings.
+const HUMAN_F2L_ALGS = `
+# --- basic inserts and triggers
+R U R'
+R U' R'
+R U2 R'
+R' U R
+R' U' R
+R' U2 R
+F' U' F
+F' U F
+F' U2 F
+F U F'
+F U' F'
+U R U' R'
+U' R U R'
+U R U R'
+U' R U' R'
+U' F' U F
+U F' U' F
+U R U2 R'
+U' R U2 R'
+R U R' U' R U R'
+R U' R' U R U' R'
+R U R' U' R U R' U' R U R'
+R' F R F'
+F R' F' R
+R U R' U'
+R' F' R
+r U' r'
+r U r'
+r U2 r'
+r' U' r
+r' U r
+d R' U R
+d R' U' R
+d R' U2 R
+y' U' R' U R
+y' U R' U' R
+y' R' U' R
+y' R' U R
+y U' L' U L
+y U L' U' L
+y L' U' L
+d' L' U L
+R U R' F R' F' R
+R U' R' F R' F' R
+# --- the 41 cases, FR slot (with common alternatives)
+U R U' R'
+y' U' R' U R
+U' F' U F
+y' R' U' R
+F' U' F
+R U R'
+U' R U R' U2 R U' R'
+y' U R' U' R U2 R' U R
+U F' U' F U2 F' U F
+U' R U2 R' U2 R U' R'
+y' U R' U2 R U2 R' U R
+d R' U2 R U2 R' U R
+U' R U' R' U F' U' F
+U' R U R' U R U R'
+U' R U2 R' U F' U' F
+R U' R' U R U' R' U2 R U' R'
+R U R' U2 R U' R' U R U' R'
+y' R' U2 R U R' U' R
+y' U R' U R U' R' U' R
+d R' U R U' R' U' R
+U' R U' R' U R U R'
+R' D' R U' R' D R U R U' R'
+y' R' U R U2 R' U R
+R U' R' U2 F' U' F
+R U2 R' U' R U R'
+y' R' U2 R U R' U' R
+U R U2 R' U R U' R'
+y' U' R' U2 R U' R' U R
+U2 R U R' U R U' R'
+y' U2 R' U' R U' R' U R
+r U' r' U2 r U r'
+U R U' R' U' R U' R' U R U' R'
+U2 R2 U2 R' U' R U' R2
+F U R U' R' F' R U' R'
+U F R' F' R U R U' R'
+U' R' F R F' R U' R'
+U' F' R U R' U' R' F R
+U R U' R' U' F' U F
+R U' R' U R U' R'
+R U R' U' F R' F' R
+R U R' U' R U R'
+R U' R' U' R U R' U2 R U' R'
+R' F R F' R U' R' U R U' R'
+R U' R' d R' U R
+R U R' U' R U R' U' R U R'
+U' R U' R' U2 R U' R'
+U R U R' U2 R U R'
+U' R U R' d R' U' R
+U F' U F U' F' U' F
+R2 U2 F R2 F' U2 R' U R'
+R U' R' U' R U R' U2 R U' R'
+R U' R' U R U2 R' U R U' R'
+R U' R' F' L' U2 L F
+R U2 R U R' U R U2 R2
+R U' R' r U' r' U2 r U r'
+R2 U2 R' U' R U' R' U2 R'
+R U R' U2 R U2 R' U R U' R'
+R U2 R' U R U2 R' U F' U' F
+# --- more common alternatives
+U' R U' R' U R U R'
+U R U' R' U R U' R' U R U' R'
+U' R U R' U R U R'
+R U R' U2 R U R' U' R U R'
+U R' F R F' U R U' R'
+U2 R U R' U F' U' F
+R' F' R U R U' R' F
+U' R' U2 R U R' U R
+F U2 F' U' R U R'
+R' U2 R2 U R2 U R
+R U2 R2 F R F'
+R2 U R2 U R2 U2 R2
+y' U2 R' U R U' R' U' R
+y' U R' U R U' R' U' R
+d R' U' R U2 R' U R
+y' U' R' U R U R' U R
+R U' R2 F R F'
+U2 R U' R' U' F' U' F
+F' U F U2 R U R'
+U' F' U F U R U R'
+R U' R' U F' U F
+D R U' R' D'
+D' R U R' D
+D R U R' D'
+D' R U' R' D
+D R U2 R' D'
+D' R U2 R' D
+# --- back-right slot without rotation
+R' U R U' R' U R
+R' U' R U R' U' R
+U R' U R
+U' R' U' R
+U R' U' R U2 R' U R
+U' R' U2 R U2 R' U R
+R' U2 R U R' U' R
+U R' U2 R U' R' U R
+U2 R' U' R U' R' U R
+U' R' U R U' R' U' R
+R' U' R U2 R' U R
+U R' U R U' R' U' R
+R' U R U2 R' U' R
+B U B'
+B' U B
+B' U' B
+U' B U' B'
+U B' U B
+R' U R U2 R' U R
+r' U r U2 r' U r
+# --- front-left / back-left slot without rotation (written out, besides generated mirrors)
+L' U' L
+L' U L
+U' L' U L
+U L' U' L
+L U L'
+L U' L'
+U L U' L'
+U' L U L'
+L' U2 L U L' U' L
+U L' U2 L U' L' U L
+L U2 L' U' L U L'
+# --- keyhole / multislot style
+D R U R' D'
+D' R U' R' D
+R U' R' D R U R' D'
+F' U F U' R U R'
+R U R' F' U' F
+U' R' F R F'
+F R U R' U' F'
+F' U' F R U R'
+`;
+
+// Every step of every solve in data/pro_references.txt, in order (one array
+// per solve, as tools/pro-references.js segments them), so a tool can leave a
+// solve out (buildNaturalnessModel({ excludeSolve })).
+const PRO_STEP_ALGS = [
+    ["D' U' L F' U R' U2 R U L2", "R U' R' L' U L", "R U2 R' U R U R'", "U' R' U R U R' U R U' R' U R"],
+    ["R2 U' R F R U' l U' l'", "U' L U L'", "U' L' U L R' U R", "U L' U2 L U L' U' L"],
+    ["U' L' U L D' U' R' U R'", "D' U' R U R' U' D", "y' R U R' U2 R U' R2 U R U2 R' U' R"],
+    ["L F2 D' L U L' R' F", "U R U' R2 U' R", "U' R' F R2 U R' U2 F'"],
+    ["D U' R B' R' F' D2 U' R2", "R U' R'", "L' U L U' L' U L", "U R' U' R y U' R U R'"],
+    ["l L' U L' B L R' U R U R' F R U' D", "R U' R' U2 R' U R", "U R U2 R' U2 L' U' L", "U R' F R F' R U' R'"],
+    ["r2 U' D' x D' U' F R' U' R2 U' R", "y' U R' U' R2 U' R'"],
+    ["F r2 U2 L' U L D' U L' U' L2 F L'", "U2 R' U2 R2 U R'", "y R U R' U R U' R'"],
+    ["U F' R B2 D2 U R D' F D", "R' U R U' R U R2 U R"],
+    ["R' U' D' R' F U' R' U R U L'", "U' L' U2 L U L' U' L", "y U2 L' U L U' L' U L"],
+    ["F' B R2 U' F R U' L U L' U' D'", "L U L' y' U L' U' L", "R U R' U' R U R'", "U R' U' R U' R' U R"],
+    ["U' R' r' U' D r U D R2 D'", "L' U L R' U' R U R' U R", "U' L' U L", "U R U2 R' U R U' R'"],
+    ["U' r' U' B' R2 B' R' D", "R' F R F'", "U L U L'", "U' L' U L U' L' U' L", "y U' R U2 R' U R U' R'"],
+    ["D' U' B2 F L2 R' F R L' U L U' D", "U' L U2 L' U' L U L'", "U R U' R' y U' L' U L"],
+    ["U' D B' L U L' U' D R", "U2 R U R'", "L' U' L R' U R", "y' U R U' R2 F R F'"],
+    ["D' r' U' L' D' U' L2 F'", "U L' U L2 U L'", "U' R U' R'", "y' R U' R' U R' F R F'"],
+    ["r' U' F r2 F U' R' U R U' D'", "R' F R F' R U' R'", "U2 L' U L x' U L' U' r", "U L' U' L"],
+    ["F' R2 B R U D L R' F' R2 U R'", "U' L' U2 L U2 L' U2 L2 U' L'"],
+    ["R U' F D U D R D'", "y' U L' U' L U R U' R'", "U R' U' R U L' U L", "R' U' R"],
+];
+
+const NATURALNESS = { order: 3, discount: 0.75, floor: 0.02, proWeight: 3 };
+
+// Every move token (faces, wide turns, slices, rotations; plain, ' and 2) and the end token.
+const NATURAL_VOCAB = [...'UDFBRLudfbrlMESxyz'].flatMap(f => [f, `${f}'`, `${f}2`]).concat('</s>');
+const NATURAL_VOCAB_SIZE = NATURAL_VOCAB.length;
+
+function naturalTokens(alg) {
+    const raw = Array.isArray(alg) ? alg : String(alg || '').split(/\s+/);
+    const out = [];
+    for (const t of raw) {
+        if (!t) continue;
+        const c = t[0];
+        if (!out.length && (c === 'x' || c === 'y' || c === 'z')) continue; // leading rotations are free
+        out.push(t.length === 3 && t[1] === '2' ? t.slice(0, 2) : t === `${c}'2` ? `${c}2` : t);
+    }
+    return out;
+}
+
+/** Left-right mirror of one move (R <-> L with every direction flipped; x and M keep theirs). */
+function mirrorMove(t) {
+    const c = t[0];
+    const face = { R: 'L', L: 'R', r: 'l', l: 'r' }[c] || c;
+    if (c === 'x' || c === 'M') return t;
+    const suffix = t.slice(1);
+    return face + (suffix === '2' ? '2' : suffix === "'" ? '' : "'");
+}
+
+/**
+ * Builds a naturalness model; `excludeSolve` (1-based) leaves that pro solve's
+ * steps out of the training algs (leave-one-solve-out benchmarks).
+ */
+function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight } = {}) {
+    const { order, discount: D, floor } = NATURALNESS;
+    const algs = HUMAN_F2L_ALGS.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+    PRO_STEP_ALGS.forEach((steps, k) => {
+        if (k + 1 === excludeSolve) return;
+        for (let n = 0; n < proWeight; n++) algs.push(...steps);
+    });
+    // counts[n]: context (n previous tokens, space-joined) -> Map(token -> count);
+    // the highest order holds raw counts, lower orders Kneser-Ney continuation counts.
+    const counts = Array.from({ length: order }, () => new Map());
+    const add = (m, ctx, w) => {
+        let c = m.get(ctx);
+        if (!c) m.set(ctx, (c = new Map()));
+        c.set(w, (c.get(w) || 0) + 1);
+    };
+    const start = Array(order - 1).fill('<s>');
+    for (const alg of algs) {
+        const toks = naturalTokens(alg);
+        for (const seq of [toks, toks.map(mirrorMove)]) {
+            const s = [...start, ...seq, '</s>'];
+            for (let i = order - 1; i < s.length; i++) add(counts[order - 1], s.slice(i - order + 1, i).join(' '), s[i]);
+        }
+    }
+    for (let n = order - 2; n >= 0; n--) {
+        const seen = new Set();
+        for (const [ctx, ws] of counts[n + 1]) {
+            const lower = ctx.split(' ').slice(1).join(' ');
+            for (const w of ws.keys()) {
+                const key = `${lower}\u0001${w}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                add(counts[n], lower, w);
+            }
+        }
+    }
+    const totals = counts.map(m => new Map([...m].map(([ctx, ws]) => [ctx, [...ws.values()].reduce((a, b) => a + b, 0)])));
+    /** -log2 P(w | ctx), ctx = the order - 1 previous tokens. */
+    function bits(ctx, w) {
+        let p = 1 / NATURAL_VOCAB_SIZE;
+        for (let n = 0; n < order; n++) {
+            const cx = n === 0 ? '' : ctx.slice(ctx.length - n).join(' ');
+            const c = counts[n].get(cx);
+            if (!c) continue;
+            const tot = totals[n].get(cx);
+            p = Math.max((c.get(w) || 0) - D, 0) / tot + (D * c.size / tot) * p;
+        }
+        return -Math.log2((1 - floor) * p + floor / NATURAL_VOCAB_SIZE);
+    }
+    // Hot path (every candidate of every search): trigram surprises in a
+    // table indexed by token ids, filled on first use. Tokens outside the
+    // vocabulary (none in generated algs) take the slow path.
+    const fast = order === 3;
+    const ids = new Map(NATURAL_VOCAB.map((t, i) => [t, i]));
+    const V = NATURAL_VOCAB.length; // ids 0..V-1; V = '<s>'
+    const table = fast ? new Float64Array((V + 1) * (V + 1) * V).fill(-1) : null;
+    const names = [...NATURAL_VOCAB, '<s>'];
+    const END = ids.get('</s>');
+    function surprise(alg) {
+        const toks = naturalTokens(alg);
+        if (!toks.length) return 0;
+        if (fast) {
+            let a = V, b = V, total = 0;
+            for (let i = 0; i <= toks.length; i++) {
+                const w = i < toks.length ? ids.get(toks[i]) : END;
+                if (w === undefined) return slowSurprise(toks);
+                const k = (a * (V + 1) + b) * V + w;
+                let x = table[k];
+                if (x < 0) x = table[k] = bits([names[a], names[b]], names[w]);
+                total += x;
+                a = b;
+                b = w;
+            }
+            return total;
+        }
+        return slowSurprise(toks);
+    }
+    function slowSurprise(toks) {
+        const s = [...start, ...toks, '</s>'];
+        let total = 0;
+        for (let i = order - 1; i < s.length; i++) total += bits(s.slice(i - order + 1, i), s[i]);
+        return total;
+    }
+    return { surprise, bits, algs: algs.length };
+}
+
+let naturalnessModel = null;
+/** Naturalness surprise of an alg in bits (see buildNaturalnessModel); built on first use. */
+function algSurprise(alg) {
+    if (!naturalnessModel) naturalnessModel = buildNaturalnessModel();
+    return naturalnessModel.surprise(alg);
+}
+/** Swaps the model algSurprise uses (null: the default, rebuilt on next use); for benchmarks. */
+function useNaturalnessModel(model) {
+    naturalnessModel = model;
 }
 
 // Upper-cased move tokens, cached (algSpeed upper-cases every move it looks at).
@@ -1270,6 +1610,11 @@ if (typeof module !== 'undefined' && module.exports) {
         ALG_SPEED_DEFAULTS,
         STEP_PENALTIES,
         stepPenalty,
+        algSurprise,
+        buildNaturalnessModel,
+        useNaturalnessModel,
+        HUMAN_F2L_ALGS,
+        PRO_STEP_ALGS,
         altAlgs,
         cleanScramble,
         isPseudoState,

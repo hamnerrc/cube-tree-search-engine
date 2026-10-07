@@ -28,7 +28,10 @@
  * what the user would actually see.
  *
  * Costs are scored like SolveSession.pathCost (MCC + per-step stepPenalty);
- * --no-penalty scores plain MCC.
+ * --no-penalty scores plain MCC. The naturalness part of stepPenalty is
+ * trained on the pro steps too (PROJECT_STATUS.md §4.47), so each solve is
+ * scored with a model that leaves that solve out (leave-one-solve-out);
+ * --in-sample uses the app's model (all solves) instead.
  *
  * Usage: node tools/pro-ranking.js [--app] [--no-penalty] [--cache file] [--max 5000] [--sample 1500]
  *        [--sweep rotation=1,2,3.5] [--train 1-7] [--params pushMult=0.7]
@@ -40,12 +43,20 @@ const root = path.join(__dirname, '..');
 const { loadProReferences, segmentProSolve } = require('./pro-references.js');
 const { CONFIGS, searchSegment } = require('./pro-search.js');
 const { rotationSpellings, relabelAlgForRotation, commuteNormalize } = require(path.join(root, 'js', 'facelet-cube.js'));
-const { algSpeed, ALG_SPEED_DEFAULTS, stepPenalty } = require(path.join(root, 'js', 'script.js'));
+const { algSpeed, ALG_SPEED_DEFAULTS, stepPenalty, buildNaturalnessModel, useNaturalnessModel } = require(path.join(root, 'js', 'script.js'));
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i === -1 ? d : args[i + 1]; };
 const appMode = args.includes('--app');
 const noPenalty = args.includes('--no-penalty'); // score with plain MCC only (pre-§4.35)
+const inSample = args.includes('--in-sample'); // naturalness model trained on every solve (the app's)
+const heldOutModels = new Map();
+/** The naturalness model a solve is scored with: trained without that solve (§4.47). */
+function naturalnessFor(solveNo) {
+  if (inSample) return null;
+  if (!heldOutModels.has(solveNo)) heldOutModels.set(solveNo, buildNaturalnessModel({ excludeSolve: solveNo }));
+  return heldOutModels.get(solveNo);
+}
 const cacheFile = opt('cache', path.join(require('os').tmpdir(), appMode ? 'cubetree-pro-app-pools.json' : 'cubetree-pro-pools.json'));
 const maxSolutions = parseInt(opt('max', appMode ? '500' : '5000'), 10);
 const sampleSize = parseInt(opt('sample', '1500'), 10);
@@ -157,8 +168,10 @@ function rankAll(pools, params) {
     // Same cost as SolveSession.pathCost: MCC of the path + each step's penalty.
     const pen = a => (noPenalty ? 0 : pl.priorSteps.reduce((t, x) => t + stepPenalty(x), 0) + stepPenalty(a));
     const cost = a => score(full(a)) + pen(a);
+    useNaturalnessModel(naturalnessFor(pl.solve));
     const proScore = cost(proAlg) / proPieces;
     const better = algs.filter(([a, pieces]) => cost(a) / pieces < proScore).length;
+    useNaturalnessModel(null);
     const frac = algs.length ? better / algs.length : 0;
     // Estimated rank in the full pool (1 = first); the app shows the top 500.
     return { ...pl, pct: frac, rank: 1 + Math.round(frac * (pl.algs.length - 1)), poolSize: pl.algs.length };
