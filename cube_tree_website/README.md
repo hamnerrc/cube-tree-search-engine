@@ -216,7 +216,16 @@ and validation data for the single step-independent model above.
   stay the search-coverage requirement (the solver must still find them)
   and become a secondary ranking check instead of the fitting target.
 
-The design of the tool is in PROJECT_STATUS.md (roadmap). Like the
+The tool exists: `node tools/pair-compare.js` (from `cube_tree_website/`)
+asks one pair at a time -- `a` / `b` for the faster one, `=` too close to
+call, `s` skip, `u` undo, `c` step context, `q` quit -- and never shows the
+model's own scores. `node tools/pair-compare.js stats` reports the counts
+(direct and derived), contradictions, self-consistency on repeated pairs and
+how often the current `alg_speed` agrees; `export` writes every comparison
+for fitting. Candidates come from `data/speed_pool.json` (real result lists
+of random scrambles at every stage plus the professional solves' lists,
+rebuilt with `pool`); answers are appended to `data/speed_comparisons.jsonl`.
+Details are in PROJECT_STATUS.md (roadmap item 7, §4.45). Like the
 step-independent model, the resulting `alg_speed` replaces the current
 penalties only if it orders held-out comparisons better than they do.
 

@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-06 (twenty-second pass, planning only).*
+*Last updated 2026-10-06 (twenty-third pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,28 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-06, after the twenty-second pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-06, after the twenty-third pass):** read this first.
+- Twenty-third pass: **roadmap 7a done** -- the pairwise speed-comparison
+  tool exists and is ready for the developer (7b). Writeup: §4.45. Tree was
+  clean at the start, all suites passing; no app code changed.
+  - `node tools/pair-compare.js` (in `cube_tree_website/`): one pair at a
+    time, `a`/`b` faster, `=` too close, `s` skip, `u` undo, `c` context,
+    `q` quit. `stats` and `export [file]` subcommands; `pool` rebuilds the
+    candidates (~10 min, real engine).
+  - Logic in `tools/pair-compare-lib.js` (votes, tie classes, cycles,
+    transitive closure, derived comparisons, pair selection), unit-tested in
+    `test/pair-compare.test.js` (17 tests).
+  - Candidate pool `data/speed_pool.json` (committed): 326 real result lists
+    (80 random-state scrambles, every stage incl. pseudo + all 66 pro
+    steps), 17,567 distinct algs. Answers go to
+    `data/speed_comparisons.jsonl` (append-only; created on first answer).
+  - Simulated judge on the real pool: 1441 direct answers -> 5633
+    comparison points (~3.9x); selection ~40 ms per question.
+  Next: 7b is the developer's (collect answers for ~1 week; commit the
+  `.jsonl` now and then). 7c (fit) after that. Item 8 still waits for the
+  developer's design.
+
+**Previous handoff (2026-10-06, after the twenty-second pass):**
 - Twenty-second pass: **planning and documentation only, no code changed**
   (user request). Two strategy changes, now roadmap items 7 and 8 (§5):
   1. **alg_speed will be trained on pairwise human comparisons**, not on
@@ -2037,6 +2058,107 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.45 DONE (2026-10-06, twenty-third pass): pairwise speed-comparison tool (roadmap 7a)
+
+**What exists.** `cube_tree_website/tools/pair-compare.js` (CLI) on top of
+`tools/pair-compare-lib.js` (pure logic, no engine, no terminal):
+
+- `node tools/pair-compare.js` -- interactive: clears the screen, shows A and
+  B (bold, moves spaced), A/B order random. Keys: `a` / `b` faster, `=` (or
+  `e`) too close, `s` skip, `u` undo (appends a retraction and asks the same
+  pair again), `c` shows the step context (first / later step, step types,
+  best rank in a real list, pro), `q` / Ctrl-C quit. The header shows answers
+  this session, direct + derived pair counts and open contradictions. The
+  model's own scores are **never shown** (they would bias the judge). The
+  time from showing to answering is stored (`ms`), the answer is the data.
+  Needs a TTY.
+- `stats` -- answers by reason, direct (strict / tie) and derived counts,
+  open contradictions with their algs, self-consistency on repeats, how
+  often the current alg_speed orders the answered pairs the same way (the
+  7c baseline), answered algs per feature, fitted model scale.
+- `export [file]` -- every direct and derived comparison as JSON
+  (`faster`, `slower`, `tie`, `dist`, `direct`, `votes`) for 7c.
+- `pool` -- rebuilds `data/speed_pool.json` from the real bridge
+  (`--scrambles 80 --top 40 --sample 15 --seed 7`, ~10 min).
+
+**Candidate pool** (`data/speed_pool.json`, 1.4 MB, committed so 7b can start
+without the engine): random-state scrambles walked through `SolveSession` +
+`searchCurrentNode` (the app's ranking), at every step the top 40 results
+plus 15 drawn from further down (D/F/B, wide and long algs rarely reach the
+top); the step committed to continue is drawn from the top 5. Two configs:
+xcross + xxcross + cross_opt + pro moves + multislot, and every third
+scramble the same plus pseudo F2L. Then the 19 pro solves replayed through
+the bridge with the pro's own steps committed (66 lists); the pro step is
+in its list, flagged `pro` (24 of 66 are in the top 40; the rest added with
+their rank). Result: 326 lists, 17,567 distinct algs (5,464 first-step).
+`searchWithLookahead` lists were not used: the look-ahead re-ranks the same
+algs. No list contains a slice move (M/E/S); the `slice` feature stays at 0
+until the pool has some.
+
+**Storage** (`data/speed_comparisons.jsonl`, created on the first answer):
+one JSON line per answer -- both algs (normalised: single spaces, `R2'` ->
+`R2`; the alg text is the identity, no commutation or mirror merging), the
+answer as shown (`a`, `b`, `tie`, `skip`), step contexts, both current model
+times, `model` (hash of ALG_SPEED_DEFAULTS + STEP_PENALTIES), `reason`
+(`select`, `random`, `repeat`, `contradiction`), `repeat`, `ms`, timestamp.
+Undo appends `{type: 'retract', id}`; nothing is rewritten. A torn last line
+(crash mid-write) is ignored on read.
+
+**Inference** (`comparisonGraph`): each pair's answers are votes; verdict =
+majority, a tied count takes the latest. Tie verdicts merge algs into
+classes (union-find); strict verdicts are edges between classes. Strongly
+connected sets of classes (Tarjan) and strict edges inside a tie class are
+contradictions: listed, excluded from inference (a direct answer still
+stands), and their pairs re-asked weakest first (fewest answers, then oldest),
+each at most once more -- a set the developer re-confirms is a genuine
+intransitivity and is left alone. Closure: bitset reachability over the
+condensation. Counts: derived = implied pairs (ordered + same tie class)
+minus direct ones. `derivedComparisons` gives each derived pair its shortest
+chain length (`dist`) for weighting; validation in 7c must use direct
+answers only, split by alg.
+
+**Selection** (`selectPair`, ~40 ms on the real pool): (1) an open
+contradiction's weakest pair; (2) 5%: a spaced repeat (an answer at least 40
+answers old, each pair repeated once); (3) 10%: a random eligible pair;
+(4) otherwise the best score over ~6-7k sampled candidates (all pairs among
+the top 15 of 40 random lists, 30 random pairs per list, 800 close-in-model-
+time pairs across lists, 600 pairs touching already-answered algs). Score =
+ambiguity (1 - |2p - 1|, p = logistic in the relative time difference, its
+scale fitted by maximum likelihood once 30 strict answers exist) + 0.8 impact
+(both near the top of the same real list) + 0.5 coverage (features with few
+answered algs: D, F, B, r/l, u/d/f/b, slices, leading / mid-step rotations,
+length) + 1.0 connect (joins two components 1, a new alg next to answered
+ones 0.8, unresolved inside one component 0.5, two new algs 0). Never asked:
+answered or implied pairs, skipped pairs, algs in two skipped pairs, the
+last 10 pairs; algs from the last 3 pairs score x0.5 (otherwise the
+"extend" pull showed one alg in 4 of 5 consecutive questions).
+
+**Tuning by simulation** (synthetic judge = algSpeed with other constants
++ a D/B surcharge + 5% noise, ties within 3%; 400 answers on the real pool):
+derived pairs 315 with the first weights (connect 0.4, no
+answered-alg candidates), 959 with connect 1.0 and answered-alg candidate
+draws, 908 with the recent-alg factor. 1500 answers: 1441 direct -> 5633
+comparison points (3.9x). A real judge's consistency will change the
+multiplier; `stats` reports it.
+
+**Differences from the roadmap design.** Regrips are not a coverage
+feature (algSpeed does not expose grip changes; the proxy "D/F/B mid-alg"
+matched 92% of the pool). The selection's "fitted model" is the current
+model with a fitted logistic scale, not a fitted alg_speed (that is 7c).
+Pool lists come from `searchCurrentNode` only (see above).
+
+**Checks.** `test/pair-compare.test.js` (17 tests): normalisation and
+features; log append / retract / torn line; closure (chain of 10 answers ->
+45 comparisons, `dist` of the far pair 9); ties; vote majority and
+latest-wins; a cycle reported, not inferred through, weakest pair first,
+re-asked once then left, resolved by a flipped vote; a strict answer inside
+a tie class; skips; 300 selections never ask a known pair; spaced repeats;
+close/high-impact pairs beat clear-cut ones; connect values; fitted scale
+small for a perfectly ordered judge and large for a coin flip; stats. The
+interactive loop was driven through a pseudo-terminal (`script`): answers,
+tie, skip, undo (re-asks the pair), context toggle, quit with stats; the
+log lines were as expected. All other unit suites pass; no app code changed.
+
 ### 4.44 DONE (2026-10-06, twenty-first pass): "no R2/L2" option removed, unorthodox R2 by displacement, scoring vision
 
 **Removed: "no R2/L2 after step 1".** It was a temporary fix (it removed every
@@ -3783,7 +3905,7 @@ be done in parallel.
 7. **Train `alg_speed` on pairwise human speed comparisons, then one
    step-independent model (README "Future: one scoring algorithm for every
    step" and "Planned: training `alg_speed` on pairwise speed comparisons";
-   planned, not started)**
+   7a done, 7b next -- the developer's)**
 
    *Why the change (2026-10-06, user decision):* 19 pro solves are too few
    to calibrate execution speed, and a pro's step only shows what they
@@ -3853,9 +3975,11 @@ be done in parallel.
      already be useful thanks to transitivity and the pair selection.
 
    Phases:
-   - [ ] 7a. Build `tools/pair-compare.js` (candidate pool, selection,
+   - [x] 7a. Build `tools/pair-compare.js` (candidate pool, selection,
      storage, transitive closure, contradiction check) with unit tests on
-     the selection and closure logic; no app code changes.
+     the selection and closure logic; no app code changes. Done in the
+     twenty-third pass (§4.45); differences from the design above are
+     listed there.
    - [ ] 7b. The developer collects comparisons (~1 week).
    - [ ] 7c. Fit and validate one step-independent `alg_speed`; switch the
      app to it only if it wins on held-out comparisons; document the
