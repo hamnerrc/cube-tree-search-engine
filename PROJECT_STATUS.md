@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-06 (twenty-first pass).*
+*Last updated 2026-10-06 (twenty-second pass, planning only).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,24 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-06, after the twenty-first pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-06, after the twenty-second pass):** read this first.
+- Twenty-second pass: **planning and documentation only, no code changed**
+  (user request). Two strategy changes, now roadmap items 7 and 8 (§5):
+  1. **alg_speed will be trained on pairwise human comparisons**, not on
+     pro solves: a terminal tool (`tools/pair-compare.js`, planned) shows
+     two algs the current model scores as close; the developer picks the
+     faster one. Goal: a few thousand comparison points over about a week,
+     multiplied by transitive inference, with pairs chosen by how ambiguous
+     and impactful they are. Full design: roadmap item 7. Pro solves stay
+     the search-coverage requirement and become a secondary ranking check.
+     README: "Planned: training `alg_speed` on pairwise speed comparisons".
+  2. **Visual redesign**: the developer designs the new look and layout;
+     the agent only implements the developer's spec (no own visual
+     direction). Roadmap item 8; README "Planned: visual redesign".
+  Next agent work on item 7 = build the tool (phase 7a) when the user asks;
+  item 8 waits for the developer's design.
+
+**Previous handoff (2026-10-06, after the twenty-first pass):**
 - Twenty-first pass (user task list: remove the "no R2/L2 after step 1"
   option, R2/L2 in the unorthodox rule by displacement, README vision for a
   step-independent alg_speed). Writeup: §4.44. Tree clean, all suites
@@ -3763,13 +3780,98 @@ be done in parallel.
      about exercising the step-3 loop's generality rather than new solver
      work.
 
-7. **One step-independent `alg_speed` (README "Future: one scoring algorithm
-   for every step"; planned for LATER)**
-   - [ ] Gather more professional solves into `data/pro_references.txt`
-     (the current 19 are too few to fit one model for every stage).
-   - [ ] Then refit a single penalty set with no first-step values
-     (`tools/pro-ranking.js`, leave-one-solve-out + held-out solves) and
-     replace the split only if it ranks pro steps at least as well.
+7. **Train `alg_speed` on pairwise human speed comparisons, then one
+   step-independent model (README "Future: one scoring algorithm for every
+   step" and "Planned: training `alg_speed` on pairwise speed comparisons";
+   planned, not started)**
+
+   *Why the change (2026-10-06, user decision):* 19 pro solves are too few
+   to calibrate execution speed, and a pro's step only shows what they
+   picked, not which of two steps is faster. Speed data will instead come
+   from the developer judging pairs directly. `tools/pro-ranking.js` and
+   `data/pro_references.txt` stay: coverage requirement (the solver must
+   find the pro solutions) and a secondary ranking check.
+
+   **System design: `tools/pair-compare.js` (terminal, Node, no browser)**
+
+   - *Session loop.* Show one pair at a time: alg A and alg B (full move
+     text, large and plain, A/B order randomised so position does not
+     bias), optionally the step they belong to. Keys: `a` / `b` = that one
+     is faster, `=` = too close to call, `s` = skip (not executable /
+     unclear), `u` = undo the last answer, `q` = quit (everything already
+     answered is saved). Show a running count (answers today, direct and
+     derived totals, contradictions open). The developer executes both on
+     a real cube before answering; the tool can optionally time how long
+     an answer took, but the answer is the judgement, not the time.
+   - *Candidate algs.* Drawn from what the app really ranks, so the data
+     covers the decisions users see: result lists from the real bridge
+     (`searchCurrentNode` / `searchWithLookahead` on random scrambles and
+     at every stage: cross/xcross from inspection, single pairs, multislots,
+     pseudo), plus the pro steps and their pools (`tools/pro-ranking.js
+     --app` pools, cached). Each alg is stored with its step context
+     (first step or later, step type) so a step-independent model can be
+     checked per stage.
+   - *Pair selection (most important first).* Only pairs whose answer is
+     not already implied (see transitive inference). Among those, a score
+     that favours: (1) pairs the current `algSpeed` (+ step penalty) scores
+     as close (small relative difference) or a fitted model is least sure
+     about (predicted win probability near 50%); (2) impact: both algs
+     near the top of the same real result list, where a wrong order
+     changes what the user sees first; (3) coverage: features the data has
+     few answers for (`D`/`F`/`B`, wide `r l u d f b`, slices, mid-step
+     rotations, regrips, long vs short algs); (4) algs that join separate
+     components of the comparison graph, so transitivity can link them.
+     A small share of random pairs keeps the selection from only checking
+     the model's own blind spots, and a few already-answered pairs are
+     asked again (spaced, unannounced) to measure the developer's own
+     consistency.
+   - *Storage.* Append-only `data/speed_comparisons.jsonl`, one line per
+     answer: both algs (normalised notation), step context, the answer
+     (`a`, `b`, `tie`, `skip`), timestamp, the `algSpeed` values and model
+     version at the time, and whether it was a repeat. Raw answers are
+     never rewritten; undo appends a retraction. Derived comparisons are
+     recomputed from the raw answers, never stored as if judged.
+   - *Transitive inference.* A directed "faster than" graph over algs, ties
+     merged into equivalence classes. A > B and B > C gives A > C
+     (transitive closure), so a few hundred answers yield thousands of
+     ordered pairs. Cycles (A > B > C > A) are contradictions: reported,
+     and their weakest edge (oldest / least consistent) is asked again
+     instead of silently guessed. Derived pairs are weighted below direct
+     ones (by path length) and are not independent, so validation uses
+     direct answers only, split by alg (no held-out alg appears in
+     training pairs).
+   - *Fitting.* A pairwise model (Bradley-Terry / logistic on the
+     difference of predicted times) over `algSpeed`'s existing parameters
+     (`ALG_SPEED_PARAMS`, MCC) and one step-independent penalty set (the
+     current `STEP_PENALTIES` without `wideRLFirst` / first-step
+     `wideOther`). Measure: share of held-out direct comparisons ordered
+     correctly (ties excluded), plus the old pro-ranking numbers as a
+     secondary check. The new model replaces the current scoring only if
+     it orders held-out comparisons better than the current one does.
+   - *Target.* A few thousand comparison data points (direct + derived)
+     from about a week of testing; a few hundred direct answers should
+     already be useful thanks to transitivity and the pair selection.
+
+   Phases:
+   - [ ] 7a. Build `tools/pair-compare.js` (candidate pool, selection,
+     storage, transitive closure, contradiction check) with unit tests on
+     the selection and closure logic; no app code changes.
+   - [ ] 7b. The developer collects comparisons (~1 week).
+   - [ ] 7c. Fit and validate one step-independent `alg_speed`; switch the
+     app to it only if it wins on held-out comparisons; document the
+     result in README "Ranking" and here.
+
+8. **Visual redesign (README "Planned: visual redesign"; waiting on the
+   developer's design)**
+   - [ ] Design phase -- the human developer designs the visuals and layout
+     of both pages (typography, colour, spacing, structure, results table,
+     controls, phone layouts), replacing the current placeholder look that
+     reads as a default "AI-generated" site.
+   - [ ] Implementation phase -- the agent codes the developer's design
+     specification into `index.html`, `solver.html`, `styles.css` and the
+     UI scripts without changing behaviour (all suites and a headless
+     browser pass before and after). The agent does not invent visual
+     direction; open questions in the spec go back to the developer.
 
 ---
 

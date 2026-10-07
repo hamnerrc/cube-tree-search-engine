@@ -181,11 +181,44 @@ because a single value fitted to the few reference solves ranked the
 professionals' first steps or their later steps badly. Those step-specific
 values are a stop-gap for too little data, not the intended design.
 
-This is planned for **later, once enough professional solve data has been
-gathered** to fit one model that ranks professional steps well at every
-stage of the solve (and to check it on held-out solves, as above). Until
-then the step-specific penalties stay, and any change to them still goes
-through `tools/pro-ranking.js`.
+This is planned for **later, once enough speed data has been gathered** to
+fit one model for every stage of the solve and check it on data the fit
+never saw. Until then the step-specific penalties stay, and any change to
+them still goes through `tools/pro-ranking.js`.
+
+### Planned: training `alg_speed` on pairwise speed comparisons
+
+Nineteen professional solves are too little data to calibrate `alg_speed`,
+and a professional's choice says which step they *picked*, not which of two
+steps is faster to execute. The planned source of speed data is therefore
+**direct human judgement**: a terminal tool shows two algorithms that the
+current `alg_speed` scores as close, the developer executes both and picks
+the faster one (or calls them even), and the answers become the training
+and validation data for the single step-independent model above.
+
+- **Human in the loop.** The developer makes the comparisons by hand,
+  aiming for a few thousand comparison data points over about a week of
+  testing.
+- **Transitive inference.** Answers are combined: if A is faster than B
+  and B faster than C, then A is faster than C. A few hundred manual
+  answers therefore yield far more derived comparisons. Contradictions
+  (A > B > C > A) are detected and shown again for a fresh judgement rather
+  than silently kept.
+- **Choosing pairs.** The tool does not pick pairs at random. It asks first
+  about the comparisons whose answer matters most: pairs the current model
+  scores as nearly equal or is least sure about, pairs that would decide
+  the order near the top of real result lists (where a wrong order changes
+  what the user sees first), pairs that exercise moves the model has little
+  data on (`D`, `F`, `B`, wide moves, slices, rotations, regrips), and never
+  pairs whose answer already follows from earlier answers.
+- **What it replaces.** The fitted model is judged on how many held-out
+  human comparisons it orders correctly. The professional reference solves
+  stay the search-coverage requirement (the solver must still find them)
+  and become a secondary ranking check instead of the fitting target.
+
+The design of the tool is in PROJECT_STATUS.md (roadmap). Like the
+step-independent model, the resulting `alg_speed` replaces the current
+penalties only if it orders held-out comparisons better than they do.
 
 ## What the DAG edges mean
 
@@ -422,9 +455,11 @@ regardless of how the current scoring algorithm ranks them.** They are the
 validation set for search coverage: `test/pro-references.test.js` checks the
 reference data itself, and `test/pro-references-e2e.js` measures, for every
 step, whether the professional's exact algorithm is in the search tree.
-They are also the ranking benchmark: `tools/pro-ranking.js` measures where
-each professional step ranks among the engine's alternatives under
-`alg_speed`. Reference entries may omit the inspection line (no rotation)
+They are also the current ranking benchmark: `tools/pro-ranking.js`
+measures where each professional step ranks among the engine's alternatives
+under `alg_speed` (planned to become a secondary check once `alg_speed` is
+trained on pairwise comparisons; see "Planned: training `alg_speed` on
+pairwise speed comparisons"). Reference entries may omit the inspection line (no rotation)
 and may combine pairs into one step (e.g. `// 3rd/4th pairs`).
 
 Professional step boundaries do not always land on a DAG node (a cross edge
@@ -483,6 +518,24 @@ simple pseudo only), look-ahead (depth and breadth), and how many results to
 show per page. Changing a search setting re-searches the current step
 (reusing what it can) and applies to every later step until changed; a
 filter only hides results, and the status line says how many it hid.
+
+### Planned: visual redesign
+
+The current look (dark, monospace, lowercase, minimal) is a functional
+placeholder and still reads as a default "AI-generated" site. A complete
+visual and layout redesign is planned, to make the site polished and
+appealing to cubers. The work is divided:
+
+- **Design phase (the developer):** the visuals and layout are designed
+  entirely by the human developer -- typography, colour, spacing, page
+  structure, the results table, controls and phone layouts.
+- **Implementation phase (the AI agent):** the agent codes the developer's
+  design specification into the existing pages and integrates it without
+  changing what the pages do. It does not invent visual direction of its
+  own; anything the specification leaves open goes back to the developer.
+
+The behaviour described in this README (settings, filters, progressive
+results, undo, persistence) stays the same through the redesign.
 
 ## Results table
 
@@ -576,8 +629,9 @@ programs use.
 - Automatic batch ranking across multiple scrambles at once.
 - Swapping in a fully fitted `alg_speed` model (see Provenance); only the
   benchmarked adjustments above are applied. A single step-independent
-  model is the planned next stage (see "Future: one scoring algorithm for
-  every step"), once there is enough professional solve data.
+  model trained on pairwise human speed comparisons is the planned next
+  stage (see "Future: one scoring algorithm for every step" and "Planned:
+  training `alg_speed` on pairwise speed comparisons").
 - XXXXCross as a primary, directly-offered target.
 - Cross finishing anywhere other than the bottom face.
 
