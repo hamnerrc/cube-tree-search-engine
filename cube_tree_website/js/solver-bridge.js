@@ -390,18 +390,6 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
   return null;
 }
 
-// Results-page option "no r2/l2 after step 1": later-step searches leave R2 and
-// L2 out of the engine's move set (pairs inserted with them are rarely how a
-// human solves), and results that would show them (a rotation spelling can
-// relabel F2/B2 into R2/L2) are dropped.
-const R2L2_TOKEN = /(^| )[RL]2'?(?= |$)/;
-function withoutR2L2(allowedMoves) {
-  return allowedMoves.split('_').filter(m => m !== 'R2' && m !== 'L2').join('_');
-}
-function hasR2L2(alg) {
-  return R2L2_TOKEN.test(alg);
-}
-
 // Results-page option "wide moves" (default on): off, no result at any step
 // uses a wide move (r l u d f b) or a slice (M E S) -- the engine searches
 // without r/l, and the wide spellings (cross optimisation, side-cross
@@ -416,27 +404,34 @@ function withoutWide(allowedMoves) {
 
 /**
  * README "Unorthodox solutions": a step is unorthodox when it turns the R
- * layer (or the L layer) a half turn away from where the step started -- an
- * R adds a quarter turn, R' takes one away, R2 is two, counted mod 4 (so R2
- * after an R is back to one quarter turn the other way). "R U R U' R'"
- * (R layer at 2 after the second R) is unorthodox; "R U' R2 U' R" never
- * gets past one. r counts as R and l as L (the same hand turns that side);
- * a y or z rotation (also inside u d f b E S) puts other layers in the hands,
- * so both counts start again. Only later steps are ever filtered on this.
+ * layer (or the L layer) a half turn away from where the step started. The
+ * displacement starts at 0; R is +1, R' is -1, and a half turn is executed
+ * in whichever direction the hand is free to go: from +1 an R2 is done as
+ * R2' (to -1), from -1 as R2 (to +1), and from 0 either way reaches +-2.
+ * The step is unorthodox as soon as the displacement reaches +-2:
+ * "R U R2 U' R" goes 1, 1, -1, -1, 0 and is fine; "R U R U' R'" (2 at the
+ * second R), "R' U R'" and a lone "R2" are not. r counts as R and l as L
+ * (the same hand turns that side); a y or z rotation (also inside u d f b E
+ * S) puts other layers in the hands, so both counts start again. Only later
+ * steps are ever filtered on this.
  */
 function isUnorthodox(alg) {
+  // The displacement after one more turn of the layer, or null at +-2.
+  const turn = (d, t) => {
+    const next = t.includes('2') ? (d > 0 ? d - 2 : d + 2) : t.endsWith("'") ? d - 1 : d + 1;
+    return Math.abs(next) >= 2 ? null : next;
+  };
   let r = 0;
   let l = 0;
   for (const t of String(alg).split(' ')) {
     if (!t) continue;
     const c = t[0];
-    const q = t.includes('2') ? 2 : t.endsWith("'") ? 3 : 1;
     if (c === 'R' || c === 'r') {
-      r = (r + q) % 4;
-      if (r === 2) return true;
+      r = turn(r, t);
+      if (r === null) return true;
     } else if (c === 'L' || c === 'l') {
-      l = (l + q) % 4;
-      if (l === 2) return true;
+      l = turn(l, t);
+      if (l === null) return true;
     } else if ('yzudfbES'.includes(c)) {
       r = 0;
       l = 0;
@@ -539,7 +534,6 @@ class SolveSession {
     // Results-page search options (they apply to the step on screen and its
     // look-ahead, and can change from step to step):
     this.multislot = true; // later steps may solve several pairs (if the tree has those edges)
-    this.noLaterR2L2 = false; // later steps without R2/L2 (see withoutR2L2)
     this.wideMoves = true; // false: no wide-move results at any step (see WIDE_TOKEN)
   }
 
@@ -550,7 +544,7 @@ class SolveSession {
   get searchSettingsKey() {
     const wide = this.wideMoves === false ? 'nowide' : '';
     if (this.isAtRoot) return wide;
-    return `${this.multislot ? '' : 'single'}${this.noLaterR2L2 ? '|noR2L2' : ''}${wide ? '|' + wide : ''}`;
+    return `${this.multislot ? '' : 'single'}${wide ? '|' + wide : ''}`;
   }
 
   /**
@@ -559,7 +553,7 @@ class SolveSession {
    */
   withSettings(settings) {
     const s = this.fork();
-    for (const k of ['multislot', 'noLaterR2L2', 'wideMoves']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
+    for (const k of ['multislot', 'wideMoves']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
     return s;
   }
 
@@ -717,7 +711,6 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     edges = edges.filter(e => ((e.solved_step && e.solved_step.corners) || []).length <= 1
       && ((e.solved_step && e.solved_step.edges) || []).length <= 1);
   }
-  const noR2L2 = !isRoot && session.noLaterR2L2 === true;
   const targetKey = (edge) => {
     const target = session.nodeMap.get(edge.target);
     return JSON.stringify([
@@ -868,11 +861,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     : plan;
   for (const p of startOrder) {
     const extra = { ...(session.proMoves ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
-    if (noR2L2) extra.allowedMoves = withoutR2L2(extra.allowedMoves || MOVE_RESTRICT);
     if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
-    const pseudoMoves = noR2L2 ? withoutR2L2(MOVE_RESTRICT) : MOVE_RESTRICT;
     const run = () => (p.isPseudo
-      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline, pseudoMoves)
+      ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline)
       : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra));
     // The same engine input can come up again: another look-ahead path to the
     // same cube state (a multislot and its two single-pair halves; different
@@ -884,7 +875,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // for every same-state pair; pseudo calls only by exact input. Not under
     // a time limit, where a call's output also depends on its deadline.
     const callKey = deadline ? null : JSON.stringify(p.isPseudo
-      ? ['p', p.allEdges.slice().sort(), p.allCorners.slice().sort(), p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, pseudoMoves]
+      ? ['p', p.allEdges.slice().sort(), p.allCorners.slice().sort(), p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions]
       : ['m', p.allCorners.slice().sort(), engineStateKey(p), p.callRotation, p.maxLength, p.effectiveMaxSolutions, extra]);
     // Solutions with this call's own "rotation postAlg" prefix stripped (the
     // engine echoes it), so a call shared by state yields the same steps.
@@ -903,7 +894,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // (PROJECT_STATUS.md §4.36); each call's candidates are kept apart and
   // joined in plan order below, so the output is the same as processing the
   // calls one by one in plan order.
-  const ctx = postProcessContext(session, isRoot, noR2L2);
+  const ctx = postProcessContext(session, isRoot);
   const processCall = async (p) => {
     p.candidates = [];
     const { isPseudo, pairCount, color } = p;
@@ -956,12 +947,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
  * be sent to a worker. `nodeIndex` / `rootTargets` are the label -> node id
  * maps behind nodeByLabels / rootTargetByLabels.
  */
-function postProcessContext(session, isRoot, noR2L2) {
+function postProcessContext(session, isRoot) {
   nodeByLabels(session, [], []); // builds the tree's index
   if (isRoot) rootTargetByLabels(session, [], []);
   return {
     isRoot,
-    noR2L2,
     scramble: session.scramble,
     rotation: session.rotation,
     stepAlgs: session.stepAlgs.slice(),
@@ -1023,7 +1013,7 @@ function pathCostFor(ctx, alg) {
  */
 async function postProcessCall(ctx, p, cores, yieldState) {
   const candidates = [];
-  const { isRoot, noR2L2 } = ctx;
+  const { isRoot } = ctx;
   const wideOn = ctx.wideMoves !== false;
   // Every candidate goes through here: no wide move with wide moves off, and
   // later steps carry the unorthodox flag the results page can filter on.
@@ -1131,7 +1121,6 @@ async function postProcessCall(ctx, p, cores, yieldState) {
         continue;
       }
       if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
-      if (noR2L2 && hasR2L2(finalCoreAlg)) continue; // (the engine already excludes them)
 
       // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
       // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
@@ -1256,7 +1245,6 @@ async function postProcessCall(ctx, p, cores, yieldState) {
         for (const { alg: spelling, rotation: rot } of rotationSpellingParts(finalCoreAlg, !isRoot)) {
           const nodeId = nodeAfter(rot);
           if (!nodeId) continue;
-          if (noR2L2 && hasR2L2(spelling)) continue;
           const spTpp = pathCostFor(ctx, spelling)
             / p.pieces;
           push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
@@ -1276,7 +1264,6 @@ async function postProcessCall(ctx, p, cores, yieldState) {
       // spellings doubled its candidates (root search ~60% slower).
       if (!isRoot && wideOn && typeof wideSpellingParts === 'function') {
         for (const { alg: spelling, rotation: rot } of wideSpellingParts(finalCoreAlg)) {
-          if (noR2L2 && hasR2L2(spelling)) continue;
           let nodeId;
           if (!isPseudo) nodeId = nodeAfter(rot);
           else if (!rot) nodeId = reachedNodeId;
@@ -1572,10 +1559,10 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * further searches and the returned list is incomplete.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
-  // Results-page search options (multislot, noLaterR2L2, wideMoves) for this
-  // step and its look-ahead; unset ones keep the session's.
-  if (options.multislot !== undefined || options.noLaterR2L2 !== undefined || options.wideMoves !== undefined) {
-    session = session.withSettings({ multislot: options.multislot, noLaterR2L2: options.noLaterR2L2, wideMoves: options.wideMoves });
+  // Results-page search options (multislot, wideMoves) for this step and its
+  // look-ahead; unset ones keep the session's.
+  if (options.multislot !== undefined || options.wideMoves !== undefined) {
+    session = session.withSettings({ multislot: options.multislot, wideMoves: options.wideMoves });
   }
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
@@ -1708,7 +1695,7 @@ if (typeof module !== 'undefined' && module.exports) {
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
     isWideAlg, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
-    SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, withoutR2L2, hasR2L2, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
+    SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, cubedbUrl,
   };
 }

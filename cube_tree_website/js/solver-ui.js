@@ -420,7 +420,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // ---------------------------------------------------------------------
   const DEFAULT_PAGE_SIZE = 25;
   const view = {
-    lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, noR2L2: false, wideMoves: true,
+    lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE,
   };
   let currentPage = 0;
@@ -443,7 +443,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     view.pageSize = Math.max(1, Math.min(500, parseInt(view.pageSize, 10) || DEFAULT_PAGE_SIZE));
     view.simplePseudo = !!view.simplePseudo;
     view.multislot = !!view.multislot;
-    view.noR2L2 = !!view.noR2L2;
+    delete view.noR2L2; // a removed option (unorthodox filter replaces it), maybe still saved
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
   }
@@ -468,8 +468,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (wrap) wrap.hidden = !pseudoOn();
     const multi = document.getElementById('multislot');
     if (multi) multi.checked = view.multislot;
-    const noR2L2 = document.getElementById('no-r2l2');
-    if (noR2L2) noR2L2.checked = view.noR2L2;
     const wide = document.getElementById('wide-moves');
     if (wide) wide.checked = view.wideMoves;
     const unorthodox = document.getElementById('hide-unorthodox');
@@ -496,7 +494,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('hide-unorthodox', 'change', (e) => { view.hideUnorthodox = e.target.checked; refine(); });
     on('wide-moves', 'change', (e) => { view.wideMoves = e.target.checked; refine(); });
     on('multislot', 'change', (e) => { view.multislot = e.target.checked; research(); });
-    on('no-r2l2', 'change', (e) => { view.noR2L2 = e.target.checked; research(); });
     on('page-size', 'change', (e) => {
       view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
       saveViewPrefs();
@@ -625,7 +622,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   // Background scrambles search one step without look-ahead; the scramble
   // on screen uses the results page's look-ahead setting (reusing that
-  // single-step search when it becomes active). Multislot and no-r2/l2 are
+  // single-step search when it becomes active). Multislot and wide moves are
   // search settings for every scramble.
   // The results-page filters (they only hide results; look-ahead follows them).
   // Unorthodox steps are only ever flagged after the first step.
@@ -648,7 +645,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       filter: filter.fn,
       filterKey: filter.key,
       multislot: view.multislot,
-      noLaterR2L2: view.noR2L2,
       wideMoves: view.wideMoves,
     };
   }
@@ -656,7 +652,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function resultsFor(session, h, ph, priority) {
     const opts = searchOptions(priority);
     const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey,
-      opts.multislot ? 'multi' : '', opts.noLaterR2L2 ? 'noR2L2' : '', opts.wideMoves ? '' : 'nowide'].join('|');
+      opts.multislot ? 'multi' : '', opts.wideMoves ? '' : 'nowide'].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
       renderScrambleStatusIfActive(session);

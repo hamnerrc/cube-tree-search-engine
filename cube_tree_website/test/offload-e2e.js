@@ -74,8 +74,8 @@ async function test(name, fn) {
     assert.strictEqual(ser(d), ser(c));
   });
 
-  await test('post-processing workers == in-thread: no r2/l2 and multislot', async () => {
-    const [a, b] = await both([cross()], { noLaterR2L2: true, multislot: true });
+  await test('post-processing workers == in-thread: multislot, wide moves off', async () => {
+    const [a, b] = await both([cross()], { multislot: true, wideMoves: false });
     assert.ok(a.length > 50);
     assert.strictEqual(ser(b), ser(a));
   });

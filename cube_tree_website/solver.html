@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261006w">
+    <link rel="stylesheet" href="styles.css?v=20261006x">
 </head>
 
 <body>
@@ -52,13 +52,10 @@
                 <label class="check" title="results with wide moves (r l u d f b): e.g. f R' f' for B U' B', u R U' R' for D y R U' R'. off: searched without them; on again: they are searched and added to the list">
                     <input type="checkbox" id="wide-moves"> wide moves
                 </label>
-                <label class="check" title="later steps (and look-ahead) are searched without the half turns R2 and L2">
-                    <input type="checkbox" id="no-r2l2"> <span>no <span class="moves">R2/L2</span> after step 1</span>
-                </label>
             </fieldset>
             <fieldset class="control-group">
                 <legend>filter</legend>
-                <label class="check" title="hide later steps that turn the R or L layer a half turn away from where the step started (e.g. R U R U' R'). the first step is never hidden">
+                <label class="check" title="hide later steps that turn the R or L layer a half turn away from where the step started (e.g. R U R U' R', or an R2 from the start; R U R2 U' R is fine). the first step is never hidden">
                     <input type="checkbox" id="hide-unorthodox"> hide unorthodox
                 </label>
                 <label class="check" id="simple-pseudo-wrap" title="after a mismatched (pseudo) pair, only list the steps that repair it" hidden>
@@ -114,15 +111,15 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/script.js?v=20261006w"></script>
-    <script src="js/facelet-cube.js?v=20261006w"></script>
-    <script src="js/facelet-flags.js?v=20261006w"></script>
-    <script src="js/cross-optimization.js?v=20261006w"></script>
-    <script src="crossSolver/solver-helper.js?v=20261006w"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=20261006w"></script>
-    <script src="js/search-scheduler.js?v=20261006w"></script>
-    <script src="js/solver-bridge.js?v=20261006w"></script>
-    <script src="js/solver-ui.js?v=20261006w"></script>
+    <script src="js/script.js?v=20261006x"></script>
+    <script src="js/facelet-cube.js?v=20261006x"></script>
+    <script src="js/facelet-flags.js?v=20261006x"></script>
+    <script src="js/cross-optimization.js?v=20261006x"></script>
+    <script src="crossSolver/solver-helper.js?v=20261006x"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=20261006x"></script>
+    <script src="js/search-scheduler.js?v=20261006x"></script>
+    <script src="js/solver-bridge.js?v=20261006x"></script>
+    <script src="js/solver-ui.js?v=20261006x"></script>
 </body>
 
 </html>

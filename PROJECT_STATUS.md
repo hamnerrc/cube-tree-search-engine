@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-06 (twentieth pass).*
+*Last updated 2026-10-06 (twenty-first pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,26 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-06, after the twentieth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-06, after the twenty-first pass):** read this first.
+- Twenty-first pass (user task list: remove the "no R2/L2 after step 1"
+  option, R2/L2 in the unorthodox rule by displacement, README vision for a
+  step-independent alg_speed). Writeup: §4.44. Tree clean, all suites
+  passing at the start.
+  1. **"No R2/L2 after step 1" removed** everywhere (bridge, UI, HTML, info
+     text, README, tests). The unorthodox filter replaces it. A saved view
+     with `noR2L2` is dropped on load.
+  2. **Unorthodox rule restated as signed displacement**: R +1, R' -1, R2
+     executed towards the other side (+1 -> -1, -1 -> +1; from 0 it reaches
+     +-2 = unorthodox). Same verdicts as the old mod-4 code (200k random
+     algs, 0 differences) -- the old code already did what the user
+     described; the rewrite makes the rule readable and tested on their
+     example (`R U R2 U' R` orthodox).
+  3. **README: "Future: one scoring algorithm for every step"** -- the
+     step-specific first-step penalties are a stop-gap; one step-independent
+     alg_speed is planned for later, once enough pro solve data exists;
+     flagged as arguably the most important part of the site.
+
+**Previous handoff (2026-10-06, after the twentieth pass):**
 - Twentieth pass (user task list: wide-move spellings of F2L steps,
   "unorthodox" steps, exact duplicate rows, a wide-moves toggle and an
   unorthodox filter on the results page, clearer R2/L2 label, general
@@ -2001,6 +2020,45 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.44 DONE (2026-10-06, twenty-first pass): "no R2/L2" option removed, unorthodox R2 by displacement, scoring vision
+
+**Removed: "no R2/L2 after step 1".** It was a temporary fix (it removed every
+half turn from later searches, orthodox or not); the unorthodox filter now
+covers what it was for. Gone: `withoutR2L2`, `hasR2L2`,
+`SolveSession.noLaterR2L2` and its part of `searchSettingsKey`, the
+`noLaterR2L2` search option, the results-page checkbox and its cache-key
+part, the info-dialog sentence, the README section. Later-step engine calls
+always get the full move list again (unit test: R2 and L2 present), so the
+second engine move list (and its second set of prune tables, §4.40) no
+longer exists. `loadViewPrefs` deletes a saved `noR2L2`.
+
+**Unorthodox R2/L2 by displacement (README "Unorthodox steps").** The user's
+rule: displacement starts at 0, R +1, R' -1; an R2 is executed in whichever
+direction keeps the layer within one quarter turn -- from +1 as R2' (to -1),
+from -1 as R2 (to +1); from 0 it must reach +-2, so the step is unorthodox.
+`isUnorthodox` now computes exactly that (signed, `turn(d, t)`), instead of
+the equivalent mod-4 count. Equivalence checked on 200,000 random algs over
+R/R'/R2/L/L'/L2/r/r2/l'/U/U'/y/F/u: 0 differences, so no result changes
+flag. Tests: the user's example `R U R2 U' R` (1, 1, -1, -1, 0) orthodox;
+`R2`, `L2`, `U R2 U'`, `R U R' R2` unorthodox. e2e (`search-options-e2e.js`,
+real engine, later step after the best cross): 2540 R2/L2 results, 218 of
+them orthodox (e.g. `y L U' L2 F' L F L`), flag == `isUnorthodox` for every
+row, every row physically exact; root never flagged.
+
+**Browser (headless Chrome, local):** no `no-r2l2` control; a saved view with
+`noR2L2: true` loads and is dropped from storage; step 2 first page 36 R2/L2
+rows of 100; "hide unorthodox" hides 2012 of 5165 and keeps orthodox R2 rows
+(`U' R U' R2 F R F'`, `R' U2 R2 y R' F' U2 R`); no console errors.
+
+**README vision.** New subsection "Future: one scoring algorithm for every
+step": alg_speed should be the same algorithm at every step; the first-step
+r/l and u/d/f/b values are a data-shortage stop-gap; planned for later, once
+enough pro solve data exists to fit and hold-out-check one model; called out
+as arguably the most important part of the site (execution-speed ranking is
+what differs from other solvers). Roadmap item: gather more pro solves
+(`data/pro_references.txt`), then refit a single step-independent penalty set
+with `tools/pro-ranking.js` and compare against the current split.
+
 ### 4.43 DONE (2026-10-06, twentieth pass): wide-move spellings, unorthodox steps, exact dedupe, results-page options
 
 **Wide-move spellings (README "Wide-move spellings of F2L steps").** In piece
@@ -2438,7 +2496,8 @@ off == a tree without multislotting (step and depth-2 look-ahead, identical
 lists), on == the multislotting tree. A saved search that had multislotting
 on starts with the toggle on (`legacyView.multislot`).
 
-**No R2/L2 after step 1** (results page, default off,
+**No R2/L2 after step 1** (REMOVED in the twenty-first pass, §4.44;
+kept here as history) (results page, default off,
 `SolveSession.noLaterR2L2`): later-step engine calls (matched and pseudo) get
 the move list without `R2`/`L2` (`withoutR2L2`), and results that show them
 anyway -- a rotation spelling can relabel `F2`/`B2` into `R2`/`L2` -- are
@@ -3703,6 +3762,14 @@ be done in parallel.
      (`PersistentXxcrossSolver` etc. already exist), so this is mostly
      about exercising the step-3 loop's generality rather than new solver
      work.
+
+7. **One step-independent `alg_speed` (README "Future: one scoring algorithm
+   for every step"; planned for LATER)**
+   - [ ] Gather more professional solves into `data/pro_references.txt`
+     (the current 19 are too few to fit one model for every stage).
+   - [ ] Then refit a single penalty set with no first-step values
+     (`tools/pro-ranking.js`, leave-one-solve-out + held-out solves) and
+     replace the split only if it ranks pro steps at least as well.
 
 ---
 

@@ -164,6 +164,29 @@ lower; the tuning targets where pro steps rank overall, not every single
 step at the top. Further tuning should go through the same benchmark rather
 than hand-picked constants.
 
+### Future: one scoring algorithm for every step (planned for later)
+
+**This is arguably the most important part of the whole website.** Sorting
+results by how fast they are to *execute* is what sets cube⑂tree apart from
+other solvers, which sort by move count; the ranking is only as trustworthy
+as the scoring behind it, and a scoring rule that changes from step to step
+makes TPPs harder to compare and to trust.
+
+The goal is that `alg_speed` is **the exact same algorithm regardless of the
+step**: the same move costs and the same penalties for the cross, an xcross
+from inspection, a later pair or a multislot, with nothing tuned per step.
+Today it is not quite that: the first step has its own values for wide moves
+(`r`/`l` +1.2 instead of +2.35, `u`/`d`/`f`/`b` +3.31 instead of +2.5),
+because a single value fitted to the few reference solves ranked the
+professionals' first steps or their later steps badly. Those step-specific
+values are a stop-gap for too little data, not the intended design.
+
+This is planned for **later, once enough professional solve data has been
+gathered** to fit one model that ranks professional steps well at every
+stage of the solve (and to check it on held-out solves, as above). Until
+then the step-specific penalties stay, and any change to them still goes
+through `tools/pro-ranking.js`.
+
 ## What the DAG edges mean
 
 A **distance-1** result is one reached directly from the unsolved node — the
@@ -375,22 +398,20 @@ pieces even when they move no goal piece (e.g. `R' U R'` instead of `R2`).
 
 **Unorthodox steps** (a results-page filter, "hide unorthodox", default
 off): for an orthodox F2L step, the `R` layer never gets more than one
-quarter turn away from where the step started. Count `R` as +1 and `R'` as
-−1 (`R2` as two, and positions are taken mod 4 — the layer is a half turn
-away at +2 or −2): in `R (1) U R (2!) U' R' (1) U' R2 (−1) U R (0)` the
-second `R` makes the step unorthodox. `L` is counted the same way, `r` counts
-as `R` and `l` as `L`, and a `y` or `z` rotation (also inside `u d f b`)
-starts both counts again. Ticked, unorthodox later steps are hidden, also in
-the look-ahead; **first steps are never hidden**. It only filters, so it
-needs no new search.
-
-**No R2/L2 after step 1** (a results-page checkbox, default off): later
-steps -- and every look-ahead step after the first -- are searched without
-`R2` and `L2`, and no result after the first step shows them (a rotated
-spelling that would relabel a turn into `R2`/`L2` is dropped too). Pairs
-inserted with `R2`/`L2` are rarely how a human solves, and they make
-look-ahead sequences worse. It is an explicit option, not a universal rule;
-the first step is unaffected.
+quarter turn away from where the step started. Its displacement starts at 0;
+`R` is +1 and `R'` is −1, and the step is unorthodox as soon as the
+displacement reaches +2 or −2: in `R (1) U R (2!) U' R' (1) U' R2 (−1) U
+R (0)` the second `R` makes the step unorthodox. Whether an `R2`
+disqualifies a step depends on the displacement when it is executed: at 0
+it must take the layer to ±2, so the step is unorthodox; at +1 it can be
+executed as `R2'` (−2, to −1), and at −1 as `R2` (+2, to +1), so `R (1) U
+(1) R2 (−1) U' (−1) R (0)` is orthodox. `L` is counted the same way, `r`
+counts as `R` and `l` as `L`, and a `y` or `z` rotation (also inside `u d f
+b`) starts both counts again. Ticked, unorthodox later steps are hidden,
+also in the look-ahead; **first steps are never hidden**. It only filters,
+so it needs no new search. (It replaces an earlier "no `R2`/`L2` after step
+1" option, which removed half turns from later searches outright, including
+the orthodox ones.)
 
 ## Professional reference solves and known gaps
 
@@ -457,7 +478,7 @@ next to the logo opens a short description of every option, on both pages.
 Both pages work on phones, tablets and desktops.
 
 The results page holds the per-step settings, in labelled groups: search
-(multislot, wide moves, no `R2`/`L2` after step 1), filter (hide unorthodox,
+(multislot, wide moves), filter (hide unorthodox,
 simple pseudo only), look-ahead (depth and breadth), and how many results to
 show per page. Changing a search setting re-searches the current step
 (reusing what it can) and applies to every later step until changed; a
@@ -554,7 +575,9 @@ programs use.
 - EO-aware solving beyond what the F2L DAG already captures.
 - Automatic batch ranking across multiple scrambles at once.
 - Swapping in a fully fitted `alg_speed` model (see Provenance); only the
-  benchmarked adjustments above are applied.
+  benchmarked adjustments above are applied. A single step-independent
+  model is the planned next stage (see "Future: one scoring algorithm for
+  every step"), once there is enough professional solve data.
 - XXXXCross as a primary, directly-offered target.
 - Cross finishing anywhere other than the bottom face.
 

@@ -7,9 +7,10 @@
  *    edges), a later step and its look-ahead give exactly the results of a
  *    tree pruned without "multislotting" (the old config-page checkbox); with
  *    it on, the results equal the multislotting tree's.
- *  - no r2/l2 after step 1: later steps and every look-ahead follow-up contain
- *    no R2/L2, every result still physically solves exactly what its node
- *    says (independent facelet replay), and the root step is unchanged.
+ *  - R2/L2 (the old "no r2/l2 after step 1" option is gone; the unorthodox
+ *    filter replaces it): later steps still find R2/L2 results, an R2/L2
+ *    from a neutral layer is flagged unorthodox, one that swings the layer
+ *    from +1 to -1 is not, and the first step is never flagged.
  *  - a look-ahead whose caller cancelled it (results page: another setting or
  *    step replaced it) starts no follow-up searches.
  *
@@ -22,7 +23,7 @@ const fs = require('fs');
 const root = path.join(__dirname, '..');
 const jsRoot = path.join(root, 'js');
 for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js']) Object.assign(global, require(path.join(jsRoot, f)));
-const { SolveSession, searchWithLookahead, hasR2L2 } = require(path.join(jsRoot, 'solver-bridge.js'));
+const { SolveSession, searchWithLookahead, isUnorthodox } = require(path.join(jsRoot, 'solver-bridge.js'));
 const { createEnginePool } = require(path.join(root, 'tools', 'node-engine-pool.js'));
 
 const SCRAMBLE = "R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2";
@@ -72,24 +73,20 @@ function physicallyExact(session, r) {
     assert.ok(on.some(r => r.type === 'Multislot'));
   });
 
-  await test('no r2/l2: later steps and look-ahead follow-ups have none, results stay exact', async () => {
+  await test('R2/L2 in later steps: flagged unorthodox by displacement, results exact', async () => {
     const s = later(withMulti);
-    const plain = await searchWithLookahead(s, h, null, null, {});
-    assert.ok(plain.some(r => hasR2L2(r.coreAlg)), 'this step has R2/L2 results without the option');
-    const res = await searchWithLookahead(s, h, null, null, { noLaterR2L2: true });
-    assert.ok(res.length > 0);
-    assert.ok(!res.some(r => hasR2L2(r.coreAlg)), 'no R2/L2 in later-step results');
+    const res = await searchWithLookahead(s, h, null, null, {});
+    const halfTurn = res.filter(r => /(^| )[RL]2/.test(r.coreAlg));
+    assert.ok(halfTurn.length > 0, 'later steps still use R2/L2');
+    assert.ok(res.every(r => !!r.unorthodox === isUnorthodox(r.coreAlg)), 'flag == isUnorthodox');
+    assert.ok(halfTurn.some(r => r.unorthodox), 'some R2/L2 from a neutral layer are unorthodox');
     assert.ok(res.every(r => physicallyExact(s, r)), 'every result physically exact');
-    const la = await searchWithLookahead(session(withMulti), h, null, null, { depth: 3, breadth: 3, noLaterR2L2: true });
-    const looked = la.filter(r => r.lookaheadAlgs);
-    assert.ok(looked.length > 0);
-    assert.ok(looked.every(r => r.lookaheadAlgs.every(a => !hasR2L2(a))), 'no R2/L2 in look-ahead follow-ups');
+    console.log(`  ${halfTurn.length} R2/L2 results, ${halfTurn.filter(r => !r.unorthodox).length} orthodox, e.g. ${(halfTurn.find(r => !r.unorthodox) || {}).coreAlg}`);
   });
 
-  await test('no r2/l2 does not change the first step', async () => {
-    const res = await searchWithLookahead(session(withMulti), h, null, null, { noLaterR2L2: true });
-    assert.strictEqual(ser(res), ser(rootList));
-    assert.ok(res.some(r => hasR2L2(r.coreAlg)), 'the root may still use R2/L2');
+  await test('the first step is never flagged unorthodox', async () => {
+    assert.ok(rootList.some(r => /(^| )[RL]2/.test(r.coreAlg)), 'the root uses R2/L2');
+    assert.ok(rootList.every(r => !r.unorthodox));
   });
 
   await test('a cancelled look-ahead starts no follow-up searches', async () => {

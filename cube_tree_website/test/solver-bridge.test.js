@@ -487,35 +487,23 @@ test('rootTargetByLabels: finds the root target with exactly the rotated labels 
 });
 
 // ---------------------------------------------------------------------
-// Results-page search options: multislot on/off, no R2/L2 after step 1
+// Results-page search options: multislot on/off, wide moves
 // (engine calls observed through a recording fake helper)
 // ---------------------------------------------------------------------
 
 const bridge = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
 
-test('withoutR2L2 removes exactly R2 and L2 from an engine move list', () => {
-  assert.strictEqual(bridge.withoutR2L2('U_U2_R_R2_R-_L_L2_L-_r_r2'), 'U_U2_R_R-_L_L-_r_r2');
-  const pro = bridge.withoutR2L2(bridge.PRO_MOVE_RESTRICT).split('_');
-  assert.ok(!pro.includes('R2') && !pro.includes('L2'));
-  assert.strictEqual(pro.length, bridge.PRO_MOVE_RESTRICT.split('_').length - 2);
-});
-
-test('hasR2L2 matches whole R2/L2 tokens only', () => {
-  for (const a of ["R2", "U L2", "R U R2 U'", "L2' U", "y R2"]) assert.ok(bridge.hasR2L2(a), a);
-  for (const a of ["r2 U", "R U R'", "F2 B2", "U2 R' L'", "l2", ""]) assert.ok(!bridge.hasR2L2(a), a);
-});
-
 test('SolveSession.withSettings: a fork with other search options, memo shared, original untouched', () => {
   const s = new SolveSession('R U', makeTinyTree(), ['white']);
   assert.strictEqual(s.multislot, true);
-  assert.strictEqual(s.noLaterR2L2, false);
+  assert.ok(!('noLaterR2L2' in s), 'the no-R2/L2 option is gone (the unorthodox filter replaces it)');
   const t = s.withSettings({ multislot: false, noLaterR2L2: true });
   assert.strictEqual(t.multislot, false);
-  assert.strictEqual(t.noLaterR2L2, true);
+  assert.ok(!('noLaterR2L2' in t), 'an unknown option is ignored');
   assert.strictEqual(s.multislot, true, 'original keeps its options');
   assert.strictEqual(t.searchMemo, s.searchMemo, 'memo shared');
-  // At the root only wideMoves changes the search (multislot / no R2/L2 are
-  // later-step options).
+  // At the root only wideMoves changes the search (multislot is a later-step
+  // option).
   assert.strictEqual(t.searchSettingsKey, s.searchSettingsKey);
   assert.strictEqual(s.wideMoves, true);
   const w = s.withSettings({ wideMoves: false });
@@ -527,9 +515,15 @@ test('SolveSession.withSettings: a fork with other search options, memo shared, 
   assert.strictEqual(s.withSettings({}).searchSettingsKey, s.searchSettingsKey);
 });
 
-test('unorthodox: the R or L layer a half turn from where the step started (R +1, R\' -1, mod 4)', () => {
+test('unorthodox: the R or L layer reaches +-2 (R +1, R\' -1, R2 towards the other side)', () => {
   // The README's example: R (1) U R (2!) U' R' (1) U' R2 (-1) U R (0).
   assert.strictEqual(bridge.isUnorthodox("R U R U' R' U' R2 U R"), true);
+  // R2 at displacement 0 must reach +-2; at +1 it is executed as R2' (-1),
+  // at -1 as R2 (+1): R (1) U (1) R2 (-1) U' (-1) R (0).
+  for (const alg of ["R2", "L2", "U R2 U'", "R U R' R2", "R' U R U2 L2"]) assert.strictEqual(bridge.isUnorthodox(alg), true, alg);
+  for (const alg of ["R U R2 U' R", "R' U R2 U R'", "L' U L2 U' L'", "R U R2 U' R2 U R'", "R U R2 R2 R'"]) {
+    assert.strictEqual(bridge.isUnorthodox(alg), false, alg);
+  }
   for (const alg of ["R U R' U' R U R'", "R U' R2 U' R", "R' F R F'", "L' U' L", "U' R' U R U R' U R U' R' U R",
     "r U R' U' r'", "y R U R' y' L' U L", "R U R' u R U' R'", "U' R' F R2"]) {
     assert.strictEqual(bridge.isUnorthodox(alg), false, alg);
@@ -592,16 +586,13 @@ async function asyncTests() {
     assert.deepStrictEqual(b, a);
   });
 
-  await atest('no r2/l2: later-step engine calls lose exactly R2 and L2; the root keeps them', async () => {
-    const plain = await run(later);
-    const restricted = await run(later.withSettings({ noLaterR2L2: true }));
-    assert.strictEqual(restricted.length, plain.length);
-    restricted.forEach((c, i) => {
-      assert.strictEqual(c.opts.allowedMoves, bridge.withoutR2L2(plain[i].opts.allowedMoves));
-      assert.notStrictEqual(c.opts.allowedMoves, plain[i].opts.allowedMoves);
-    });
-    const root = await run(atRoot.withSettings({ noLaterR2L2: true }));
-    assert.deepStrictEqual(root, await run(atRoot));
+  await atest('later-step engine calls keep R2 and L2 (no move-set option removes them)', async () => {
+    const calls = await run(later);
+    assert.ok(calls.length > 0);
+    for (const c of calls) {
+      const moves = (c.opts.allowedMoves || bridge.MOVE_RESTRICT).split('_');
+      assert.ok(moves.includes('R2') && moves.includes('L2'), c.opts.allowedMoves);
+    }
   });
 
   await atest('wide moves off: every engine call (root and later) loses exactly r and l', async () => {
@@ -652,13 +643,13 @@ async function asyncTests() {
   await atest('memoised searches are keyed by the search options', async () => {
     const a = bridge.memoSearch(later, fake);
     const b = bridge.memoSearch(later.withSettings({ multislot: false }), fake);
-    const c = bridge.memoSearch(later.withSettings({ noLaterR2L2: true }), fake);
+    const c = bridge.memoSearch(later.withSettings({ wideMoves: false }), fake);
     assert.notStrictEqual(a, b);
     assert.notStrictEqual(a, c);
     assert.notStrictEqual(b, c);
     assert.strictEqual(bridge.memoSearch(later.withSettings({ multislot: true }), fake), a, 'same options -> same search');
     const r = bridge.memoSearch(atRoot, fake);
-    assert.strictEqual(bridge.memoSearch(atRoot.withSettings({ multislot: false, noLaterR2L2: true }), fake), r, 'the root search does not depend on them');
+    assert.strictEqual(bridge.memoSearch(atRoot.withSettings({ multislot: false }), fake), r, 'the root search does not depend on multislot');
     await Promise.all([a, b, c]);
   });
 
