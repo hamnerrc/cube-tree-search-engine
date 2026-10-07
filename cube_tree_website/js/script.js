@@ -210,9 +210,12 @@ const INFO_SECTIONS = [
     ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). click a result to commit it and search the next step.'],
     ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
     ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
-    ['always on', 'pro move set (wide r/l, one mid-step y or x rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
+    ['always on', 'pro move set (wide <span class="moves">r/l</span>, one mid-step <span class="moves">y</span> or <span class="moves">x</span> rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
     ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (blank = no limit). per-type limits: max solutions / move depth per step type; blank = default.'],
-    ['results', 'results appear as they are found and re-rank as the search continues. look-ahead: re-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow. multislot: later steps may solve several pairs at once. no r2/l2 after step 1: later steps (and look-ahead) do not use r2 or l2. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['results', 'results appear as they are found and re-rank as the search continues. click a row to commit that step; undo steps back. hover an option or a column title for a short hint.'],
+    ['search options', 'set per step; they apply to the step on screen and every later one until changed. multislot: later steps may solve several pairs at once. wide moves: results may use wide moves (<span class="moves">r l u d f b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>; switched off, they are hidden (and later steps are searched without them); switched on again, they come back, searched first if needed. no <span class="moves">R2/L2</span> after step 1: later steps (and look-ahead) do not use the half turns <span class="moves">R2</span> or <span class="moves">L2</span>.'],
+    ['filters', 'they hide results without searching again; the status line says how many. hide unorthodox: hide later steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, e.g. <span class="moves">R U R U\' R\'</span>); the first step is never hidden. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['look-ahead', 're-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow.'],
     ['solution', 'the committed steps, labelled like a reconstruction. copy puts the scramble and the solution on the clipboard; cubedb opens them on cubedb.net for playback.'],
     ['background', 'every scramble keeps searching while you look at another one, or at another tab. browsers give background tabs less cpu, so searches there are slower (chrome\'s energy saver may pause them until you come back).'],
 ];
@@ -397,7 +400,14 @@ const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, desta
 // 2.250; 18 of 19 folds pick 1.2). Later steps barely move (their candidates
 // share the first step; only TPP's division by different piece counts lets
 // it matter): all 66 pro steps, mean log10 rank 1.035 -> 1.016.
-const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideRLFirst: 1.2, wideOther: 3.31, rotMidY: 3.70 };
+// wideUDFB (PROJECT_STATUS.md §4.43): u/d/f/b after the first step, where
+// the wide spellings of wideSpellingParts appear ("f R' f'" for "B U' B'");
+// the first step keeps wideOther. No professional reference uses them, so
+// the benchmark can only say how much a lower value costs (it never gains);
+// 2.5 is the lowest value that keeps the pro steps' top-10 count (2.25
+// loses two). Against the benchmark before these spellings existed (all 66
+// steps): mean log10 rank 0.970 -> 0.949, top 10 43 -> 44, top 500 60 -> 60.
+const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideRLFirst: 1.2, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70 };
 
 /**
  * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
@@ -418,7 +428,8 @@ function stepPenalty(alg, isFirstStep = false) {
         else if (c === 'F') total += STEP_PENALTIES.F;
         else if (c === 'B') total += STEP_PENALTIES.B;
         else if (c === 'r' || c === 'l') total += wideRL;
-        else if ('fbudMES'.includes(c)) total += STEP_PENALTIES.wideOther;
+        else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += isFirstStep ? STEP_PENALTIES.wideOther : STEP_PENALTIES.wideUDFB;
+        else if (c === 'M' || c === 'E' || c === 'S') total += STEP_PENALTIES.wideOther;
         else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
         i++;
     }

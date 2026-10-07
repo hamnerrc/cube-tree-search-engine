@@ -402,6 +402,49 @@ function hasR2L2(alg) {
   return R2L2_TOKEN.test(alg);
 }
 
+// Results-page option "wide moves" (default on): off, no result at any step
+// uses a wide move (r l u d f b) or a slice (M E S) -- the engine searches
+// without r/l, and the wide spellings (cross optimisation, side-cross
+// inspections, wideSpellingParts) are not made.
+const WIDE_TOKEN = /(^| )[rludfbMES]/;
+function isWideAlg(alg) {
+  return WIDE_TOKEN.test(alg);
+}
+function withoutWide(allowedMoves) {
+  return allowedMoves.split('_').filter(m => !/^[rludfbMES]/.test(m)).join('_');
+}
+
+/**
+ * README "Unorthodox solutions": a step is unorthodox when it turns the R
+ * layer (or the L layer) a half turn away from where the step started -- an
+ * R adds a quarter turn, R' takes one away, R2 is two, counted mod 4 (so R2
+ * after an R is back to one quarter turn the other way). "R U R U' R'"
+ * (R layer at 2 after the second R) is unorthodox; "R U' R2 U' R" never
+ * gets past one. r counts as R and l as L (the same hand turns that side);
+ * a y or z rotation (also inside u d f b E S) puts other layers in the hands,
+ * so both counts start again. Only later steps are ever filtered on this.
+ */
+function isUnorthodox(alg) {
+  let r = 0;
+  let l = 0;
+  for (const t of String(alg).split(' ')) {
+    if (!t) continue;
+    const c = t[0];
+    const q = t.includes('2') ? 2 : t.endsWith("'") ? 3 : 1;
+    if (c === 'R' || c === 'r') {
+      r = (r + q) % 4;
+      if (r === 2) return true;
+    } else if (c === 'L' || c === 'l') {
+      l = (l + q) % 4;
+      if (l === 2) return true;
+    } else if ('yzudfbES'.includes(c)) {
+      r = 0;
+      l = 0;
+    }
+  }
+  return false;
+}
+
 /** Which solver method + args to use for a target whose full corner list is `corners`. */
 function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, extra = {}) {
   const slots = corners.slice().sort().map(c => SLOT_INDICES[c]);
@@ -497,11 +540,17 @@ class SolveSession {
     // look-ahead, and can change from step to step):
     this.multislot = true; // later steps may solve several pairs (if the tree has those edges)
     this.noLaterR2L2 = false; // later steps without R2/L2 (see withoutR2L2)
+    this.wideMoves = true; // false: no wide-move results at any step (see WIDE_TOKEN)
   }
 
-  /** Key of the search options above (part of every memoised search's key). */
+  /**
+   * Key of the search options above that apply at this node (part of every
+   * memoised search's key): the root only depends on wideMoves.
+   */
   get searchSettingsKey() {
-    return `${this.multislot ? '' : 'single'}${this.noLaterR2L2 ? '|noR2L2' : ''}`;
+    const wide = this.wideMoves === false ? 'nowide' : '';
+    if (this.isAtRoot) return wide;
+    return `${this.multislot ? '' : 'single'}${this.noLaterR2L2 ? '|noR2L2' : ''}${wide ? '|' + wide : ''}`;
   }
 
   /**
@@ -510,7 +559,7 @@ class SolveSession {
    */
   withSettings(settings) {
     const s = this.fork();
-    for (const k of ['multislot', 'noLaterR2L2']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
+    for (const k of ['multislot', 'noLaterR2L2', 'wideMoves']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
     return s;
   }
 
@@ -820,6 +869,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   for (const p of startOrder) {
     const extra = { ...(session.proMoves ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
     if (noR2L2) extra.allowedMoves = withoutR2L2(extra.allowedMoves || MOVE_RESTRICT);
+    if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
     const pseudoMoves = noR2L2 ? withoutR2L2(MOVE_RESTRICT) : MOVE_RESTRICT;
     const run = () => (p.isPseudo
       ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline, pseudoMoves)
@@ -918,6 +968,7 @@ function postProcessContext(session, isRoot, noR2L2) {
     scoredPath: session.scoredPath,
     proMoves: session.proMoves,
     crossOptEnabled: session.crossOptEnabled,
+    wideMoves: session.wideMoves !== false,
     currentCorners: (session.currentNode.state.corners || []).slice(),
     currentEdges: (session.currentNode.state.edges || []).slice(),
     firstColor: session.committedRows[0] ? session.committedRows[0].color : '',
@@ -948,6 +999,12 @@ function ctxNodeByLabels(ctx, pairs) {
   return ctx.nodeIndex.has(key) ? ctx.nodeIndex.get(key) : null;
 }
 
+/** A cross-solved node with exactly these solved corners and edges (pseudo included). */
+function ctxNodeByPieces(ctx, corners, edges) {
+  const key = JSON.stringify([corners.slice().sort(), edges.slice().sort()]);
+  return ctx.nodeIndex.has(key) ? ctx.nodeIndex.get(key) : null;
+}
+
 function ctxRootTarget(ctx, corners, edges) {
   return ctx.rootTargets.get(JSON.stringify([corners.slice().sort(), edges.slice().sort()])) || null;
 }
@@ -967,6 +1024,17 @@ function pathCostFor(ctx, alg) {
 async function postProcessCall(ctx, p, cores, yieldState) {
   const candidates = [];
   const { isRoot, noR2L2 } = ctx;
+  const wideOn = ctx.wideMoves !== false;
+  // Every candidate goes through here: no wide move with wide moves off, and
+  // later steps carry the unorthodox flag the results page can filter on.
+  const push = (c) => {
+    if (!wideOn && isWideAlg(c.coreAlg)) return;
+    if (!isRoot) {
+      if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
+      else delete c.unorthodox;
+    }
+    candidates.push(c);
+  };
   const {
     isPseudo, newEdges, pairCount, allCorners, allEdges, color, baseRotation,
   } = p;
@@ -988,7 +1056,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
     // followed by a pure y-rotation" (see cross-optimization.js's
     // header comment for the proof), so a plain luck-check call below
     // is a cheap safety net, not load-bearing.
-    if (isRoot && pairCount === 0 && ctx.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
+    if (isRoot && pairCount === 0 && wideOn && ctx.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
       const optimized = optimizeCrossSolution(coreAlg.trim().split(/\s+/));
       for (const opt of optimized) {
         const optAlg = opt.moves.join(' ');
@@ -1019,7 +1087,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
 
         const optTpp = pathCostFor(ctx, optAlg) / p.pieces;
 
-        candidates.push({
+        push({
           color,
           type: edgeTypeLabel(pairCount, isRoot),
           rotation: optRotation,
@@ -1156,7 +1224,22 @@ async function postProcessCall(ctx, p, cores, yieldState) {
         targetNodeId: reachedNodeId,
       };
       if (p.fullPseudoOnly) candidate.fullPseudoOnly = true;
-      candidates.push(candidate);
+      push(candidate);
+
+      // Every spelling of this alg with a final rotation r is physically
+      // "alg, then r", so the node it reaches depends only on r: replayed
+      // once per rotation, not once per spelling (§4.38).
+      const nodeByRotation = new Map();
+      const nodeAfter = (rot) => {
+        let nodeId = nodeByRotation.get(rot);
+        if (nodeId === undefined) {
+          const after = solvedFlags(replayFacelets(ctx.scramble, fullRotation, ctx.scoredPath, `${finalCoreAlg} ${rot}`));
+          const pairs = F2L_SLOTS.filter(sl => after[sl]);
+          nodeId = after.cross ? ctxNodeByLabels(ctx, pairs) : null;
+          nodeByRotation.set(rot, nodeId);
+        }
+        return nodeId;
+      };
 
       // Rotation spellings (pro move set; README "Professional reference
       // solves"): the engine often returns the un-rotated spelling
@@ -1170,23 +1253,41 @@ async function postProcessCall(ctx, p, cores, yieldState) {
       // would be its second rotation (relabelling keeps rotations rotations).
       if (ctx.proMoves && !isPseudo && typeof rotationSpellingParts === 'function'
         && !finalCoreAlg.split(' ').some(t => /^[xyz]/.test(t))) {
-        // Every spelling with rotation r is physically "alg, then r", so the
-        // node it reaches depends only on r: replayed once per rotation, not
-        // once per spelling (§4.38).
-        const nodeByRotation = new Map();
         for (const { alg: spelling, rotation: rot } of rotationSpellingParts(finalCoreAlg, !isRoot)) {
-          let nodeId = nodeByRotation.get(rot);
-          if (nodeId === undefined) {
-            const after = solvedFlags(replayFacelets(ctx.scramble, fullRotation, ctx.scoredPath, `${finalCoreAlg} ${rot}`));
-            const pairs = F2L_SLOTS.filter(sl => after[sl]);
-            nodeId = after.cross ? ctxNodeByLabels(ctx, pairs) : null;
-            nodeByRotation.set(rot, nodeId);
-          }
+          const nodeId = nodeAfter(rot);
           if (!nodeId) continue;
           if (noR2L2 && hasR2L2(spelling)) continue;
           const spTpp = pathCostFor(ctx, spelling)
             / p.pieces;
-          candidates.push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
+          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
+        }
+      }
+
+      // Wide-move spellings (README "Wide moves"): a D turn done as u, a U
+      // as d, B/F pairs as f/b, the rest relabelled -- e.g. "D y R U' R'" as
+      // "u R U' R'", "B U' B'" as "f R' f'". Each is physically "alg, then a
+      // y-family rotation", so it solves the same pieces, with the slots
+      // relabelled for the frame it ends in: read off the physical result for
+      // a matched step; for a pseudo step (whose lone pieces a replay cannot
+      // tell from its claim) the claim is relabelled, which is the same thing
+      // (checked in test/wide-spellings-e2e.js).
+      // Later steps only: the first step already gets wide moves from cross
+      // optimisation, side-cross inspections and the engine's r/l, and these
+      // spellings doubled its candidates (root search ~60% slower).
+      if (!isRoot && wideOn && typeof wideSpellingParts === 'function') {
+        for (const { alg: spelling, rotation: rot } of wideSpellingParts(finalCoreAlg)) {
+          if (noR2L2 && hasR2L2(spelling)) continue;
+          let nodeId;
+          if (!isPseudo) nodeId = nodeAfter(rot);
+          else if (!rot) nodeId = reachedNodeId;
+          else {
+            const after = isRoot ? candidate.corners : allCorners;
+            const afterEdges = isRoot ? candidate.edges : allEdges;
+            nodeId = ctxNodeByPieces(ctx, relabelSlotsForRotation(after, rot), relabelSlotsForRotation(afterEdges, rot));
+          }
+          if (!nodeId) continue;
+          const wTpp = pathCostFor(ctx, spelling) / p.pieces;
+          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(wTpp) ? wTpp : Infinity, targetNodeId: nodeId });
         }
       }
 
@@ -1196,10 +1297,10 @@ async function postProcessCall(ctx, p, cores, yieldState) {
       // included (the wide move's x-rotation is undone in the free
       // inspection rotation), so it reaches the same node with the same
       // labels. §4.25.
-      if (isRoot && ctx.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
+      if (isRoot && wideOn && ctx.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
         for (const v of inspectionWideVariants(finalCoreAlg)) {
           const vTpp = pathCostFor(ctx, v.alg) / p.pieces;
-          candidates.push({
+          push({
             ...candidate,
             rotation: rotationName(`${fullRotation} ${v.inspection}`),
             coreAlg: v.alg,
@@ -1240,12 +1341,42 @@ function rankCandidates(calls) {
   for (const p of calls) for (const c of p.candidates || []) candidates.push(c);
   candidates.sort((a, b) => a.tpp - b.tpp);
   const seenCandidates = new Set();
-  return candidates.filter(c => {
+  return dedupeSolutions(candidates.filter(c => {
     const key = dedupeKey(c);
     if (seenCandidates.has(key)) return false;
     seenCandidates.add(key);
     return true;
+  }));
+}
+
+/**
+ * The last step of every result list (README "Results table"): one row per
+ * solution as written -- inspection rotation plus alg, the exact text a row
+ * shows. The same text is the same turns from the same cube, so a later
+ * copy (e.g. reached through another DAG edge, or merged in from a search
+ * with other options) is dropped; the first, best-ranked one stays. Keeps
+ * the list's flags. One pass over the list.
+ */
+function dedupeSolutions(list) {
+  const seen = new Set();
+  const out = list.filter((c) => {
+    const key = `${c.rotation || ''}|${c.coreAlg}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
+  if (out.length === list.length) return list;
+  for (const k of ['truncatedCalls', 'failedCalls', 'lookaheadTruncated', 'lookaheadPending', 'hiddenCount']) if (list[k]) out[k] = list[k];
+  return out;
+}
+
+/** Two ranked lists as one (TPP order, stable), duplicates dropped; flags of `a`. */
+function mergeRanked(a, b) {
+  if (!b || !b.length) return a;
+  const out = dedupeSolutions(a.concat(b).sort((x, y) => x.tpp - y.tpp));
+  const merged = out === a ? a.slice() : out;
+  for (const k of ['truncatedCalls', 'failedCalls']) if (a[k]) merged[k] = a[k];
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -1281,6 +1412,23 @@ function trimSearchMemo(memo) {
  * while it runs -- also when it was started earlier by someone else (a
  * background search the user switched to): it gets the latest list at once.
  */
+// memoSearch's key: the node, the committed steps and the search options.
+function searchMemoKey(session) {
+  return `${session.currentNodeId}|${session.rotation}|${session.stepAlgs.join(' | ')}|${session.searchSettingsKey || ''}`;
+}
+
+/**
+ * The same step's search with the other wide-moves setting (memoSearch), if
+ * the memo has it: { promise, value } (value once it finished).
+ */
+function wideTwin(session) {
+  const memo = session.searchMemo;
+  if (!memo) return null;
+  const twin = session.withSettings({ wideMoves: session.wideMoves === false });
+  const hit = memo.get(searchMemoKey(twin));
+  return hit ? { promise: hit, value: hit.value } : null;
+}
+
 function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
   const memo = session.searchMemo || (session.searchMemo = new Map());
   // The committed steps, not just their joined text: TPP depends on where the
@@ -1288,8 +1436,8 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   // multislot "S" and the same moves committed as two single pairs reach the
   // same node with the same text (they used to share one memo entry, so one
   // was shown the other's TPPs).
-  // The results-page search options only change later steps.
-  const key = `${session.currentNodeId}|${session.rotation}|${session.stepAlgs.join(' | ')}|${session.isAtRoot ? '' : session.searchSettingsKey || ''}`;
+  // The results-page search options are part of it (searchSettingsKey).
+  const key = searchMemoKey(session);
   if (memo.has(key)) {
     const hit = memo.get(key);
     memo.delete(key); // refresh its place in the eviction order
@@ -1302,12 +1450,33 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   }
   const listeners = new Set(onPartial ? [onPartial] : []);
   let promise;
+  // Results-page "wide moves" (README): switched off on a step already
+  // searched with them, the step's list is that search's without its wide
+  // results -- hidden, not searched again, so switching back shows them at
+  // once. Switched on where only the search without them is known, the wide
+  // search runs and its results join that list as they come, instead of
+  // starting from an empty one.
+  const twin = deadline ? null : wideTwin(session);
+  let base = null; // the finished list without wide moves, merged into every list
   const emit = (list) => {
-    promise.latest = list;
-    for (const f of listeners) f(list);
+    const shown = base ? mergeRanked(list, base) : list;
+    promise.latest = shown;
+    for (const f of listeners) f(shown);
   };
   emit.wanted = () => listeners.size > 0;
-  promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit);
+  if (twin && session.wideMoves === false) {
+    const hide = list => filterResults(list, c => !isWideAlg(c.coreAlg));
+    if (twin.promise.listeners && onPartial) twin.promise.listeners.add(list => { if (promise.listeners) emit(hide(list)); });
+    promise = twin.promise.then(hide);
+    if (twin.promise.latest) Promise.resolve().then(() => { if (promise.listeners) emit(hide(twin.promise.latest)); });
+  } else {
+    if (twin && twin.value && !twin.value.truncatedCalls && !twin.value.failedCalls) base = twin.value;
+    promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit);
+    if (base) {
+      promise = promise.then(list => mergeRanked(list, base));
+      emit([]);
+    }
+  }
   promise.listeners = listeners;
   memo.set(key, promise);
   // A search the time budget cut short is not reused (committing that step
@@ -1317,6 +1486,7 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
     settle();
     if ((r.truncatedCalls || r.failedCalls) && memo.get(key) === promise) memo.delete(key);
     promise.size = r.length;
+    promise.value = r;
     trimSearchMemo(memo);
   }, () => { settle(); if (memo.get(key) === promise) memo.delete(key); });
   trimSearchMemo(memo);
@@ -1338,12 +1508,16 @@ function lookaheadFork(session, candidate, i) {
   return s;
 }
 
-/** `results` filtered by `filter` (null = all), keeping the search's flags. */
-function filterResults(results, filter) {
+/**
+ * `results` filtered by `filter` (null = all), keeping the search's flags;
+ * with `countHidden`, out.hiddenCount says how many the filter hid.
+ */
+function filterResults(results, filter, countHidden = false) {
   if (!filter) return results;
   const out = results.filter(filter);
   if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
   if (results.failedCalls) out.failedCalls = results.failedCalls;
+  if (countHidden && out.length < results.length) out.hiddenCount = results.length - out.length;
   return out;
 }
 
@@ -1398,10 +1572,10 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * further searches and the returned list is incomplete.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
-  // Results-page search options (multislot, noLaterR2L2) for this step and
-  // its look-ahead; unset ones keep the session's.
-  if (options.multislot !== undefined || options.noLaterR2L2 !== undefined) {
-    session = session.withSettings({ multislot: options.multislot, noLaterR2L2: options.noLaterR2L2 });
+  // Results-page search options (multislot, noLaterR2L2, wideMoves) for this
+  // step and its look-ahead; unset ones keep the session's.
+  if (options.multislot !== undefined || options.noLaterR2L2 !== undefined || options.wideMoves !== undefined) {
+    session = session.withSettings({ multislot: options.multislot, noLaterR2L2: options.noLaterR2L2, wideMoves: options.wideMoves });
   }
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);
@@ -1412,8 +1586,8 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   const start = Date.now();
   const firstDeadline = budgetDeadline(session, depth > 1 ? LOOKAHEAD_FIRST_SHARE : SEARCH_ENGINE_SHARE, start);
   const lookDeadline = budgetDeadline(session, SEARCH_ENGINE_SHARE, start);
-  const onPartial = onUpdate && ((list) => onUpdate(filterResults(list, filter)));
-  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial), filter);
+  const onPartial = onUpdate && ((list) => onUpdate(filterResults(list, filter, true)));
+  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial), filter, true);
   if (depth === 1 || !results.length) return results;
 
   const top = results.slice(0, breadth);
@@ -1434,6 +1608,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
     });
     done.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
     const out = done.concat(pending, results.slice(breadth));
+    if (results.hiddenCount) out.hiddenCount = results.hiddenCount;
     if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
     if (results.failedCalls) out.failedCalls = results.failedCalls;
     if (done.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
@@ -1532,6 +1707,7 @@ if (typeof module !== 'undefined' && module.exports) {
     proEngineOptions, nodeByLabels, NOOP_MOVES,
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
+    isWideAlg, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, withoutR2L2, hasR2L2, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, cubedbUrl,
   };

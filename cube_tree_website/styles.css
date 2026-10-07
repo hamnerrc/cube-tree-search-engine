@@ -47,6 +47,7 @@ textarea,
 input,
 .scramble-display,
 .solution-steps .step-alg,
+.moves,
 .results-table td.col-3,
 .results-table td.col-4,
 .results-table td.col-5,
@@ -499,7 +500,7 @@ button:disabled {
 .results-controls {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: stretch;
     gap: 0.6rem 1.4rem;
     color: var(--muted);
 }
@@ -509,6 +510,35 @@ button:disabled {
     align-items: center;
     gap: 0.5rem;
     white-space: nowrap;
+}
+
+/* search / filter / look-ahead: one labelled group each. */
+.results-controls .control-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    margin: 0;
+    padding: 0.35rem 0.75rem 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-width: 0;
+}
+
+.results-controls legend {
+    padding: 0 0.35rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    opacity: 0.8;
+}
+
+.results-controls label[title],
+.results-table th[title] {
+    cursor: help;
+}
+
+.results-controls label.check[title] {
+    cursor: pointer;
 }
 
 .results-controls label.check {
@@ -530,6 +560,7 @@ button:disabled {
 
 .results-controls .page-size {
     margin-left: auto;
+    align-self: center;
 }
 
 .slow-tag {
@@ -810,6 +841,10 @@ button:disabled {
 
     .results-controls .page-size {
         margin-left: 0;
+    }
+
+    .results-controls .control-group {
+        flex: 1 1 100%;
     }
 
     .table-wrapper {

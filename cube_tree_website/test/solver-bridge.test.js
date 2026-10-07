@@ -514,8 +514,52 @@ test('SolveSession.withSettings: a fork with other search options, memo shared, 
   assert.strictEqual(t.noLaterR2L2, true);
   assert.strictEqual(s.multislot, true, 'original keeps its options');
   assert.strictEqual(t.searchMemo, s.searchMemo, 'memo shared');
+  // At the root only wideMoves changes the search (multislot / no R2/L2 are
+  // later-step options).
+  assert.strictEqual(t.searchSettingsKey, s.searchSettingsKey);
+  assert.strictEqual(s.wideMoves, true);
+  const w = s.withSettings({ wideMoves: false });
+  assert.strictEqual(w.wideMoves, false);
+  assert.notStrictEqual(w.searchSettingsKey, s.searchSettingsKey);
+  s.currentNodeId = 'later';
+  t.currentNodeId = 'later';
   assert.notStrictEqual(t.searchSettingsKey, s.searchSettingsKey);
   assert.strictEqual(s.withSettings({}).searchSettingsKey, s.searchSettingsKey);
+});
+
+test('unorthodox: the R or L layer a half turn from where the step started (R +1, R\' -1, mod 4)', () => {
+  // The README's example: R (1) U R (2!) U' R' (1) U' R2 (-1) U R (0).
+  assert.strictEqual(bridge.isUnorthodox("R U R U' R' U' R2 U R"), true);
+  for (const alg of ["R U R' U' R U R'", "R U' R2 U' R", "R' F R F'", "L' U' L", "U' R' U R U R' U R U' R' U R",
+    "r U R' U' r'", "y R U R' y' L' U L", "R U R' u R U' R'", "U' R' F R2"]) {
+    assert.strictEqual(bridge.isUnorthodox(alg), false, alg);
+  }
+  for (const alg of ["R' U R'", "L U L U' L'", "F R2 F'", "R2 U R2", "l U l U' l'", "R R"]) {
+    assert.strictEqual(bridge.isUnorthodox(alg), true, alg);
+  }
+});
+
+test('dedupeSolutions: one row per rotation + alg text, the first kept, flags kept', () => {
+  const a = { rotation: 'z2', coreAlg: "R U R'", tpp: 1, targetNodeId: 'n1' };
+  const b = { rotation: 'z2', coreAlg: "R U R'", tpp: 2, targetNodeId: 'n2' };
+  const c = { rotation: 'z2 y', coreAlg: "R U R'", tpp: 3, targetNodeId: 'n1' };
+  const list = [a, b, c];
+  list.truncatedCalls = 2;
+  const out = bridge.dedupeSolutions(list);
+  assert.deepStrictEqual([...out], [a, c]);
+  assert.strictEqual(out.truncatedCalls, 2);
+  const clean = [a, c];
+  assert.strictEqual(bridge.dedupeSolutions(clean), clean, 'no copy when nothing is dropped');
+  const merged = bridge.mergeRanked([c], [b, a]);
+  assert.deepStrictEqual(merged.map(r => r.tpp), [1, 3], 'merged in TPP order, the duplicate dropped');
+});
+
+test('wide moves: isWideAlg / withoutWide', () => {
+  for (const alg of ["f R' f'", "u R U' R'", "R U r'", "l' U L", "M' U M", "U d R"]) assert.ok(bridge.isWideAlg(alg), alg);
+  for (const alg of ["R U R'", "y' L' U L", "x R U R'", "F R B' D"]) assert.ok(!bridge.isWideAlg(alg), alg);
+  const moves = bridge.withoutWide(bridge.PRO_MOVE_RESTRICT).split('_');
+  assert.deepStrictEqual(moves, bridge.PRO_MOVE_RESTRICT.split('_').filter(m => !/^[rl]/.test(m)));
+  assert.ok(moves.includes('y') && moves.includes("x-") && moves.includes('R2'));
 });
 
 async function asyncTests() {
@@ -558,6 +602,18 @@ async function asyncTests() {
     });
     const root = await run(atRoot.withSettings({ noLaterR2L2: true }));
     assert.deepStrictEqual(root, await run(atRoot));
+  });
+
+  await atest('wide moves off: every engine call (root and later) loses exactly r and l', async () => {
+    for (const s of [atRoot, later]) {
+      const plain = await run(s);
+      const narrow = await run(s.withSettings({ wideMoves: false }));
+      assert.strictEqual(narrow.length, plain.length);
+      narrow.forEach((c, i) => {
+        assert.strictEqual(c.opts.allowedMoves, bridge.withoutWide(plain[i].opts.allowedMoves));
+        assert.ok(!/(^|_)[rl]/.test(c.opts.allowedMoves));
+      });
+    }
   });
 
   await atest('engine-call cache: identical calls run once (multislot on reuses the single-pair calls); not under a time limit', async () => {

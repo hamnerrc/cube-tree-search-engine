@@ -53,6 +53,8 @@ const sweep = opt('sweep', null);
 const train = opt('train', null);
 // --params a=1,b=2: algSpeed overrides for the per-segment table.
 const tableParams = Object.fromEntries((opt('params', '') || '').split(',').filter(Boolean).map(kv => { const [k, v] = kv.split('='); return [k, Number(v)]; }));
+// --penalty name=v1,v2,...: re-ranks with each value of one STEP_PENALTIES entry.
+const penaltySweep = opt('penalty', null);
 
 const ALG_SPEED_PARAMS = Object.keys(ALG_SPEED_DEFAULTS);
 
@@ -201,6 +203,20 @@ const fmt = s => `mean log10 rank all ${lg(s.all)}${train ? ` (train ${lg(s.trai
   const base = rankAll(pools, tableParams);
   for (const r of base) console.log(`#${r.solve} ${r.labels.padEnd(26)} pool ${String(r.poolSize).padStart(6)}  pro percentile ${pct(r.pct)}  rank ~${String(r.rank).padStart(5)}  ${Array.isArray(r.pro) ? r.pro[0] : r.pro}`);
   console.log(`\n${Object.keys(tableParams).length ? JSON.stringify(tableParams) : 'defaults'}: ${fmt(summary(base))} of ${base.length}`);
+
+  if (penaltySweep) {
+    const { STEP_PENALTIES } = require(path.join(root, 'js', 'script.js'));
+    const [name, list] = penaltySweep.split('=');
+    if (!(name in STEP_PENALTIES)) throw new Error(`unknown step penalty ${name}; one of ${Object.keys(STEP_PENALTIES)}`);
+    const saved = STEP_PENALTIES[name];
+    for (const v of list.split(',').map(Number)) {
+      STEP_PENALTIES[name] = v;
+      const ranked = rankAll(pools, tableParams);
+      const later = ranked.filter(r => !r.isRoot);
+      console.log(`${name}=${String(v).padEnd(6)} ${fmt(summary(ranked))}; later steps: mean log10 rank ${lg(mean(later.map(r => Math.log10(r.rank))))}, top 10 ${later.filter(r => r.rank <= 10).length}/${later.length}`);
+    }
+    STEP_PENALTIES[name] = saved;
+  }
 
   if (sweep) {
     for (const spec of sweep.split(';')) {

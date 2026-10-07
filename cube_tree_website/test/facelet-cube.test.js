@@ -189,8 +189,45 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
     check(`table-driven rotation helpers match the permutation reference on 3000 random mixed-notation algs (${bad} mismatches)`, bad === 0);
 }
 
+// Wide-move spellings (README "Wide moves", PROJECT_STATUS.md §4.43).
+{
+    const F = require('../js/facelet-cube.js');
+    const spell = alg => F.wideSpellingParts(alg).map(s => s.alg);
+    check('wide spellings: "B U\' B\'" as "f R\' f\'" (no end rotation)',
+        F.wideSpellingParts("B U' B'").some(s => s.alg === "f R' f'" && s.rotation === ''));
+    check('wide spellings: "D y R U\' R\'" as "u R U\' R\'" (the y is absorbed)', spell("D y R U' R'").includes("u R U' R'"));
+    check('wide spellings: "U B U B\'" as "d L U L\'"', spell("U B U B'").includes("d L U L'"));
+    check('wide spellings: none for an R/U-only alg', spell("R U R' U' R U R'").length === 0);
+    // Every spelling of random algs: physically "alg, then a y-family
+    // rotation", one wide family, at most two wide turns, fewer awkward
+    // tokens and no extra F/B turns.
+    const faces = [...'UDRLFB'].flatMap(f => [f, `${f}'`, `${f}2`]);
+    let seed = 7, bad = 0, total = 0;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const pick = arr => arr[Math.floor(rnd() * arr.length)];
+    const awk = a => a.split(' ').filter(t => /^[DFBxyz]/.test(t)).length;
+    const fb = a => a.split(' ').filter(t => /^[FB]/.test(t)).length;
+    for (let i = 0; i < 1500; i++) {
+        const toks = Array.from({ length: 2 + Math.floor(rnd() * 10) }, () => pick(faces));
+        if (rnd() < 0.3) toks.splice(Math.floor(rnd() * toks.length), 0, pick(['y', "y'", 'r', "l'", 'x']));
+        const alg = toks.join(' ');
+        for (const s of F.wideSpellingParts(alg)) {
+            total++;
+            const want = F.applyAlgorithm(SOLVED_FACELETS, `${alg} ${s.rotation}`);
+            const wide = s.alg.split(' ').filter(t => /^[udfb]/.test(t));
+            const ok = F.applyAlgorithm(SOLVED_FACELETS, s.alg) === want
+                && ['', 'y', 'y2', "y'"].includes(s.rotation)
+                && new Set(wide.map(t => t[0])).size === 1
+                && wide.length <= 2 + alg.split(' ').filter(t => /^[rl]/.test(t)).length
+                && awk(s.alg) < awk(alg) && fb(s.alg) <= fb(alg);
+            if (!ok) bad++;
+        }
+    }
+    check(`wide spellings of 1500 random algs: ${total} spellings, all physically "alg, then rotation" and within the rules (${bad} bad)`, bad === 0 && total > 500);
+}
+
 if (process.exitCode) {
-    console.error(`\n${passCount}/${cases.length + 9} checks passed.`);
+    console.error(`\n${passCount}/${cases.length + 14} checks passed.`);
 } else {
     console.log('\nAll facelet-cube.js tests passed.');
 }

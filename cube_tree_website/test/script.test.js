@@ -236,7 +236,8 @@ test('stepPenalty (PROJECT_STATUS §4.35): penalties only, step-aware rotations'
   assert.strictEqual(stepPenalty("y R U R'"), 0, 'a rotation that starts the step is free');
   assert.strictEqual(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY, 'a mid-step y is penalised');
   assert.strictEqual(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL);
-  assert.strictEqual(stepPenalty("D' B u"), P.D + P.B + P.wideOther);
+  assert.strictEqual(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB);
+  assert.strictEqual(stepPenalty("M' U M"), 2 * P.wideOther, 'slices');
   assert.strictEqual(stepPenalty(''), 0);
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
 });
@@ -247,7 +248,11 @@ test('stepPenalty (PROJECT_STATUS §4.41): wide r/l cost less in the first step'
   assert.strictEqual(stepPenalty("r U r'", true), 2 * P.wideRLFirst);
   assert.strictEqual(stepPenalty("r U r'", false), 2 * P.wideRL);
   assert.strictEqual(stepPenalty("r U r'"), 2 * P.wideRL, 'later steps by default');
-  assert.strictEqual(stepPenalty("D' B u", true), P.D + P.B + P.wideOther, 'only r/l change');
+  assert.strictEqual(stepPenalty("D' B u", true), P.D + P.B + P.wideOther, 'first-step u/d/f/b keep wideOther');
+  // PROJECT_STATUS §4.43: later-step u/d/f/b (wide spellings) cost less.
+  assert.ok(P.wideUDFB < P.wideOther);
+  assert.strictEqual(stepPenalty("f R' f'", false), 2 * P.wideUDFB);
+  assert.strictEqual(stepPenalty("f R' f'", true), 2 * P.wideOther);
   // SolveSession.pathCost: the first committed step and a root candidate use
   // the first-step value, later ones the normal one.
   const scriptExports = require('../js/script.js');

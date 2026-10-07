@@ -387,6 +387,90 @@ function inspectionWideVariants(alg, maxPos = 2) {
     return out;
 }
 
+/**
+ * Wide-move spellings of `alg` (README "Wide moves"): a D, U, B or F turn can
+ * be done as the opposite wide turn, which turns the same pieces and also
+ * rotates the cube -- D = "u y'", U = "d y", B = "f z'", F = "b z" (each
+ * found by permutation below, not written by hand). The rest of the alg is
+ * relabelled for that rotation, and an explicit rotation of `alg` that the
+ * new frame makes redundant can be absorbed. So "D y R U' R'" becomes
+ * "u R U' R'", and "B U' B'" becomes "f R' f'".
+ *
+ * Returns [{ alg, rotation }]: every spelling is physically "alg, then
+ * rotation", where rotation is '', y, y2 or y' -- the cross stays on the
+ * bottom, so an f/b only appears in pairs that undo each other's z. At most
+ * `maxWide` turns are converted, never more explicit rotations than `alg`
+ * has, and every spelling has at least one u/d/f/b. Order is fixed.
+ *
+ * Only spellings that make the alg easier to turn are kept: fewer awkward
+ * tokens (D, F and B turns and rotations) than `alg`, and no more F/B turns.
+ * Converting a U into d just to turn the rest on F/B (e.g. "R U R' d' F U F'"
+ * for "R U R' U' R U R'") is never kept; "U y' L' U L" as "d L' U L" is.
+ * Spellings mixing two of u, d, f, b are not kept either: on real searches
+ * none ranked better than ~300th, and they doubled the candidates to score.
+ */
+const WIDE_CONVERT_ROTATIONS = ['y', "y'", 'y2', 'z', "z'", 'z2'];
+const WIDE_FACE_RE = /^[UDFB]/;
+const WIDE_UDFB_RE = /^[udfb]/;
+const Y_FAMILY = new Set(['', 'y', 'y2', "y'"].map(r => rotationIndex(r)));
+// For a face turn: [{ wide, rho }] with wide == "turn, then rho".
+const WIDE_CONVERSIONS = new Map();
+function wideConversions(token) {
+    let list = WIDE_CONVERSIONS.get(token);
+    if (!list) {
+        list = [];
+        if (WIDE_FACE_RE.test(token) && FACE_TURN_SET.has(token)) {
+            for (const rho of WIDE_CONVERT_ROTATIONS) {
+                const w = wideTokenFor(token, rho);
+                if (w && WIDE_UDFB_RE.test(w)) list.push({ wide: w, rho: ROT_OF_TOKEN[rho] });
+            }
+        }
+        WIDE_CONVERSIONS.set(token, list);
+    }
+    return list;
+}
+const isRotationToken = t => ROT_OF_TOKEN[t] !== undefined;
+const awkwardCount = tokens => tokens.reduce((n, x) => n + (/^[DFBxyz]/.test(x) ? 1 : 0), 0);
+const fbCount = tokens => tokens.reduce((n, x) => n + (/^[FB]/.test(x) ? 1 : 0), 0);
+// How many of u, d, f, b a spelling uses (mixing them never ranked well).
+const wideFamilies = tokens => new Set(tokens.filter(x => WIDE_UDFB_RE.test(x)).map(x => x[0])).size;
+
+function wideSpellingParts(alg, maxWide = 2) {
+    const t = String(alg).split(/\s+/).filter(Boolean);
+    const rotationsIn = t.filter(isRotationToken).length;
+    const awkwardIn = awkwardCount(t);
+    const fbIn = fbCount(t);
+    const out = [];
+    const seen = new Set();
+    // written so far == (alg's first i tokens, then rotation `delta`)
+    const walk = (i, delta, written, wide, rotations) => {
+        if (i === t.length) {
+            if (!wide || !Y_FAMILY.has(delta)) return;
+            if (awkwardCount(written) >= awkwardIn || fbCount(written) > fbIn || wideFamilies(written) !== 1) return;
+            const spelled = written.join(' ');
+            if (!seen.has(spelled)) { seen.add(spelled); out.push({ alg: spelled, rotation: ROT_NAMES[delta] }); }
+            return;
+        }
+        const tok = t[i];
+        const w = conjugateToken(delta, tok);
+        if (!w) return;
+        if (isRotationToken(tok)) {
+            // Absorb it: the frame change already done replaces it.
+            if (delta !== ROT_IDENTITY) walk(i + 1, ROT_MUL[ROT_INV[ROT_OF_TOKEN[tok]]][delta], written, wide, rotations);
+            if (rotations < rotationsIn) walk(i + 1, delta, [...written, w], wide, rotations + 1);
+            return;
+        }
+        walk(i + 1, delta, [...written, w], wide, rotations);
+        if (wide < maxWide) {
+            for (const { wide: wt, rho } of wideConversions(w)) {
+                walk(i + 1, ROT_MUL[delta][rho], [...written, wt], wide + 1, rotations);
+            }
+        }
+    };
+    walk(0, ROT_IDENTITY, [], 0, 0);
+    return out;
+}
+
 /** Shortest name for the net rotation of a rotation string. */
 function rotationName(rotation) {
     return canonicalizeForEngine('', rotation).rotation;
@@ -436,6 +520,7 @@ if (typeof module !== 'undefined' && module.exports) {
         rotationSpellings,
         rotationSpellingParts,
         inspectionWideVariants,
+        wideSpellingParts,
         rotationName,
         rotationIndex,
         composeRotationIndex,

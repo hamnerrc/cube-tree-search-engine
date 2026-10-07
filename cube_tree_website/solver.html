@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261006d">
+    <link rel="stylesheet" href="styles.css?v=20261006w">
 </head>
 
 <body>
@@ -44,29 +44,44 @@
         </section>
 
         <section class="results-controls" aria-label="result options">
-            <label>look-ahead
-                <select id="lookahead-depth">
-                    <option value="1" selected>off</option>
-                    <option value="2">2 steps</option>
-                    <option value="3">3 steps</option>
-                    <option value="4">4 steps</option>
-                    <option value="5">5 steps</option>
-                </select>
-                <span class="slow-tag" id="lookahead-slow" hidden>slow</span>
-            </label>
-            <label>breadth
-                <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
-            </label>
-            <label class="check">
-                <input type="checkbox" id="multislot"> multislot
-            </label>
-            <label class="check">
-                <input type="checkbox" id="no-r2l2"> no r2/l2 after step 1
-            </label>
-            <label class="check" id="simple-pseudo-wrap" hidden>
-                <input type="checkbox" id="simple-pseudo"> simple pseudo only
-            </label>
-            <label class="page-size">show
+            <fieldset class="control-group">
+                <legend>search</legend>
+                <label class="check" title="later steps may solve two or more pairs at once">
+                    <input type="checkbox" id="multislot"> multislot
+                </label>
+                <label class="check" title="results with wide moves (r l u d f b): e.g. f R' f' for B U' B', u R U' R' for D y R U' R'. off: searched without them; on again: they are searched and added to the list">
+                    <input type="checkbox" id="wide-moves"> wide moves
+                </label>
+                <label class="check" title="later steps (and look-ahead) are searched without the half turns R2 and L2">
+                    <input type="checkbox" id="no-r2l2"> <span>no <span class="moves">R2/L2</span> after step 1</span>
+                </label>
+            </fieldset>
+            <fieldset class="control-group">
+                <legend>filter</legend>
+                <label class="check" title="hide later steps that turn the R or L layer a half turn away from where the step started (e.g. R U R U' R'). the first step is never hidden">
+                    <input type="checkbox" id="hide-unorthodox"> hide unorthodox
+                </label>
+                <label class="check" id="simple-pseudo-wrap" title="after a mismatched (pseudo) pair, only list the steps that repair it" hidden>
+                    <input type="checkbox" id="simple-pseudo"> simple pseudo only
+                </label>
+            </fieldset>
+            <fieldset class="control-group">
+                <legend>look-ahead</legend>
+                <label title="re-rank the top results by the best combined tpp of the next steps">
+                    <select id="lookahead-depth" aria-label="look-ahead depth">
+                        <option value="1" selected>off</option>
+                        <option value="2">2 steps</option>
+                        <option value="3">3 steps</option>
+                        <option value="4">4 steps</option>
+                        <option value="5">5 steps</option>
+                    </select>
+                    <span class="slow-tag" id="lookahead-slow" hidden>slow</span>
+                </label>
+                <label title="how many of the top results get a look-ahead">breadth
+                    <input type="number" id="lookahead-breadth" value="5" min="1" max="50">
+                </label>
+            </fieldset>
+            <label class="page-size" title="results per page">show
                 <input type="number" id="page-size" value="25" min="1" max="500">
             </label>
         </section>
@@ -80,15 +95,15 @@
             <table class="results-table">
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>colour</th>
-                        <th>type</th>
-                        <th>rotation</th>
-                        <th>edges</th>
-                        <th>corners</th>
-                        <th>alg</th>
-                        <th>tpp</th>
-                        <th>look-ahead</th>
+                        <th title="rank">#</th>
+                        <th title="cross colour">colour</th>
+                        <th title="what this step solves">type</th>
+                        <th title="inspection rotation before the first step">rotation</th>
+                        <th title="f2l edges this step places">edges</th>
+                        <th title="f2l corners this step places">corners</th>
+                        <th title="the moves of this step; click a row to commit it">alg</th>
+                        <th title="time per piece of the whole solve so far, this step included; lower is faster">tpp</th>
+                        <th title="with look-ahead on: the combined tpp of the best next steps, and those steps">look-ahead</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
@@ -99,15 +114,15 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/script.js?v=20261006d"></script>
-    <script src="js/facelet-cube.js?v=20261006d"></script>
-    <script src="js/facelet-flags.js?v=20261006d"></script>
-    <script src="js/cross-optimization.js?v=20261006d"></script>
-    <script src="crossSolver/solver-helper.js?v=20261006d"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=20261006d"></script>
-    <script src="js/search-scheduler.js?v=20261006d"></script>
-    <script src="js/solver-bridge.js?v=20261006d"></script>
-    <script src="js/solver-ui.js?v=20261006d"></script>
+    <script src="js/script.js?v=20261006w"></script>
+    <script src="js/facelet-cube.js?v=20261006w"></script>
+    <script src="js/facelet-flags.js?v=20261006w"></script>
+    <script src="js/cross-optimization.js?v=20261006w"></script>
+    <script src="crossSolver/solver-helper.js?v=20261006w"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=20261006w"></script>
+    <script src="js/search-scheduler.js?v=20261006w"></script>
+    <script src="js/solver-bridge.js?v=20261006w"></script>
+    <script src="js/solver-ui.js?v=20261006w"></script>
 </body>
 
 </html>

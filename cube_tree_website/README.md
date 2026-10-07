@@ -141,7 +141,8 @@ by where each professional step would rank in the app's own result list
 2. Each step pays a small extra cost for the moves professionals use less
    than MCC's hand model predicts: `D` +1.06, `F` +0.86, `B` +2.22, wide
    `r`/`l` +2.35 (+1.2 in the solve's first step, the cross or xcross from
-   inspection, where professionals use them most), other wide moves +3.31,
+   inspection, where professionals use them most), `u`/`d`/`f`/`b` +2.5
+   (+3.31 in the first step), slices `M`/`E`/`S` +3.31,
    and a `y` rotation in the middle of a step +3.70 (a rotation that *starts*
    a step is free: it happens while looking ahead between steps). These are
    penalties only, so no move ever costs less than MCC says. A path's time is
@@ -154,7 +155,10 @@ solves #12-#19, which the fit never saw; refitting on all 19 did not rank
 the pros any better, so they were kept unchanged. The single `r`/`l` value
 had buried every wide first step below the first page of results; the
 first-step value was then chosen the same way, on the first steps of all 19
-solves. Professionals sometimes
+solves. No reference solve uses `u`/`d`/`f`/`b`, so the benchmark cannot
+fit their later-step value, only say what a lower one costs: +2.5 is the
+lowest value that keeps the same professional steps in the top 10 (it lets
+`f R' f'` beat `B U' B'`, as MCC says it should). Professionals sometimes
 execute a slower step than the best available, and such a step should rank
 lower; the tuning targets where pro steps rank overall, not every single
 step at the top. Further tuning should go through the same benchmark rather
@@ -303,7 +307,9 @@ remain distinct results, since the choice of rotation is itself part of the comm
 ## Wide moves and Cross optimisation
 
 Outside the pro move set's `r`/`l` (see [Move set](#move-set)), wide moves
-(`r`, `r'`, `l`, `l'`, `u`, `u'`) are not searched directly. Cross
+(`r`, `r'`, `l`, `l'`, `u`, `u'`, …) are not searched directly: they come
+from rewriting found solutions — Cross optimisation for the first step, and
+wide-move spellings for later steps (below). Cross
 optimisation (always on; it has no checkbox) applies a **post-hoc,
 first-step-only** transformation to ordinary Cross results:
 
@@ -322,13 +328,42 @@ This is specifically a first-step feature: Cross optimisation rewrites
 *Cross* results into their wide-move-equivalent forms; it is not a general
 wide-move search mode and does not apply to later steps.
 
+### Wide-move spellings of F2L steps
+
+After the first step, every result is also offered in its wide-move
+spellings. A `D` turn can be done as a wide `u` (the same pieces move, and
+the cube turns with it: `D` = `u y'`), a `U` as a wide `d`, and a `B` or `F`
+as a wide `f` or `b`; the rest of the step is relabelled for the new
+orientation. This can save a rotation or replace awkward turns:
+
+- `D y R U' R'` (a `D` setup, then a rotation) is `u R U' R'`;
+- `U y' L' U L` is `d L' U L`;
+- `y R U' R'` is `B U' B'`, which is `f R' f'` — the fastest of the three.
+
+The cross must stay on the bottom, so the step may end in a different `y`
+orientation but never a sideways one (an `f` comes with an `f'`). Only
+spellings that turn out easier are kept: fewer `D`/`F`/`B` turns and
+rotations than the original, no extra `F`/`B` turns, at most two wide turns
+and only one kind of them (mixed `d`…`f` spellings never ranked well). They
+apply to pseudo pairs too (the `D` turn that aligns a pseudo pair can be a
+`u`). The first step is left to cross optimisation, the engine's `r`/`l` and
+side-cross inspections: these spellings doubled its candidates.
+
+**Wide moves** (a results-page checkbox, default on): unticked, no result at
+any step uses a wide move (`r l u d f b`) or a slice — the engine searches
+without `r`/`l` and no wide spelling is made. Unticking it on a step already
+searched with wide moves just hides them (nothing is searched again, and
+ticking it again shows them at once). Ticking it on a step that was searched
+without them searches the wide moves and adds them to the list on screen as
+they are found, without clearing it.
+
 ## Move set
 
 Ordinary search uses the 18 standard face turns (`U U' U2 D D' D2 R R' R2
 L L' L2 F F' F2 B B' B2`) plus whole-cube rotations where relevant. By
 default, slice moves and wide moves are not part of the search move set —
-wide moves exist only as the post-hoc Cross-optimisation transform described
-above.
+wide moves come from the post-hoc rewrites described above (Cross
+optimisation and wide-move spellings).
 
 The **pro move set** (always on; it has no checkbox) widens the search to
 the move subsets professionals actually use: wide `r`/`l` and at most one
@@ -337,6 +372,17 @@ required to finish on the bottom, plus rotated spellings and side-cross
 inspections (below). It is slower, and it applies to matched (non-pseudo)
 searches. In every mode, `U`-layer turns may be used to position other
 pieces even when they move no goal piece (e.g. `R' U R'` instead of `R2`).
+
+**Unorthodox steps** (a results-page filter, "hide unorthodox", default
+off): for an orthodox F2L step, the `R` layer never gets more than one
+quarter turn away from where the step started. Count `R` as +1 and `R'` as
+−1 (`R2` as two, and positions are taken mod 4 — the layer is a half turn
+away at +2 or −2): in `R (1) U R (2!) U' R' (1) U' R2 (−1) U R (0)` the
+second `R` makes the step unorthodox. `L` is counted the same way, `r` counts
+as `R` and `l` as `L`, and a `y` or `z` rotation (also inside `u d f b`)
+starts both counts again. Ticked, unorthodox later steps are hidden, also in
+the look-ahead; **first steps are never hidden**. It only filters, so it
+needs no new search.
 
 **No R2/L2 after step 1** (a results-page checkbox, default off): later
 steps -- and every look-ahead step after the first -- are searched without
@@ -404,14 +450,18 @@ search; current measurements are in PROJECT_STATUS.md):
 The configuration page holds the search settings (colours, which first-step
 types to search (xcross, xxcross, xxxcross), pseudo F2L, solutions per
 search, the time limit, per-type limits) and the scramble list. The pro move set and cross optimisation are always on.
-The interface is lowercase and minimal: options carry no inline
-explanations; an info icon next to the logo opens a short description of
-every option, on both pages. Both pages work on phones, tablets and desktops.
+The interface is lowercase and minimal, except move notation, which keeps
+its case (`R2` is not the wide `r2`): options carry no inline explanations;
+hovering an option or a column title shows a one-line hint, and an info icon
+next to the logo opens a short description of every option, on both pages.
+Both pages work on phones, tablets and desktops.
 
-The results page holds the per-step settings: look-ahead (depth and
-breadth), multislot, no R2/L2 after step 1, the simple-pseudo filter, and how
-many results to show per page. Changing one re-searches the current step
-(reusing what it can) and applies to every later step until changed.
+The results page holds the per-step settings, in labelled groups: search
+(multislot, wide moves, no `R2`/`L2` after step 1), filter (hide unorthodox,
+simple pseudo only), look-ahead (depth and breadth), and how many results to
+show per page. Changing a search setting re-searches the current step
+(reusing what it can) and applies to every later step until changed; a
+filter only hides results, and the status line says how many it hid.
 
 ## Results table
 
@@ -441,6 +491,10 @@ At minimum, a results table shows:
 - **TPP** — the path's time per piece including this step.
 - **look-ahead** — with look-ahead on, the combined TPP of the best sequence
   starting with this result, and that sequence's follow-up steps.
+
+Each row is a distinct solution: two rows never show the same inspection
+rotation and alg (the same moves from the same cube), whichever DAG edge or
+search setting produced them; the better-ranked copy is kept.
 
 Clicking a result appends its moves to the current committed path and
 triggers a fresh search from the resulting node. Multiple scrambles are
