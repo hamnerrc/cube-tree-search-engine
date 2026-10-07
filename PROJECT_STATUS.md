@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-06 (nineteenth pass).*
+*Last updated 2026-10-06 (twentieth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,45 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-06, after the nineteenth pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-06, after the twentieth pass):** read this first.
+- Twentieth pass (user task list: wide-move spellings of F2L steps,
+  "unorthodox" steps, exact duplicate rows, a wide-moves toggle and an
+  unorthodox filter on the results page, clearer R2/L2 label, general
+  usability). Writeup: §4.43. The tree was clean and every suite passed at
+  the start (the nineteenth pass had finished and committed).
+  1. **Wide-move spellings** (`wideSpellingParts`, facelet-cube.js): D -> u,
+     U -> d, B/F -> f/b with the rest relabelled and a now-redundant
+     rotation absorbed (`D y R U' R'` -> `u R U' R'`, `B U' B'` ->
+     `f R' f'`). Built only from permutation tables; kept only if easier
+     (fewer D/F/B/rotations, no extra F/B, one wide family, <= 2 wide
+     turns, cross stays down). Later steps only (doubled root candidates),
+     matched and pseudo. Later-step u/d/f/b now reach the first page
+     (#5-#16 in probes). Every one replayed physically in
+     `test/wide-spellings-e2e.js` (`--pseudo` for pseudo solves).
+  2. **Scoring:** `STEP_PENALTIES.wideUDFB` = 2.5 after the first step
+     (first step keeps 3.31 = `wideOther`). No pro solve uses u/d/f/b, so the
+     benchmark is monotone; 2.5 is the lowest value that keeps the pro
+     top-10 count. Versus the pre-pass benchmark: mean log10 rank 0.970 ->
+     0.949, top 10 43 -> 44, top 500 60 -> 60. `pro-ranking.js --penalty
+     name=v1,v2` sweeps step penalties.
+  3. **Unorthodox** (`isUnorthodox`): R/L layer displacement mod 4 reaches 2
+     (R = +1, R' = -1, R2 = 2; r = R, l = L; y/z family resets). Later-step
+     candidates carry `unorthodox`; "hide unorthodox" filter (step + look-
+     ahead); first steps never flagged.
+  4. **Exact dedupe** (`dedupeSolutions`): one row per rotation + alg text,
+     at the end of `rankCandidates` and of every merge. None were found in
+     probes before or after; it is a cheap guarantee.
+  5. **Wide-moves toggle** (results page, default on): off = engine without
+     r/l, no wide spellings, `searchSettingsKey` gains `nowide` (root too).
+     memoSearch's "wide twin": off on a searched step = that list filtered
+     (no engine call); on where only the no-wide list exists = wide search
+     merged into it progressively (rows never cleared). Browser-checked.
+  6. **UI:** grouped controls (search / filter / look-ahead), hover hints on
+     options and column titles, "N hidden by filters" in the status line,
+     `R2/L2` keeps its case (`.moves`), filters and the wide toggle keep the
+     rows on screen while they apply, info dialog rewritten.
+
+**Previous handoff (2026-10-06, after the nineteenth pass):**
 - Nineteenth pass (user task list: finish interrupted work, Cubedb export,
   UI polish toward release, background-tab reliability, anything else
   needed). Writeup: §4.42. The previous session had left only the user's
@@ -1962,6 +2000,105 @@ driver (headless Chrome, Node's global `WebSocket`) loaded index.html,
 generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
+
+### 4.43 DONE (2026-10-06, twentieth pass): wide-move spellings, unorthodox steps, exact dedupe, results-page options
+
+**Wide-move spellings (README "Wide-move spellings of F2L steps").** In piece
+terms `u` = `D y`, `d` = `U y'`, `f` = `B z`, `b` = `F z'` (checked by
+permutation). `wideSpellingParts(alg)` walks the alg with a frame deviation
+delta (written so far == alg's prefix, then delta): each token is written
+relabelled by delta (`conjugateToken`); a D/U/F/B face turn may instead be
+written as the wide token `wideTokenFor(turn, rho)` (delta := delta*rho); an
+explicit rotation may be absorbed when delta != identity. Result: spellings
+physically equal to "alg, then a y-family rotation". Filters: >= 1 u/d/f/b,
+<= 2 conversions, end rotation y-family (cross stays down, so f/b come in
+pairs), no more explicit rotations than the alg, strictly fewer awkward
+tokens (D/F/B/x/y/z), no more F/B turns, one wide family. Measured on a real
+later step (202 base algs): unfiltered 615 spellings, single family 284;
+mixed families never ranked better than ~300th. Generation ~4 ms per search,
+scoring dominates.
+- Applied in `postProcessCall` to every later-step candidate (matched: node
+  read off the physical replay, shared with rotation spellings via
+  `nodeAfter`; pseudo: the claim relabelled with `relabelSlotsForRotation`,
+  whose direction was checked empirically: labels after a trailing rot).
+- **Not at the root:** root candidates 14.1k -> 28.7k and root time
+  2.5 -> 4.0 s on the probe scramble; the root already has cross-opt `u`,
+  engine `r/l` and side-cross inspections.
+- Cost on later steps: depth-4 look-ahead warm JS 0.75 s -> 2.0 s with the
+  unfiltered generator; with the final filters later-step lists grow ~1.4x
+  (e.g. 1282 -> 1849 results).
+
+**Scoring.** `stepPenalty` charged every u/d/f/b 3.31 (`wideOther`, fitted
+with zero positive examples: no pro solve uses them), so `f R' f'` (MCC 4.10)
+tied `B U' B'` (MCC 6.20 + 2 x 2.22). Split `wideUDFB` (later steps) from
+`wideOther` (first-step u/d/f/b and M/E/S). `tools/pro-ranking.js --penalty
+wideUDFB=...` on fresh `--app` pools (built with the new spellings):
+
+| wideUDFB | mean log10 rank | top 10 | later steps top 10 |
+|---|---|---|---|
+| 0 | 1.190 | 32 | 28/47 |
+| 1 | 1.007 | 41 | 37/47 |
+| 2.25 | 0.969 | 42 | 38/47 |
+| **2.5** | **0.949** | **44** | **40/47** |
+| 3.31 | 0.943 | 44 | 40/47 |
+
+Monotone, as it must be. 2.5 = the lowest value keeping the top-10 count.
+Lowering the FIRST step's u/d/f/b as well moved root pro steps down (#12
+xcross 486 -> 555, out of the top 500) through the pre-existing root
+spellings, hence the split. Pre-pass pools (HEAD worktree): 0.970 / top 10
+43 / top 500 60; now 0.949 / 44 / 60.
+
+**Unorthodox.** `isUnorthodox`: R and L layer counts mod 4 (R/r +1, R' -1,
+R2 2; same for L/l); 2 at any point = unorthodox; y/z-family tokens (y z u d f
+b E S) reset both. The user's example `R U R U' R' U' R2 U R` is flagged,
+`R U' R2 U' R` is not. Interpretation choice: "displacement greater than one"
+read physically, as the layer being a half turn away (+2 and -2 are the same
+position), so `R' U R'` and an `R2` from home are unorthodox too. Flag set in
+postProcessCall for later steps only (it travels through the post-processing
+workers); the results-page filter is a searchWithLookahead filter, so look-
+ahead follows it. On probe solves 25-50% of later-step results are flagged
+(e.g. `F' L2 F L2`).
+
+**Exact dedupe.** `dedupeSolutions` (rotation + alg text, first kept) runs at
+the end of `rankCandidates` and in `mergeRanked`. Probes on HEAD and now
+found 0 such duplicates in single searches (the existing key
+target|rotation|commuteNormalize(alg) already covered them); the new
+guarantee matters for merged lists (wide toggle) and costs one Set pass.
+
+**Wide-moves toggle.** `session.wideMoves` (default true) is a search
+setting: engine `allowedMoves` without r/l (`withoutWide`), no cross-opt,
+side-cross or wide spellings, and a final guard drops any wide/slice alg.
+`searchSettingsKey` now includes it at the root too (multislot / R2L2 still
+only later). memoSearch looks up the same step's search with the other
+setting (`wideTwin`): off with an on-search known = that list filtered
+(partials too; no engine call); on with only an off-search known (finished,
+not truncated) = the wide search, each partial and the final list merged with
+the off list (`mergeRanked`), first emitted at once. Not under a time
+limit (a cut-short list is never reused, as before). Browser (headless
+Chrome, 2 scrambles): off 2 ms, rows never cleared, no wide alg on screen;
+on again identical first page; at a step searched without wide moves,
+switching on kept the 25 rows while searching and grew 2,100 -> 4,786.
+
+**UI.** Results controls in three fieldsets (search: multislot, wide moves,
+no R2/L2 after step 1; filter: hide unorthodox, simple pseudo only;
+look-ahead), page size on the right; `title` hints on every option and column
+header; status "N results · M hidden by filters" (`filterResults(...,
+countHidden)`); `.moves` spans keep move case (body is lowercased by CSS, so
+"R2/L2" used to render as "r2/l2", i.e. wide moves); filters and the wide
+toggle re-render without first clearing the table (`runSearch({ keepRows })`);
+info dialog sections "search options", "filters", "look-ahead". Screenshots
+at 1280 / 820 / 390 px.
+
+**Tests.** Fast: facelet-cube (user examples + 1500 random algs, 3278
+spellings, all physically "alg then rotation" and within the rules),
+solver-bridge (unorthodox cases, dedupe/merge, isWideAlg/withoutWide, wide off
+drops exactly r/l from every engine call, settings keys). Real engine: new
+`test/wide-spellings-e2e.js` (physical replay of every later-step u/d/f/b
+result on two solves, first page reached, unorthodox filter incl. look-ahead
+and hiddenCount, wide-off twin with 0 engine calls, off-then-on superset with
+no shorter partial; `--pseudo`: 7,887 pseudo-solve results replayed). Re-run
+and passing: search-options, wide-moves, lookahead, progressive,
+cubedb-export, offload, solver-bridge-e2e --pro, pro-references-e2e.
 
 ### 4.42 DONE (2026-10-06, nineteenth pass): Cubedb export, results-page polish, search reliability
 
