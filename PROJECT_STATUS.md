@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status (Working Document)
 
-*Last updated 2026-10-06 (twenty-third pass).*
+*Last updated 2026-10-07 (twenty-fourth pass).*
 
 This document is the **mutable working record**: what actually exists in the
 repo right now, what has been verified, what's broken or missing, completed
@@ -17,7 +17,31 @@ in the README.
 
 ## Quick orientation (read this first if you're new to the session)
 
-**WHERE WE LEFT OFF (2026-10-06, after the twenty-third pass):** read this first.
+**WHERE WE LEFT OFF (2026-10-07, after the twenty-fourth pass):** read this first.
+- Twenty-fourth pass (user: commit my answers, tune alg_speed on them as
+  one step-independent function without overfitting, never a wide B, push,
+  then wait for more data). Writeup: §4.46.
+  1. **Data:** the developer's 101 answers committed raw (333a750), then
+     the 14 involving a wide `b` deleted (user request; in all 14 the `b`
+     alg had been judged slower): 87 answers, 81 pairs (56 strict, 25 too
+     close), 4 skips.
+  2. **Never a wide B** (`hasWideB`, solver-bridge.js): dropped in
+     postProcessCall's `push` and in `dedupeSolutions` (end of every
+     list); `wideSpellingParts` makes none. Real engine, 6 scrambles incl.
+     pseudo: 31,272 rows, 0 with `b`. The comparison tool never shows one
+     (`indexPool` skips them); pool rebuilt: 308 lists, 16,635 algs, 0 `b`.
+  3. **One scoring function for every step:** `stepPenalty(alg)` has no
+     first-step values any more (`wideRLFirst`, first-step u/d/f/b gone);
+     new `STEP_PENALTIES.turn` = 0.5 per face/wide/slice turn, from the
+     comparisons (`tools/fit-alg-speed.js`, CV). Answered pairs ordered
+     right: 27/56 -> 38/56. Pro benchmark (secondary): mean log10 rank
+     0.929 -> 1.098, top 10 39 -> 37, top 500 59 -> 58; coverage 44/66
+     unchanged.
+  Next: wait for more answers (7b continues); refit with
+  `node tools/fit-alg-speed.js` (CV per lambda / parameter set) when there
+  are a few hundred.
+
+**Previous handoff (2026-10-06, after the twenty-third pass):**
 - Twenty-third pass: **roadmap 7a done** -- the pairwise speed-comparison
   tool exists and is ready for the developer (7b). Writeup: §4.45. Tree was
   clean at the start, all suites passing; no app code changed.
@@ -2058,6 +2082,80 @@ generated scrambles, checked boxes, navigated to solver.html, waited for
 results, clicked a row and read the table: no exceptions or console
 errors; after-commit labels physically spot-checked with the facelet sim.
 
+### 4.46 DONE (2026-10-07, twenty-fourth pass): first fit on the pairwise comparisons; one step-independent stepPenalty; never a wide B
+
+**Data.** 101 answers (89 select, 9 random, 3 repeats; answer times 3 s to
+45 min, the long ones are breaks). Committed raw first (333a750). Then every
+answer with a wide `b` in either alg deleted from
+`data/speed_comparisons.jsonl` (user request, the raw log stays in git
+history): 14, and in every one the `b` alg had been judged slower or the
+other alg chosen. Left: 87 answers, 81 pairs, 56 strict, 25 too close, 4
+skips, 158 derived comparisons, no contradictions; repeats 1 of 2
+consistent.
+
+**Never a wide B (README "Wide moves").** Sources found in the old pool:
+1,521 of 17,919 items, 341 of them first steps (the engine's `r`/`l`
+relabelled by an inspection `y`, cross optimisation) and the rest wide
+spellings (`B`/`F` -> `b`, and an `r` relabelled after a `d` conversion).
+`hasWideB` (solver-bridge.js) is checked in postProcessCall's `push` (every
+candidate passes it) and in `dedupeSolutions` (the end of `rankCandidates`
+and every `mergeRanked`); `wideConversions` never converts to `b` and
+`wideSpellingParts` rejects a spelling containing one. Unit tests: bridge
+(hasWideB, dedupe/merge drop), facelet-cube (1500 random algs' spellings,
+none with `b`), pair-compare (indexPool skips them). Real engine
+(searchWithLookahead depth 1, 6 random-state scrambles, 3 with pseudo, 6
+steps each): 31,272 rows, 0 with `b`, 12,264 with other wide moves. Info
+dialog text now lists `r l u d f`.
+
+**Fitting** (`tools/fit-alg-speed.js`, new). One model for every step:
+time = algSpeed(alg) + stepPenalty(alg). Ordered logit with a "too close"
+band (scale s and band c fitted), direct verdicts weight 1, derived ones
+1/(1+dist) recomputed from the training fold only, ridge prior towards the
+current values (relative to max(|v|, 0.5)), pattern search. 10-fold CV
+over pairs x 3 repeats; held-out strict accuracy and log-likelihood per
+answer (ties included). "current" = old constants as one step-independent
+function (later-step values everywhere), s and c fitted:
+
+| free parameters | best lambda | held-out strict right | held-out log-lik |
+|---|---|---|---|
+| none (current) | - | 62.5% | -1.086 |
+| all 19 (MCC + penalties + turn) | 1 | 76.8% | -1.219 (worse) |
+| MCC only | 1 | 72.6% | -1.087 |
+| penalties incl. turn | 10 | 72.0% | -1.020 |
+| **turn only** | 1 / 0.3 | 73.8% / 73.2% | **-0.997 / -0.983** |
+
+All-parameter fits order a few more held-out pairs right but are
+overconfident (log-likelihood worse than not fitting): overfitting 56
+answers. The single new `turn` cost (fixed cost per face, wide or slice
+turn; rotations excluded) is the robust signal: the slower alg had more
+turns in 25 strict pairs and fewer in 4; MCC alone agreed 29/22. Full-data
+fit: 0.785 (lambda 1), 0.994 (0.3), 0.563 (3). Fixed values, in-sample
+(1 parameter): turn 0 -> 30/56, ll -1.033; 0.3 -> 39, -0.993; 0.5 -> 38,
+-0.968; 0.8 -> 39, -0.942; 1.0 -> 38, -0.932.
+
+**Secondary check** (`tools/pro-ranking.js --app`, mean log10 rank of the
+66 pro steps; top 10; top 500): old split penalties 0.929; 39; 59. One
+function, turn 0: 0.968; 39; 58. turn 0.5: 1.098; 37; 58. turn 0.8: 1.172;
+37; 55. turn 1.0: 1.251; 37; 54. Chosen: **turn = 0.5**, the lowest value
+that keeps nearly all of the comparisons' gain; higher values buy little on
+the comparisons and keep costing the pro benchmark. Coverage
+(`pro-references-e2e.js`) 44/66 before and after.
+
+**Result.** `STEP_PENALTIES` = { D 1.06, F 0.86, B 2.22, wideRL 2.35, wideUDFB
+2.5, wideOther 3.31 (slices only now), rotMidY 3.70, turn 0.5 };
+`stepPenalty(alg)` (the old second argument is gone; callers in the
+bridge's `stepsPathCost`, pro-ranking, pair-compare updated). `pair-compare
+stats`: the current model orders 38/56 answered pairs right (27/56 before;
+that count used first-step values for first-step algs). Not refitted:
+ALG_SPEED_DEFAULTS (MCC) and the other penalties, by design -- refit when
+there are a few hundred answers; the CV table above is the bar.
+
+**Checks.** All unit suites; e2e: pro-references (44/66), wide-spellings,
+search-options, lookahead, cubedb-export, solver-bridge (3 scrambles,
+--pro): all pass. Candidate pool rebuilt with the new scoring (308 lists,
+16,635 algs). Page assets cache-buster 20261006x -> 20261007a (engine
+unchanged, ENGINE_VERSION kept).
+
 ### 4.45 DONE (2026-10-06, twenty-third pass): pairwise speed-comparison tool (roadmap 7a)
 
 **What exists.** `cube_tree_website/tools/pair-compare.js` (CLI) on top of
@@ -3905,7 +4003,7 @@ be done in parallel.
 7. **Train `alg_speed` on pairwise human speed comparisons, then one
    step-independent model (README "Future: one scoring algorithm for every
    step" and "Planned: training `alg_speed` on pairwise speed comparisons";
-   7a done, 7b next -- the developer's)**
+   7a done, 7b in progress, first 7c fit done -- §4.46)**
 
    *Why the change (2026-10-06, user decision):* 19 pro solves are too few
    to calibrate execution speed, and a pro's step only shows what they
@@ -3980,10 +4078,14 @@ be done in parallel.
      the selection and closure logic; no app code changes. Done in the
      twenty-third pass (§4.45); differences from the design above are
      listed there.
-   - [ ] 7b. The developer collects comparisons (~1 week).
+   - [ ] 7b. The developer collects comparisons (~1 week). 101 answers
+     so far (87 after removing wide-B pairs, §4.46).
    - [ ] 7c. Fit and validate one step-independent `alg_speed`; switch the
      app to it only if it wins on held-out comparisons; document the
      result in README "Ranking" and here.
+     First pass done (§4.46): one step-independent stepPenalty + `turn`
+     0.5 from 81 pairs (`tools/fit-alg-speed.js`). Refit (MCC constants,
+     other penalties) once there are a few hundred answers.
 
 8. **Visual redesign (README "Planned: visual redesign"; waiting on the
    developer's design)**

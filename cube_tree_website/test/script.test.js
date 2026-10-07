@@ -229,39 +229,35 @@ test('pruneGraph: without multislotting, a non-root edge solving 2 pairs at once
   assert.ok(!edgeKeys(pruned).includes('N1->N3'), 'N1->N3 (2-pair multislot step) should be excluded without multislotting');
 });
 
-test('stepPenalty (PROJECT_STATUS §4.35): penalties only, step-aware rotations', () => {
+test('stepPenalty (PROJECT_STATUS §4.35, §4.46): penalties only, step-aware rotations, a cost per turn', () => {
   const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
-  assert.strictEqual(stepPenalty("R U R' U'"), 0, 'R/U/L moves carry no penalty');
-  assert.strictEqual(stepPenalty("L' U L"), 0);
-  assert.strictEqual(stepPenalty("y R U R'"), 0, 'a rotation that starts the step is free');
-  assert.strictEqual(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY, 'a mid-step y is penalised');
-  assert.strictEqual(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL);
-  assert.strictEqual(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB);
-  assert.strictEqual(stepPenalty("M' U M"), 2 * P.wideOther, 'slices');
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m || ''} ${a} vs ${b}`);
+  near(stepPenalty("R U R' U'"), 4 * P.turn, 'R/U moves cost only the per-turn cost');
+  near(stepPenalty("L' U L"), 3 * P.turn);
+  near(stepPenalty("y R U R'"), 3 * P.turn, 'a rotation that starts the step is free');
+  near(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY + 8 * P.turn, 'a mid-step y is penalised, rotations are not turns');
+  near(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL + 6 * P.turn);
+  near(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB + 3 * P.turn);
+  near(stepPenalty("M' U M"), 2 * P.wideOther + 3 * P.turn, 'slices');
+  near(stepPenalty("x R U"), 2 * P.turn, 'x is not a turn');
   assert.strictEqual(stepPenalty(''), 0);
+  assert.ok(P.turn > 0, 'the per-turn cost fitted to the speed comparisons');
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
 });
 
-test('stepPenalty (PROJECT_STATUS §4.41): wide r/l cost less in the first step', () => {
+test('stepPenalty (PROJECT_STATUS §4.46): one function for every step', () => {
   const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
-  assert.ok(P.wideRLFirst < P.wideRL, 'first-step wide r/l are cheaper (they were buried below every face-turn first step)');
-  assert.strictEqual(stepPenalty("r U r'", true), 2 * P.wideRLFirst);
-  assert.strictEqual(stepPenalty("r U r'", false), 2 * P.wideRL);
-  assert.strictEqual(stepPenalty("r U r'"), 2 * P.wideRL, 'later steps by default');
-  assert.strictEqual(stepPenalty("D' B u", true), P.D + P.B + P.wideOther, 'first-step u/d/f/b keep wideOther');
-  // PROJECT_STATUS §4.43: later-step u/d/f/b (wide spellings) cost less.
-  assert.ok(P.wideUDFB < P.wideOther);
-  assert.strictEqual(stepPenalty("f R' f'", false), 2 * P.wideUDFB);
-  assert.strictEqual(stepPenalty("f R' f'", true), 2 * P.wideOther);
-  // SolveSession.pathCost: the first committed step and a root candidate use
-  // the first-step value, later ones the normal one.
+  assert.ok(!('wideRLFirst' in P), 'no first-step values');
+  assert.strictEqual(stepPenalty("r U r'", true), stepPenalty("r U r'", false));
+  assert.strictEqual(stepPenalty("f R' f'", true), stepPenalty("f R' f'"));
+  // SolveSession.pathCost: every step, first or later, the same penalty.
   const scriptExports = require('../js/script.js');
   for (const k of ['algSpeed', 'algSpeedPrefix', 'algSpeedResume', 'stepPenalty']) global[k] = scriptExports[k]; // browser globals
   const { stepsPathCost } = require('../js/solver-bridge.js');
   const { algSpeed } = scriptExports;
   const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
-  near(stepsPathCost({}, [], "r U R'"), algSpeed("r U R'") + P.wideRLFirst);
-  near(stepsPathCost({}, ["r U R'"], "l U' L'"), algSpeed("r U R' l U' L'") + P.wideRLFirst + P.wideRL);
+  near(stepsPathCost({}, [], "r U R'"), algSpeed("r U R'") + stepPenalty("r U R'"));
+  near(stepsPathCost({}, ["r U R'"], "l U' L'"), algSpeed("r U R' l U' L'") + stepPenalty("r U R'") + stepPenalty("l U' L'"));
 });
 
 test('normalizeCriteria: pro move set + cross optimisation always on, retired options moved to view settings', () => {

@@ -131,40 +131,42 @@ result (see below) — those are free, since a human absorbs them during
 inspection rather than mid-solve. `y2` specifically is forbidden as a
 mid-algorithm move; it may only appear as a distance-1 inspection rotation.
 
-**Tuned for professional solutions.** `alg_speed` is MCC with two
-benchmarked adjustments, both measured against the
-[professional reference solves](#professional-reference-solves-and-known-gaps)
-by where each professional step would rank in the app's own result list
-(`tools/pro-ranking.js --app`):
+**Tuning.** `alg_speed` is MCC with these adjustments, the same at every
+step of the solve:
 
 1. Finger pushes on `U`/`D` turns (MCC's `pushMult`) cost 0.8 instead of 1.3.
 2. Each step pays a small extra cost for the moves professionals use less
    than MCC's hand model predicts: `D` +1.06, `F` +0.86, `B` +2.22, wide
-   `r`/`l` +2.35 (+1.2 in the solve's first step, the cross or xcross from
-   inspection, where professionals use them most), `u`/`d`/`f`/`b` +2.5
-   (+3.31 in the first step), slices `M`/`E`/`S` +3.31,
-   and a `y` rotation in the middle of a step +3.70 (a rotation that *starts*
-   a step is free: it happens while looking ahead between steps). These are
-   penalties only, so no move ever costs less than MCC says. A path's time is
-   MCC of the whole path plus the penalty of each of its steps.
+   `r`/`l` +2.35, `u`/`d`/`f` +2.5, slices `M`/`E`/`S` +3.31, and a `y`
+   rotation in the middle of a step +3.70 (a rotation that *starts* a step
+   is free: it happens while looking ahead between steps).
+3. Every turn (face, wide or slice; not rotations) costs +0.5 on top of
+   MCC. This one comes from the developer's own pairwise speed judgements
+   (below): MCC alone underrated how much each extra turn slows a step.
 
-The penalties were fitted with leave-one-solve-out cross-validation (fit on
-all solves but one, rank the held-out one), to avoid overfitting the few
-reference solves. They were fitted on solves #1-#11 and then confirmed on
-solves #12-#19, which the fit never saw; refitting on all 19 did not rank
-the pros any better, so they were kept unchanged. The single `r`/`l` value
-had buried every wide first step below the first page of results; the
-first-step value was then chosen the same way, on the first steps of all 19
-solves. No reference solve uses `u`/`d`/`f`/`b`, so the benchmark cannot
-fit their later-step value, only say what a lower one costs: +2.5 is the
-lowest value that keeps the same professional steps in the top 10 (it lets
-`f R' f'` beat `B U' B'`, as MCC says it should). Professionals sometimes
-execute a slower step than the best available, and such a step should rank
-lower; the tuning targets where pro steps rank overall, not every single
-step at the top. Further tuning should go through the same benchmark rather
-than hand-picked constants.
+These are penalties only, so no move ever costs less than MCC says. A
+path's time is MCC of the whole path plus the penalty of each of its steps.
 
-### Future: one scoring algorithm for every step (planned for later)
+Items 1 and 2 were fitted to the
+[professional reference solves](#professional-reference-solves-and-known-gaps)
+by where each professional step would rank in the app's own result list
+(`tools/pro-ranking.js --app`), with leave-one-solve-out cross-validation
+(fit on all solves but one, rank the held-out one) and confirmed on solves
+the fit never saw. Item 3 was fitted to the pairwise comparisons with
+cross-validation and a prior that keeps every value close to the previous
+one unless the data clearly says otherwise; fitting all the constants at
+once to the first ~80 answers was rejected as overfitting. The
+professional benchmark is now the secondary check: the per-turn cost was
+set to the lowest value that keeps nearly all of what the comparisons
+show (0.5; the fit alone suggested 0.56-0.99), because higher values rank
+the professionals' steps lower. Professionals sometimes execute a slower
+step than the best available, and such a step should rank lower; the
+tuning targets where pro steps rank overall, not every single step at the
+top. Further tuning should go through the same tools
+(`tools/fit-alg-speed.js`, `tools/pro-ranking.js`) rather than hand-picked
+constants.
+
+### One scoring algorithm for every step
 
 **This is arguably the most important part of the whole website.** Sorting
 results by how fast they are to *execute* is what sets cube⑂tree apart from
@@ -172,19 +174,14 @@ other solvers, which sort by move count; the ranking is only as trustworthy
 as the scoring behind it, and a scoring rule that changes from step to step
 makes TPPs harder to compare and to trust.
 
-The goal is that `alg_speed` is **the exact same algorithm regardless of the
-step**: the same move costs and the same penalties for the cross, an xcross
-from inspection, a later pair or a multislot, with nothing tuned per step.
-Today it is not quite that: the first step has its own values for wide moves
-(`r`/`l` +1.2 instead of +2.35, `u`/`d`/`f`/`b` +3.31 instead of +2.5),
-because a single value fitted to the few reference solves ranked the
-professionals' first steps or their later steps badly. Those step-specific
-values are a stop-gap for too little data, not the intended design.
-
-This is planned for **later, once enough speed data has been gathered** to
-fit one model for every stage of the solve and check it on data the fit
-never saw. Until then the step-specific penalties stay, and any change to
-them still goes through `tools/pro-ranking.js`.
+`alg_speed` is **the exact same algorithm regardless of the step**: the same
+move costs and the same penalties for the cross, an xcross from inspection,
+a later pair or a multislot, with nothing tuned per step. (Until the first
+pairwise comparisons the first step had its own values for wide moves, a
+stop-gap for too little professional data; they were removed, which barely
+changed where the professional steps rank.) As more comparisons come in,
+the model is refitted with `tools/fit-alg-speed.js` and changed only when
+it orders held-out comparisons better than the current one.
 
 ### Planned: training `alg_speed` on pairwise speed comparisons
 
@@ -209,8 +206,9 @@ and validation data for the single step-independent model above.
   scores as nearly equal or is least sure about, pairs that would decide
   the order near the top of real result lists (where a wrong order changes
   what the user sees first), pairs that exercise moves the model has little
-  data on (`D`, `F`, `B`, wide moves, slices, rotations, regrips), and never
-  pairs whose answer already follows from earlier answers.
+  data on (`D`, `F`, `B`, wide moves, slices, rotations), and never
+  pairs whose answer already follows from earlier answers. It never shows
+an algorithm with a wide `b` (see [Wide moves](#wide-moves-and-cross-optimisation)).
 - **What it replaces.** The fitted model is judged on how many held-out
   human comparisons it orders correctly. The professional reference solves
   stay the search-coverage requirement (the solver must still find them)
@@ -225,9 +223,11 @@ how often the current `alg_speed` agrees; `export` writes every comparison
 for fitting. Candidates come from `data/speed_pool.json` (real result lists
 of random scrambles at every stage plus the professional solves' lists,
 rebuilt with `pool`); answers are appended to `data/speed_comparisons.jsonl`.
-Details are in PROJECT_STATUS.md (roadmap item 7, §4.45). Like the
-step-independent model, the resulting `alg_speed` replaces the current
-penalties only if it orders held-out comparisons better than they do.
+Details are in PROJECT_STATUS.md (roadmap item 7, §4.45). The first fit
+(item 3 of "Tuning" above) used the first ~80 answers; `node
+tools/fit-alg-speed.js` cross-validates candidate models on the answers so
+far, and a new `alg_speed` replaces the current one only if it orders
+held-out comparisons better.
 
 ## What the DAG edges mean
 
@@ -371,6 +371,11 @@ remain distinct results, since the choice of rotation is itself part of the comm
 
 ## Wide moves and Cross optimisation
 
+**No wide `B`.** A wide back turn (`b`, `b'`, `b2`) never appears in a
+solution, at any step, whatever produced it (cross optimisation, an
+inspection rotation relabelling the engine's `r`/`l`, or a wide spelling).
+Such candidates are dropped before ranking.
+
 Outside the pro move set's `r`/`l` (see [Move set](#move-set)), wide moves
 (`r`, `r'`, `l`, `l'`, `u`, `u'`, …) are not searched directly: they come
 from rewriting found solutions — Cross optimisation for the first step, and
@@ -398,7 +403,7 @@ wide-move search mode and does not apply to later steps.
 After the first step, every result is also offered in its wide-move
 spellings. A `D` turn can be done as a wide `u` (the same pieces move, and
 the cube turns with it: `D` = `u y'`), a `U` as a wide `d`, and a `B` or `F`
-as a wide `f` or `b`; the rest of the step is relabelled for the new
+as a wide `f` (never a wide `b`); the rest of the step is relabelled for the new
 orientation. This can save a rotation or replace awkward turns:
 
 - `D y R U' R'` (a `D` setup, then a rotation) is `u R U' R'`;
@@ -415,7 +420,7 @@ apply to pseudo pairs too (the `D` turn that aligns a pseudo pair can be a
 side-cross inspections: these spellings doubled its candidates.
 
 **Wide moves** (a results-page checkbox, default on): unticked, no result at
-any step uses a wide move (`r l u d f b`) or a slice — the engine searches
+any step uses a wide move (`r l u d f`) or a slice — the engine searches
 without `r`/`l` and no wide spelling is made. Unticking it on a step already
 searched with wide moves just hides them (nothing is searched again, and
 ticking it again shows them at once). Ticking it on a step that was searched
@@ -637,10 +642,10 @@ programs use.
 - EO-aware solving beyond what the F2L DAG already captures.
 - Automatic batch ranking across multiple scrambles at once.
 - Swapping in a fully fitted `alg_speed` model (see Provenance); only the
-  benchmarked adjustments above are applied. A single step-independent
-  model trained on pairwise human speed comparisons is the planned next
-  stage (see "Future: one scoring algorithm for every step" and "Planned:
-  training `alg_speed` on pairwise speed comparisons").
+  validated adjustments above are applied. More of `alg_speed` is refitted
+  as the pairwise speed comparisons grow (see "One scoring algorithm for
+  every step" and "Planned: training `alg_speed` on pairwise speed
+  comparisons").
 - XXXXCross as a primary, directly-offered target.
 - Cross finishing anywhere other than the bottom face.
 

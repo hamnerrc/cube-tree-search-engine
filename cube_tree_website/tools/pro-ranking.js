@@ -155,7 +155,7 @@ function rankAll(pools, params) {
     const algs = sample(pl.algs.map(item).filter(([a]) => commuteNormalize(a) !== proKey || appMode), sampleSize, 1000 + k);
     const full = a => (pl.prior ? `${pl.prior} ${a}` : a);
     // Same cost as SolveSession.pathCost: MCC of the path + each step's penalty.
-    const pen = a => (noPenalty ? 0 : pl.priorSteps.reduce((t, x, i) => t + stepPenalty(x, i === 0), 0) + stepPenalty(a, !pl.priorSteps.length));
+    const pen = a => (noPenalty ? 0 : pl.priorSteps.reduce((t, x) => t + stepPenalty(x), 0) + stepPenalty(a));
     const cost = a => score(full(a)) + pen(a);
     const proScore = cost(proAlg) / proPieces;
     const better = algs.filter(([a, pieces]) => cost(a) / pieces < proScore).length;

@@ -533,6 +533,15 @@ test('unorthodox: the R or L layer reaches +-2 (R +1, R\' -1, R2 towards the oth
   }
 });
 
+test('wide B: hasWideB finds b/b\'/b2 only; dedupeSolutions and mergeRanked drop such rows', () => {
+  for (const alg of ["b' R2 b", "U R b2", "R U b"]) assert.strictEqual(bridge.hasWideB(alg), true, alg);
+  for (const alg of ["B U' B'", "f R' f'", "R U R'", "r U r'", ""]) assert.strictEqual(bridge.hasWideB(alg), false, alg);
+  const ok = { rotation: '', coreAlg: "F U2 F'", tpp: 2 };
+  const wideB = { rotation: '', coreAlg: "b' R2 b", tpp: 1 };
+  assert.deepStrictEqual([...bridge.dedupeSolutions([wideB, ok])], [ok]);
+  assert.deepStrictEqual(bridge.mergeRanked([ok], [wideB]).map(r => r.coreAlg), ["F U2 F'"]);
+});
+
 test('dedupeSolutions: one row per rotation + alg text, the first kept, flags kept', () => {
   const a = { rotation: 'z2', coreAlg: "R U R'", tpp: 1, targetNodeId: 'n1' };
   const b = { rotation: 'z2', coreAlg: "R U R'", tpp: 2, targetNodeId: 'n2' };

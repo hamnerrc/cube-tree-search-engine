@@ -21,6 +21,11 @@ function normalizeAlg(alg) {
   return String(alg || '').replace(/2'/g, '2').trim().split(/\s+/).filter(Boolean).join(' ');
 }
 
+/** A wide B turn (b, b', b2): never part of a solution, never asked. */
+function hasWideB(alg) {
+  return /(^| )b/.test(alg);
+}
+
 /** Unordered key of a pair of (normalised) algs. */
 function pairKey(a, b) {
   return a < b ? `${a}\n${b}` : `${b}\n${a}`;
@@ -51,8 +56,8 @@ function algFeatures(alg) {
 }
 
 /** The current model's time for an alg executed on its own (MCC + step penalty). */
-function modelTime(alg, isFirstStep = false) {
-  return algSpeed(normalizeAlg(alg)) + stepPenalty(normalizeAlg(alg), isFirstStep);
+function modelTime(alg) {
+  return algSpeed(normalizeAlg(alg)) + stepPenalty(normalizeAlg(alg));
 }
 
 /** Short hash of the current scoring constants, stored with every answer. */
@@ -319,7 +324,8 @@ function indexPool(pool) {
   for (const list of pool.lists) {
     for (const it of list.items) {
       const alg = normalizeAlg(it.alg);
-      if (!alg) continue;
+      // Never a wide B (README "Wide moves"): such algs are not solutions.
+      if (!alg || hasWideB(alg)) continue;
       let e = byAlg.get(alg);
       if (!e) { e = { alg, first: 0, later: 0, types: new Set(), occ: [], pro: false }; byAlg.set(alg, e); }
       if (list.first) e.first++; else e.later++;
@@ -331,12 +337,12 @@ function indexPool(pool) {
   const algs = [...byAlg.values()];
   for (const e of algs) {
     e.isFirst = e.first > e.later; // the context its model time uses
-    e.time = modelTime(e.alg, e.isFirst);
+    e.time = modelTime(e.alg);
     e.features = algFeatures(e.alg);
     e.bestRank = Math.min(...e.occ.map(o => o.rank));
     e.types = [...e.types];
   }
-  const lists = pool.lists.map(l => ({ ...l, algs: [...new Set(l.items.map(it => normalizeAlg(it.alg)).filter(Boolean))] }));
+  const lists = pool.lists.map(l => ({ ...l, algs: [...new Set(l.items.map(it => normalizeAlg(it.alg)).filter(a => a && !hasWideB(a)))] }));
   const sortedByTime = algs.slice().sort((x, y) => x.time - y.time);
   sortedByTime.forEach((e, i) => { e.timeIndex = i; });
   return { byAlg, algs, lists, sortedByTime };
@@ -555,7 +561,7 @@ function answerStats(answers, pidx) {
 }
 
 module.exports = {
-  normalizeAlg, pairKey, algFeatures, FEATURES, modelTime, modelVersion,
+  normalizeAlg, hasWideB, pairKey, algFeatures, FEATURES, modelTime, modelVersion,
   readLog, appendLog, activeAnswers, answerRecord,
   comparisonGraph, indexPool, contextOf,
   SELECT_DEFAULTS, winProbability, fitScale, pairScore, eligible, candidatePairs, selectPair, featureCounts,

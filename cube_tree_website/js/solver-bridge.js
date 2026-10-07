@@ -395,6 +395,15 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
 // without r/l, and the wide spellings (cross optimisation, side-cross
 // inspections, wideSpellingParts) are not made.
 const WIDE_TOKEN = /(^| )[rludfbMES]/;
+// README "Wide moves": a wide B turn (b, b', b2) is never part of a solution
+// (developer's rule, PROJECT_STATUS.md §4.46). Engine r/l relabelled by an
+// inspection y, wide spellings and cross optimisation can all write one;
+// postProcessCall's push drops such candidates and dedupeSolutions (the end
+// of every result list) guarantees it.
+const WIDE_B_TOKEN = /(^| )b/;
+function hasWideB(alg) {
+  return WIDE_B_TOKEN.test(alg);
+}
 function isWideAlg(alg) {
   return WIDE_TOKEN.test(alg);
 }
@@ -473,10 +482,10 @@ function stepsPathCost(holder, stepAlgs, alg) {
       key,
       scoredPath,
       mcc: typeof algSpeedPrefix === 'function' ? algSpeedPrefix(scoredPath) : null,
-      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a, i) => sum + stepPenalty(a, i === 0), 0) : 0,
+      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) : 0,
     };
   }
-  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg, stepAlgs.length === 0) : 0;
+  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg) : 0;
   if (base.mcc) return algSpeedResume(base.mcc, alg) + penalty;
   const path = base.scoredPath ? `${base.scoredPath} ${alg}` : alg;
   return algSpeed(path, false, false) + penalty;
@@ -1019,6 +1028,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   // later steps carry the unorthodox flag the results page can filter on.
   const push = (c) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
+    if (hasWideB(c.coreAlg)) return;
     if (!isRoot) {
       if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
       else delete c.unorthodox;
@@ -1347,6 +1357,7 @@ function rankCandidates(calls) {
 function dedupeSolutions(list) {
   const seen = new Set();
   const out = list.filter((c) => {
+    if (hasWideB(c.coreAlg)) return false;
     const key = `${c.rotation || ''}|${c.coreAlg}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1694,7 +1705,7 @@ if (typeof module !== 'undefined' && module.exports) {
     proEngineOptions, nodeByLabels, NOOP_MOVES,
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
-    isWideAlg, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
+    isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, cubedbUrl,
   };

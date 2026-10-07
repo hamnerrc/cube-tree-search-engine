@@ -213,7 +213,7 @@ const INFO_SECTIONS = [
     ['always on', 'pro move set (wide <span class="moves">r/l</span>, one mid-step <span class="moves">y</span> or <span class="moves">x</span> rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
     ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (blank = no limit). per-type limits: max solutions / move depth per step type; blank = default.'],
     ['results', 'results appear as they are found and re-rank as the search continues. click a row to commit that step; undo steps back. hover an option or a column title for a short hint.'],
-    ['search options', 'set per step; they apply to the step on screen and every later one until changed. multislot: later steps may solve several pairs at once. wide moves: results may use wide moves (<span class="moves">r l u d f b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>; switched off, they are hidden (and later steps are searched without them); switched on again, they come back, searched first if needed.'],
+    ['search options', 'set per step; they apply to the step on screen and every later one until changed. multislot: later steps may solve several pairs at once. wide moves: results may use wide moves (<span class="moves">r l u d f</span>; never a wide <span class="moves">b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>; switched off, they are hidden (and later steps are searched without them); switched on again, they come back, searched first if needed.'],
     ['filters', 'they hide results without searching again; the status line says how many. hide unorthodox: hide later steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, <span class="moves">R2</span> = +2 or -2, whichever stays closer to the start, so <span class="moves">R U R2 U\' R</span> is fine but <span class="moves">R U R U\' R\'</span> and a lone <span class="moves">R2</span> are not); the first step is never hidden. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
     ['look-ahead', 're-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow.'],
     ['solution', 'the committed steps, labelled like a reconstruction. copy puts the scramble and the solution on the clipboard; cubedb opens them on cubedb.net for playback.'],
@@ -387,34 +387,31 @@ function altAlgs(algorithms) {
 // tuning and the held-out solves (PROJECT_STATUS.md §4.32).
 const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, destabilize: 0.5, addRegrip: 1, double: 1.65, sesliceMult: 1.25, overWorkMult: 2.25, moveblock: 0.8, rotation: 3.5 };
 
-// Per-step penalties on top of MCC (PROJECT_STATUS.md §4.35): professional
-// solutions use D/F/B turns, wide moves and mid-step y rotations less than MCC's
-// hand model predicts. Fitted with leave-one-solve-out cross-validation on the
-// pro reference solves (tools/pro-ranking.js --app), penalties only, so no
-// move ever costs less than MCC says. A rotation at the very start of a step
-// (done while looking ahead between steps) is not penalised.
-// wideRLFirst (PROJECT_STATUS.md §4.41): wide r/l in the FIRST step (cross /
-// xcross / ... from inspection, where professionals use them most) cost 1.2
-// instead of 2.35. Chosen on the root steps of the pro references with
-// leave-one-solve-out cross-validation (held-out mean log10 rank 2.279 ->
-// 2.250; 18 of 19 folds pick 1.2). Later steps barely move (their candidates
-// share the first step; only TPP's division by different piece counts lets
-// it matter): all 66 pro steps, mean log10 rank 1.035 -> 1.016.
-// wideUDFB (PROJECT_STATUS.md §4.43): u/d/f/b after the first step, where
-// the wide spellings of wideSpellingParts appear ("f R' f'" for "B U' B'");
-// the first step keeps wideOther. No professional reference uses them, so
-// the benchmark can only say how much a lower value costs (it never gains);
-// 2.5 is the lowest value that keeps the pro steps' top-10 count (2.25
-// loses two). Against the benchmark before these spellings existed (all 66
-// steps): mean log10 rank 0.970 -> 0.949, top 10 43 -> 44, top 500 60 -> 60.
-const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideRLFirst: 1.2, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70 };
+// Per-step penalties on top of MCC: one function for every step of the solve
+// (README "One scoring algorithm for every step", PROJECT_STATUS.md §4.46).
+// D/F/B, wide and slice turns and mid-step y rotations first came from the
+// pro reference solves (§4.35, §4.43; penalties only, so no move costs less
+// than MCC says); a rotation at the very start of a step (done while
+// looking ahead) is free. `turn` (§4.46) is a fixed cost per face, wide or
+// slice turn, fitted to the developer's pairwise speed comparisons
+// (tools/fit-alg-speed.js, 56 strict + 25 "too close" answers): the slower
+// alg had more turns 25 times and fewer 4 times, which MCC alone missed.
+// 10-fold cross-validation (x3, ridge prior towards the old values) put it
+// at 0.56-0.99 (held-out strict pairs right 62.5% -> 73%); fitting all 19
+// constants ordered a few more held-out pairs right but had a worse held-out
+// log-likelihood (overconfident: overfits 56 answers). 0.5 keeps
+// nearly all of the gain (in-sample: 30 -> 38 of 56 right; 0.8 gives 39)
+// and costs the pro benchmark least (tools/pro-ranking.js --app, mean log10
+// rank 0.968 -> 1.098 at 0.5, 1.172 at 0.8; top 10 39 -> 37). The former
+// first-step values (wideRLFirst 1.2, u/d/f/b at wideOther) are gone: the
+// same alg costs the same at every step (benchmark 0.929 -> 0.968).
+const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70, turn: 0.5 };
 
 /**
  * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
- * over its steps. `isFirstStep`: the alg is the solve's first step.
+ * over its steps. The same at every step.
  */
-function stepPenalty(alg, isFirstStep = false) {
-    const wideRL = isFirstStep ? STEP_PENALTIES.wideRLFirst : STEP_PENALTIES.wideRL;
+function stepPenalty(alg) {
     let total = 0;
     // (A plain loop: this runs for every candidate of every search.)
     const text = String(alg || '');
@@ -427,10 +424,11 @@ function stepPenalty(alg, isFirstStep = false) {
         if (c === 'D') total += STEP_PENALTIES.D;
         else if (c === 'F') total += STEP_PENALTIES.F;
         else if (c === 'B') total += STEP_PENALTIES.B;
-        else if (c === 'r' || c === 'l') total += wideRL;
-        else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += isFirstStep ? STEP_PENALTIES.wideOther : STEP_PENALTIES.wideUDFB;
+        else if (c === 'r' || c === 'l') total += STEP_PENALTIES.wideRL;
+        else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += STEP_PENALTIES.wideUDFB;
         else if (c === 'M' || c === 'E' || c === 'S') total += STEP_PENALTIES.wideOther;
         else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
+        if (c !== 'x' && c !== 'y' && c !== 'z') total += STEP_PENALTIES.turn;
         i++;
     }
     return total;

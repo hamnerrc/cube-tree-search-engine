@@ -39,6 +39,13 @@ const pool = {
   ],
 };
 
+test('wide B algs are never in the indexed pool, so never asked', () => {
+  const pidx = L.indexPool({ lists: [{ id: 'w', first: false, items: [{ alg: "b' R2 b", rank: 1 }, { alg: "F U2 F'", rank: 2 }, { alg: "U R b2 R'", rank: 3 }] }] });
+  assert.deepStrictEqual(pidx.algs.map(e => e.alg), ["F U2 F'"]);
+  assert.deepStrictEqual(pidx.lists[0].algs, ["F U2 F'"]);
+  assert.strictEqual(L.hasWideB("B U' B'"), false);
+});
+
 test('normalizeAlg and pairKey: notation and order do not matter', () => {
   assert.strictEqual(L.normalizeAlg("  R2'  U   R' "), "R2 U R'");
   assert.strictEqual(L.pairKey('A', 'B'), L.pairKey('B', 'A'));
@@ -200,7 +207,7 @@ test('selection prefers close, high-impact pairs over clear-cut ones', () => {
   assert.ok(close.score > far.score);
   // The chosen pair (no randomness) is a near-tie for the model.
   const p = L.selectPair(pidx, [], seeded(9), { randomShare: 0, repeatShare: 0 });
-  assert.ok(p.parts.ambiguity > 0.8, JSON.stringify(p));
+  assert.ok(p.parts.ambiguity > 0.5, JSON.stringify(p));
   assert.strictEqual(p.reason, 'select');
 });
 

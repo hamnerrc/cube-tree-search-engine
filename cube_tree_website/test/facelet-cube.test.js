@@ -198,6 +198,7 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
     check('wide spellings: "D y R U\' R\'" as "u R U\' R\'" (the y is absorbed)', spell("D y R U' R'").includes("u R U' R'"));
     check('wide spellings: "U B U B\'" as "d L U L\'"', spell("U B U B'").includes("d L U L'"));
     check('wide spellings: none for an R/U-only alg', spell("R U R' U' R U R'").length === 0);
+    check('wide spellings: never a wide B ("B U\' B\'" has an f spelling only)', !spell("B U' B'").some(a => /(^| )b/.test(a)));
     // Every spelling of random algs: physically "alg, then a y-family
     // rotation", one wide family, at most two wide turns, fewer awkward
     // tokens and no extra F/B turns.
@@ -220,6 +221,7 @@ check('isMoveToken accepts wide, slice and X2\' tokens', ['r', "u'", 'M2', 'E', 
                 && new Set(wide.map(t => t[0])).size === 1
                 && wide.length <= 2 + alg.split(' ').filter(t => /^[rl]/.test(t)).length
                 && awk(s.alg) < awk(alg) && fb(s.alg) <= fb(alg);
+            if (/(^| )b/.test(s.alg)) bad++; // never a wide B (README "Wide moves")
             if (!ok) bad++;
         }
     }

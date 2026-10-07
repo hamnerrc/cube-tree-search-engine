@@ -422,7 +422,8 @@ function wideConversions(token) {
         if (WIDE_FACE_RE.test(token) && FACE_TURN_SET.has(token)) {
             for (const rho of WIDE_CONVERT_ROTATIONS) {
                 const w = wideTokenFor(token, rho);
-                if (w && WIDE_UDFB_RE.test(w)) list.push({ wide: w, rho: ROT_OF_TOKEN[rho] });
+                // Never a wide B (README "Wide moves"; the bridge drops any).
+                if (w && WIDE_UDFB_RE.test(w) && w[0] !== 'b') list.push({ wide: w, rho: ROT_OF_TOKEN[rho] });
             }
         }
         WIDE_CONVERSIONS.set(token, list);
@@ -447,6 +448,7 @@ function wideSpellingParts(alg, maxWide = 2) {
         if (i === t.length) {
             if (!wide || !Y_FAMILY.has(delta)) return;
             if (awkwardCount(written) >= awkwardIn || fbCount(written) > fbIn || wideFamilies(written) !== 1) return;
+            if (written.some(x => x[0] === 'b')) return; // never a wide B (an r/l relabelled by y can become one)
             const spelled = written.join(' ');
             if (!seen.has(spelled)) { seen.add(spelled); out.push({ alg: spelled, rotation: ROT_NAMES[delta] }); }
             return;
