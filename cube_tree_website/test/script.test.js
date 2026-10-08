@@ -310,6 +310,19 @@ test('normalizeCriteria: multislotting becomes the results-page multislot settin
   assert.deepStrictEqual(normalizeCriteria(old), old, 'idempotent');
 });
 
+test('solutions per search: default 10000; a stored 500 from before CRITERIA_VERSION 3 was the old default', () => {
+  const { normalizeCriteria, CRITERIA_VERSION } = require(path.join(__dirname, '..', 'js', 'script.js'));
+  assert.ok(CRITERIA_VERSION >= 3);
+  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500 }).maxSolutions, 10000, 'old default migrates');
+  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500, version: 2 }).maxSolutions, 10000);
+  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500, version: CRITERIA_VERSION }).maxSolutions, 500, 'a chosen 500 stays');
+  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 2000 }).maxSolutions, 2000, 'other values stay');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.ok(/id="max-solutions" value="10000"/.test(html), 'page default 10000');
+  const { DISTANCE1_LIMITS } = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
+  assert.deepStrictEqual(DISTANCE1_LIMITS, { 0: 9, 1: 10, 2: 10, 3: 11 }, 'cross 9, xcross 10, xxcross 10, xxxcross 11');
+});
+
 test('time limit: blank is no limit (null), never 0 or an implicit 60', () => {
   const { normalizeCriteria, parseTimeLimit, CRITERIA_VERSION } = require(path.join(__dirname, '..', 'js', 'script.js'));
   assert.strictEqual(parseTimeLimit(''), null);

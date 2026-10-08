@@ -164,9 +164,10 @@ const NOOP_MOVES = "U U2 U'";
 // constrains nothing -- measured as a superset of both alternatives (§4.20).
 const POSTALG_BOUNDARY = 'y2 y2';
 
-// Solutions requested per engine call (README: "as high as practical").
-// SolveSession.maxSolutions overrides it per session.
-const DEFAULT_MAX_SOLUTIONS = 20;
+// Solutions requested per engine call (README "Search limits"; the user's
+// default for every step type, 2026-10-07). SolveSession.maxSolutions
+// overrides it per session (the page's "solutions per search" field).
+const DEFAULT_MAX_SOLUTIONS = 10000;
 
 // searchCurrentNode's per-candidate loop (facelet replays for luck-filtering,
 // rotation-spelling/inspection expansion) is synchronous, CPU-bound JS -- the
@@ -187,9 +188,10 @@ async function yieldIfDue(state) {
   state.lastYield = now();
 }
 
-// Distance-1 limits per README "Search limits" table, keyed by pair count.
-// XXXCross=13 is not spec'd; see PROJECT_STATUS §4.6.
-const DISTANCE1_LIMITS = { 0: 10, 1: 11, 2: 12, 3: 13 };
+// Distance-1 (first step) move limits per README "Search limits", keyed by
+// pair count: cross 9, xcross 10, xxcross 10, xxxcross 11 (the user's
+// defaults, 2026-10-07; were 10/11/12/13).
+const DISTANCE1_LIMITS = { 0: 9, 1: 10, 2: 10, 3: 11 };
 
 // EXPERIMENTALLY DISCOVERED (PROJECT_STATUS §4.8): a later step's true
 // difficulty depends on how many pairs TOTAL must be preserved/solved

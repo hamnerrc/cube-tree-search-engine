@@ -323,15 +323,18 @@ solutions, not just the shortest ones:
 
 | Step type | Max moves |
 |---|---|
-| Cross | 10 |
-| XCross | 11 |
-| XXCross | 12 |
+| Cross | 9 |
+| XCross | 10 |
+| XXCross | 10 |
+| XXXCross | 11 |
 | Single pair (later step) | 10 |
 | Two pairs at once / multislot (later step) | 12 |
 
-`maxSolutions` (how many candidate solutions a single search returns) should
-be set as high as practical while the tool stays interactively responsive;
-there is no fixed target number yet — see PROJECT_STATUS.md.
+`maxSolutions` (how many candidate solutions a single solver call returns)
+defaults to **10,000 for every step type** ("solutions per search" on the
+start page; the per-type limits can lower or raise it per type). A saved
+setting of 500, the old default, is treated as the default and becomes
+10,000.
 
 ### Performance goal
 

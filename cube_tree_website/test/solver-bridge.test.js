@@ -96,10 +96,10 @@ test('composeRotations: both set joins with a space', () => {
 // ---------------------------------------------------------------------
 
 test('searchLimitFor: distance-1 limits match the README table exactly', () => {
-  assert.strictEqual(searchLimitFor(0, true, 0), 10); // Cross
-  assert.strictEqual(searchLimitFor(1, true, 1), 11); // XCross
-  assert.strictEqual(searchLimitFor(2, true, 2), 12); // XXCross
-  assert.strictEqual(searchLimitFor(3, true, 3), 13); // XXXCross (not spec'd; see §4.6)
+  assert.strictEqual(searchLimitFor(0, true, 0), 9); // Cross
+  assert.strictEqual(searchLimitFor(1, true, 1), 10); // XCross
+  assert.strictEqual(searchLimitFor(2, true, 2), 10); // XXCross
+  assert.strictEqual(searchLimitFor(3, true, 3), 11); // XXXCross
 });
 
 test('searchLimitFor: later-step limits are keyed by TOTAL pairs in goal, not just new pairs', () => {
@@ -116,7 +116,7 @@ test('searchLimitFor: later-step limits are keyed by TOTAL pairs in goal, not ju
 });
 
 test('DISTANCE1_LIMITS and LATER_LIMITS_BY_TOTAL have the expected shape', () => {
-  assert.deepStrictEqual(DISTANCE1_LIMITS, { 0: 10, 1: 11, 2: 12, 3: 13 });
+  assert.deepStrictEqual(DISTANCE1_LIMITS, { 0: 9, 1: 10, 2: 10, 3: 11 });
   assert.deepStrictEqual(LATER_LIMITS_BY_TOTAL, { 1: 10, 2: 12, 3: 14, 4: 16 });
 });
 
@@ -139,20 +139,20 @@ test('categoryFor: maps later-step pair counts to singlePair/multislot', () => {
 });
 
 test('searchLimitFor: with no searchConfig, behaves exactly as before (no override)', () => {
-  assert.strictEqual(searchLimitFor(0, true, 0), 10);
+  assert.strictEqual(searchLimitFor(0, true, 0), 9);
   assert.strictEqual(searchLimitFor(1, false, 2), 12);
 });
 
 test('searchLimitFor: a matched-category override replaces the default for that category only', () => {
   const cfg = { xcross: { maxLength: 7 } };
   assert.strictEqual(searchLimitFor(1, true, 1, cfg), 7); // overridden
-  assert.strictEqual(searchLimitFor(0, true, 0, cfg), 10); // untouched
+  assert.strictEqual(searchLimitFor(0, true, 0, cfg), 9); // untouched
 });
 
 test('searchLimitFor: a pseudo override only applies when isPseudo is true', () => {
   const cfg = { xcrossPseudo: { maxLength: 9 } };
   assert.strictEqual(searchLimitFor(1, true, 1, cfg, true), 9);
-  assert.strictEqual(searchLimitFor(1, true, 1, cfg, false), 11); // matched variant untouched
+  assert.strictEqual(searchLimitFor(1, true, 1, cfg, false), 10); // matched variant untouched
 });
 
 test('searchLimitFor: a singlePair/multislot override replaces the WHOLE per-total table for that category', () => {

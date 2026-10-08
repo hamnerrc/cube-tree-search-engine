@@ -18,6 +18,19 @@ in the README.
 ## Quick orientation (read this first if you're new to the session)
 
 **WHERE WE LEFT OFF (2026-10-07, after the twenty-fifth pass):** read this first.
+- Follow-up (user, same day, then push): new search defaults -- first-step
+  move limits cross 9, xcross 10, xxcross 10, xxxcross 11 (were
+  10/11/12/13; `DISTANCE1_LIMITS`), solutions per search 10,000 for every
+  type (page field was 500 with max 5000, now 10000 / max 20000; bridge
+  `DEFAULT_MAX_SOLUTIONS` 20 -> 10000). Saved settings with the old default
+  500 migrate to 10000 (`CRITERIA_VERSION` 3, like the time limit's 60).
+  Cost, measured (Node, 6 random-state scrambles, xcross + xxcross +
+  multislot, no pseudo): first step 3.0 s -> 18.3 s mean (max 22.8),
+  later steps 0.65 -> 4.7 s (max 13.2); ~370k first-step candidates.
+  Headless Chrome: first step 20.8 s (286k results), second 3.7 s, no
+  errors. With pseudo / every colour / look-ahead it will be slower; the
+  README 1-minute worst-case goal needs re-measuring
+  (`tools/worst-case-bench.js --max 10000`). Cache-buster 20261007c.
 - Twenty-fifth pass (user: the ranking got worse after §4.46, the top
   results are far less ergonomic; find a better algorithm, be creative,
   revert only as a last resort). Writeup: §4.47.

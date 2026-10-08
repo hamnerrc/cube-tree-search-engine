@@ -22,7 +22,7 @@ const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
 // always has the multislot edges; the results page decides if they are searched.
 const RETIRED_OPTIONS = ['simplified_pseudo', 'multislotting'];
 // Saved-criteria format; 2: the time limit is null for none (was 60 by default).
-const CRITERIA_VERSION = 2;
+const CRITERIA_VERSION = 3;
 
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
@@ -189,6 +189,9 @@ function normalizeCriteria(criteria) {
     // defaulted to 60, so a stored 60 from then was the default, not a choice.
     const limit = Number(criteria.timeLimit);
     out.timeLimit = Number.isFinite(limit) && limit > 0 && !(limit === 60 && !(criteria.version >= 2)) ? limit : null;
+    // Solutions per search: before CRITERIA_VERSION 3 the field defaulted to
+    // 500, so a stored 500 from then was the default, not a choice (now 10000).
+    if (criteria.maxSolutions === 500 && !(criteria.version >= 3)) out.maxSolutions = 10000;
     if (criteria.lookaheadDepth > 1) legacy.lookaheadDepth = criteria.lookaheadDepth;
     if (criteria.lookaheadBreadth) legacy.lookaheadBreadth = criteria.lookaheadBreadth;
     delete out.lookaheadDepth;
