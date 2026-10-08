@@ -10,7 +10,9 @@
  *  - R2/L2 (the old "no r2/l2 after step 1" option is gone; the unorthodox
  *    filter replaces it): later steps still find R2/L2 results, an R2/L2
  *    from a neutral layer is flagged unorthodox, one that swings the layer
- *    from +1 to -1 is not, and the first step is never flagged.
+ *    from +1 to -1 is not; first steps are flagged by the same rule.
+ *  - the results page's multislot filter (multislots always searched, then
+ *    hidden) gives exactly the multislot-off lists.
  *  - a look-ahead whose caller cancelled it (results page: another setting or
  *    step replaced it) starts no follow-up searches.
  *
@@ -73,6 +75,19 @@ function physicallyExact(session, r) {
     assert.ok(on.some(r => r.type === 'Multislot'));
   });
 
+  // The results page always searches multislots and hides them with a filter.
+  await test('the multislot filter == multislot off (step and depth-2 look-ahead)', async () => {
+    for (const depth of [1, 2]) {
+      const hidden = await searchWithLookahead(later(withMulti), h, null, null, { depth, breadth: 3, multislot: true, filter: r => !r.multislot });
+      const off = await searchWithLookahead(later(withMulti), h, null, null, { depth, breadth: 3, multislot: false });
+      // what the page does: follow-ups searched without the hidden multislots
+      const fast = await searchWithLookahead(later(withMulti), h, null, null, { depth, breadth: 3, multislot: true, lookaheadMultislot: false, filter: r => !r.multislot });
+      assert.ok(hidden.hiddenCount > 0, 'some multislots hidden');
+      assert.strictEqual(ser(hidden), ser(off), `depth ${depth}`);
+      assert.strictEqual(ser(fast), ser(off), `depth ${depth}, follow-ups without multislots`);
+    }
+  });
+
   await test('R2/L2 in later steps: flagged unorthodox by displacement, results exact', async () => {
     const s = later(withMulti);
     const res = await searchWithLookahead(s, h, null, null, {});
@@ -84,9 +99,11 @@ function physicallyExact(session, r) {
     console.log(`  ${halfTurn.length} R2/L2 results, ${halfTurn.filter(r => !r.unorthodox).length} orthodox, e.g. ${(halfTurn.find(r => !r.unorthodox) || {}).coreAlg}`);
   });
 
-  await test('the first step is never flagged unorthodox', async () => {
+  await test('first steps are flagged unorthodox too (inspection rotation not counted)', async () => {
     assert.ok(rootList.some(r => /(^| )[RL]2/.test(r.coreAlg)), 'the root uses R2/L2');
-    assert.ok(rootList.every(r => !r.unorthodox));
+    assert.ok(rootList.every(r => !!r.unorthodox === isUnorthodox(r.coreAlg)), 'flag == isUnorthodox');
+    assert.ok(rootList.some(r => r.unorthodox) && rootList.some(r => !r.unorthodox));
+    assert.ok(rootList.every(r => !r.multislot), 'no first step is a multislot');
   });
 
   await test('a cancelled look-ahead starts no follow-up searches', async () => {

@@ -482,9 +482,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function bindViewControls() {
     const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
     const research = () => { saveViewPrefs(); syncViewControls(); currentPage = 0; runSearch(); };
-    // Settings that only hide results, or add to them (wide moves switched
-    // on), keep the list on screen until the new one arrives instead of
-    // clearing it first.
+    // Settings that only hide results keep the list on screen until the new
+    // one arrives instead of clearing it first.
     const refine = () => { saveViewPrefs(); syncViewControls(); runSearch({ keepRows: true }); };
     on('lookahead-depth', 'change', (e) => { view.lookaheadDepth = parseInt(e.target.value, 10) || 1; research(); });
     on('lookahead-breadth', 'change', (e) => {
@@ -494,7 +493,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('simple-pseudo', 'change', (e) => { view.simplePseudo = e.target.checked; refine(); });
     on('hide-unorthodox', 'change', (e) => { view.hideUnorthodox = e.target.checked; refine(); });
     on('wide-moves', 'change', (e) => { view.wideMoves = e.target.checked; refine(); });
-    on('multislot', 'change', (e) => { view.multislot = e.target.checked; research(); });
+    on('multislot', 'change', (e) => { view.multislot = e.target.checked; refine(); });
     on('page-size', 'change', (e) => {
       view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
       saveViewPrefs();
@@ -623,17 +622,20 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   // Background scrambles search one step without look-ahead; the scramble
   // on screen uses the results page's look-ahead setting (reusing that
-  // single-step search when it becomes active). Multislot and wide moves are
-  // search settings for every scramble.
+  // single-step search when it becomes active).
   // The results-page filters (they only hide results; look-ahead follows them).
-  // Unorthodox steps are only ever flagged after the first step.
+  // Every search includes multislot and wide-move results, so ticking either
+  // back shows them at once, like the other filters.
   function resultFilter() {
     const simple = pseudoOn() && view.simplePseudo;
     const orthodox = view.hideUnorthodox;
-    if (!simple && !orthodox) return { fn: null, key: '' };
+    const single = !view.multislot;
+    const noWide = !view.wideMoves;
+    if (!simple && !orthodox && !single && !noWide) return { fn: null, key: '' };
     return {
-      fn: r => !(simple && r.fullPseudoOnly) && !(orthodox && r.unorthodox),
-      key: `${simple ? 'simple' : ''}${orthodox ? 'orthodox' : ''}`,
+      fn: r => !(simple && r.fullPseudoOnly) && !(orthodox && r.unorthodox)
+        && !(single && r.multislot) && !(noWide && isWideAlg(r.coreAlg)),
+      key: [simple ? 'simple' : '', orthodox ? 'orthodox' : '', single ? 'single' : '', noWide ? 'nowide' : ''].join(''),
     };
   }
 
@@ -645,15 +647,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       breadth: view.lookaheadBreadth,
       filter: filter.fn,
       filterKey: filter.key,
-      multislot: view.multislot,
-      wideMoves: view.wideMoves,
+      multislot: true,
+      wideMoves: true,
+      lookaheadMultislot: view.multislot,
     };
   }
 
   function resultsFor(session, h, ph, priority) {
     const opts = searchOptions(priority);
-    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey,
-      opts.multislot ? 'multi' : '', opts.wideMoves ? '' : 'nowide'].join('|');
+    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
       renderScrambleStatusIfActive(session);
@@ -799,7 +801,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   async function handleResultClick(candidate) {
     const session = getOrCreateSession(activeIndex);
     // Look-ahead annotations describe this step's ranking, not the commit.
-    const { lookaheadPending, lookaheadTpp, lookaheadAlgs, lookaheadTruncated, unorthodox, ...row } = candidate;
+    const { lookaheadPending, lookaheadTpp, lookaheadAlgs, lookaheadTruncated, unorthodox, multislot, ...row } = candidate;
     session.commit(row);
     currentPage = 0;
     persistSessionState();

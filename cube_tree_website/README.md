@@ -111,8 +111,8 @@ A **distance-1** step starts from the unsolved node (the first step).
 - **XCross / XXCross / XXXCross**: the cross plus exactly 1 / 2 / 3 pairs in
   one first step. **XXXXCross is not offered.**
 - **Single pair**: a later step that solves one pair.
-- **Multislot**: a later step that solves several pairs at once. A
-  results-page toggle (default off), set per step.
+- **Multislot**: a later step that solves several pairs at once. Always
+  searched; a results-page filter (default hidden) shows them.
 
 Configuration checkboxes **filter which edges are searched**; they never
 create separate ranking buckets or change scores.
@@ -196,17 +196,21 @@ exactly a searched goal from the current cube join that search's solutions
 number of turns, no mid-step `y2`). They are written as the professionals
 wrote them, so they may rotate more than once.
 
-Results-page options, set per step:
+Results-page filters, set per step. They only hide: every search includes
+multislot, wide-move and unorthodox results, so changing a filter either
+way is instant and never searches again; the look-ahead follows them.
 
+- **Multislot** (default off): ticked, later steps that solve several pairs
+  at once are shown.
 - **Wide moves** (default on): unticked, no result uses a wide or slice
-  move. Unticking only hides; ticking a step searched without them searches
-  them and adds them to the list.
-- **Hide unorthodox** (default off): hides later steps that turn the `R` (or
+  move.
+- **Hide unorthodox** (default off): hides steps that turn the `R` (or
   `L`) layer two quarter turns away from where the step started. `R` = +1,
   `R'` = −1; an `R2` at 0 reaches ±2 (unorthodox), at ±1 it goes to ∓1 (fine),
   so `R U R2 U' R` is orthodox and `R U R U' R'` is not. `r` counts as `R`,
-  `l` as `L`; a `y`/`z` (also inside `u d f b`) resets both counts. First
-  steps are never hidden; filtering needs no new search.
+  `l` as `L`; a `y`/`z` (also inside `u d f b`) resets both counts. This
+  applies to every step, the first included (its inspection rotation comes
+  before the step and does not count).
 
 ## Professional solves and coverage
 
@@ -231,11 +235,12 @@ types, pseudo F2L, solutions per search, time limit, per-type limits) and
 the scramble list. Generated scrambles are random-state (a uniformly random
 state solved with a two-phase search and inverted, as WCA scramblers do).
 
-The **results page** holds the per-step settings in labelled groups: search
-(multislot, wide moves), filter (hide unorthodox, simple pseudo only),
-look-ahead (depth, breadth), and results per page. A search setting
-re-searches the current step (reusing what it can) and applies to later
-steps until changed; a filter only hides, and the status line says how many.
+The **results page** holds the per-step settings in labelled groups: filter
+(multislot, wide moves, hide unorthodox, simple pseudo only), look-ahead
+(depth, breadth), and results per page. Every setting applies to later
+steps until changed; a look-ahead setting re-searches the current step
+(reusing what it can), a filter only hides, and the status line says how
+many.
 
 The interface is lowercase and minimal (move notation keeps its case). No
 inline explanations: hovering shows a one-line hint and an info icon opens a

@@ -423,8 +423,9 @@ function withoutWide(allowedMoves) {
  * "R U R2 U' R" goes 1, 1, -1, -1, 0 and is fine; "R U R U' R'" (2 at the
  * second R), "R' U R'" and a lone "R2" are not. r counts as R and l as L
  * (the same hand turns that side); a y or z rotation (also inside u d f b E
- * S) puts other layers in the hands, so both counts start again. Only later
- * steps are ever filtered on this.
+ * S) puts other layers in the hands, so both counts start again. Every step
+ * is filtered on this, the first one included (its inspection rotation comes
+ * before the step, so it does not count).
  */
 function isUnorthodox(alg) {
   // The displacement after one more turn of the layer, or null at +-2.
@@ -1202,14 +1203,15 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   const { isRoot } = ctx;
   const wideOn = ctx.wideMoves !== false;
   // Every candidate goes through here: no wide move with wide moves off, and
-  // later steps carry the unorthodox flag the results page can filter on.
+  // the flags the results page's filters hide by: unorthodox (every step)
+  // and multislot (a later step solving more than one pair).
   const push = (c) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
     if (hasWideB(c.coreAlg)) return;
-    if (!isRoot) {
-      if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
-      else delete c.unorthodox;
-    }
+    if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
+    else delete c.unorthodox;
+    if (!isRoot && ((c.corners || []).length > 1 || (c.edges || []).length > 1)) c.multislot = true;
+    else delete c.multislot;
     candidates.push(c);
     if (yieldState && yieldState.listed !== undefined) yieldState.listed++;
   };
@@ -1746,7 +1748,9 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * and `lookaheadAlgs` (the follow-up steps of that best sequence).
  *
  * options.filter (optional predicate) hides results, at this step and in
- * every look-ahead step (the results page's simple-pseudo filter).
+ * every look-ahead step (the results page's filters).
+ * options.lookaheadMultislot (optional) is the multislot setting of the
+ * follow-up searches only (false when the filter hides multislots anyway).
  * options.onUpdate (optional) receives progressive lists: the single-step
  * ranking while it is still being searched, then, with look-ahead, the same
  * list with the top block re-ranked as each candidate's look-ahead finishes
@@ -1801,9 +1805,13 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
     return out;
   };
   if (onUpdate) onUpdate(rerank(false));
+  // The results page searches every step with multislots and hides them with
+  // its filter; while they are hidden, follow-ups searched without them give
+  // the same look-ahead in half the time (test/search-options-e2e.js).
+  const follow = options.lookaheadMultislot === undefined ? session : session.withSettings({ multislot: options.lookaheadMultislot });
   await Promise.all(top.map((cand, i) => {
     const status = onStatus && (msg => onStatus(`look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
-    return bestContinuation(lookaheadFork(session, cand, i), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
+    return bestContinuation(lookaheadFork(follow, cand, i), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
       .then((best) => {
         bests[i] = best;
         if (onUpdate && bests.filter(b => b !== undefined).length < top.length) onUpdate(rerank(false));

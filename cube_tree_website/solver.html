@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261007e">
+    <link rel="stylesheet" href="styles.css?v=20261008a">
 </head>
 
 <body>
@@ -45,17 +45,14 @@
 
         <section class="results-controls" aria-label="result options">
             <fieldset class="control-group">
-                <legend>search</legend>
-                <label class="check" title="later steps may solve two or more pairs at once">
+                <legend>filter</legend>
+                <label class="check" title="show later steps that solve two or more pairs at once">
                     <input type="checkbox" id="multislot"> multislot
                 </label>
-                <label class="check" title="results with wide moves (r l u d f b): e.g. f R' f' for B U' B', u R U' R' for D y R U' R'. off: searched without them; on again: they are searched and added to the list">
+                <label class="check" title="show results with wide moves (r l u d f): e.g. f R' f' for B U' B', u R U' R' for D y R U' R'">
                     <input type="checkbox" id="wide-moves"> wide moves
                 </label>
-            </fieldset>
-            <fieldset class="control-group">
-                <legend>filter</legend>
-                <label class="check" title="hide later steps that turn the R or L layer a half turn away from where the step started (e.g. R U R U' R', or an R2 from the start; R U R2 U' R is fine). the first step is never hidden">
+                <label class="check" title="hide steps that turn the R or L layer a half turn away from where the step started (e.g. R U R U' R', or an R2 from the start; R U R2 U' R is fine)">
                     <input type="checkbox" id="hide-unorthodox"> hide unorthodox
                 </label>
                 <label class="check" id="simple-pseudo-wrap" title="after a mismatched (pseudo) pair, only list the steps that repair it" hidden>
@@ -111,16 +108,16 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/pro-steps.js?v=20261007e"></script>
-    <script src="js/script.js?v=20261007e"></script>
-    <script src="js/facelet-cube.js?v=20261007e"></script>
-    <script src="js/facelet-flags.js?v=20261007e"></script>
-    <script src="js/cross-optimization.js?v=20261007e"></script>
-    <script src="crossSolver/solver-helper.js?v=20261007e"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=20261007e"></script>
-    <script src="js/search-scheduler.js?v=20261007e"></script>
-    <script src="js/solver-bridge.js?v=20261007e"></script>
-    <script src="js/solver-ui.js?v=20261007e"></script>
+    <script src="js/pro-steps.js?v=20261008a"></script>
+    <script src="js/script.js?v=20261008a"></script>
+    <script src="js/facelet-cube.js?v=20261008a"></script>
+    <script src="js/facelet-flags.js?v=20261008a"></script>
+    <script src="js/cross-optimization.js?v=20261008a"></script>
+    <script src="crossSolver/solver-helper.js?v=20261008a"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=20261008a"></script>
+    <script src="js/search-scheduler.js?v=20261008a"></script>
+    <script src="js/solver-bridge.js?v=20261008a"></script>
+    <script src="js/solver-ui.js?v=20261008a"></script>
 </body>
 
 </html>

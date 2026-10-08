@@ -10,7 +10,7 @@
  *  - every u/d/f/b result physically solves exactly what its node claims
  *    (independent facelet replay of scramble + inspection + path + result);
  *  - no list has two rows with the same inspection rotation and alg;
- *  - unorthodox results are flagged on later steps only, and the results
+ *  - unorthodox results are flagged at every step, and the results
  *    page's filter hides them at the step and in the look-ahead;
  *  - wide moves off: a step searched with them shows that list without its
  *    wide results and makes no engine call; a step first searched without
@@ -92,10 +92,8 @@ async function solveAndCheck(label, session, h, ph) {
     const results = await B.searchWithLookahead(session, h, null, ph, { depth: 1 });
     assert.ok(results.length, `${label} step ${step}: no results`);
     assert.strictEqual(exactDupes(results), 0, `${label} step ${step}: duplicate rows`);
-    if (session.isAtRoot) {
-      assert.ok(!results.some(r => r.unorthodox), `${label}: a first-step result is flagged unorthodox`);
-    } else {
-      for (const r of results) assert.strictEqual(!!r.unorthodox, B.isUnorthodox(r.coreAlg), r.coreAlg);
+    for (const r of results) assert.strictEqual(!!r.unorthodox, B.isUnorthodox(r.coreAlg), r.coreAlg);
+    if (!session.isAtRoot) {
       const wide = results.filter(r => UDFB.test(r.coreAlg));
       laterWide += wide.length;
       bestWideRank = Math.min(bestWideRank, results.findIndex(r => UDFB.test(r.coreAlg)) + 1 || Infinity);
