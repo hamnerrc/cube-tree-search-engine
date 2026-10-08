@@ -493,6 +493,129 @@ function stepsPathCost(holder, stepAlgs, alg) {
   return algSpeed(path, false, false) + penalty;
 }
 
+// ---------------------------------------------------------------------------
+// Corpus candidates (README "Corpus candidates"): every later step also
+// tries the F2L algorithms people actually use (script.js f2lCorpusAlgs:
+// standard F2L algs and every professional step, mirrored), each after a
+// free y-family rotation and an optional U turn. The engine lists the
+// shortest solutions first, so with many short ones a natural 9-11 move alg
+// is often never generated. A corpus alg that solves exactly a planned
+// matched edge's goal joins that call's solutions and is post-processed like
+// them (luck filter, spellings, TPP). Checked on permutations: one 54-entry
+// array per alg, built once.
+// ---------------------------------------------------------------------------
+
+const CORPUS_ROTATIONS = ['', 'y', 'y2', "y'"];
+const CORPUS_AUFS = ['', 'U', 'U2', "U'"];
+const U_QUARTERS = { U: 1, U2: 2, "U'": 3 };
+let corpusTableCache = null;
+
+function permOfAlg(alg) {
+  let perm = IDENTITY_PERM;
+  for (const t of alg.split(' ')) if (t) perm = composePerm(perm, MOVE_TABLE[t]);
+  return perm;
+}
+
+/** The corpus algs as { alg, turns, perm }; perm = the alg, then its own net rotation undone. */
+function corpusTable() {
+  if (corpusTableCache) return corpusTableCache;
+  const algs = [];
+  for (const alg of f2lCorpusAlgs()) {
+    const toks = alg.split(' ');
+    if (!toks.every(t => MOVE_TABLE[t])) continue;
+    const net = netRotation(alg);
+    if (!CORPUS_ROTATIONS.includes(net)) continue; // the cross would leave the bottom
+    if (toks.includes('y2')) continue; // README: y2 only as a step's first move
+    const perm = composePerm(permOfAlg(alg), net ? permOfAlg(inverseRotation(net)) : IDENTITY_PERM);
+    algs.push({ alg, toks, turns: toks.filter(t => !/^[xyz]/.test(t)).length, perm: Uint8Array.from(perm) });
+  }
+  // Each slot's checked positions (pos, centre) pairs, seen through each
+  // starting rotation's inverse (the claim is read in the step's start frame).
+  const masks = ['cross', ...F2L_SLOTS];
+  const prefixes = [];
+  for (const r of CORPUS_ROTATIONS) {
+    const back = r ? permOfAlg(inverseRotation(r)) : IDENTITY_PERM;
+    const checks = masks.map(name => {
+      const out = [];
+      [...MASKS[name]].forEach((ch, pos) => {
+        if (ch === ch.toUpperCase()) return;
+        const centre = [4, 13, 22, 31, 40, 49][Math.floor(pos / 9)];
+        out.push(back[pos], back[centre]);
+      });
+      return out;
+    });
+    for (const a of CORPUS_AUFS) prefixes.push({ r, a, perm: permOfAlg([r, a].filter(Boolean).join(' ')), checks });
+  }
+  corpusTableCache = { algs, prefixes };
+  return corpusTableCache;
+}
+
+/** "a core" with a leading U of `core` merged into the U turn `a`; null if they cancel the whole alg. */
+function joinAuf(a, toks) {
+  if (!a) return toks.join(' ');
+  const q = U_QUARTERS[toks[0]];
+  if (!q) return [a, ...toks].join(' ');
+  const sum = (U_QUARTERS[a] + q) % 4;
+  const rest = toks.slice(1);
+  const head = sum ? [['', 'U', 'U2', "U'"][sum]] : [];
+  return head.length || rest.length ? [...head, ...rest].join(' ') : null;
+}
+
+/**
+ * Corpus solutions per planned call: Map(plan entry -> [alg]) for the
+ * matched later-step entries of `plan`, each alg written "rotation AUF alg"
+ * in the frame the engine's own solutions use.
+ */
+function corpusSolutions(session, plan) {
+  const out = new Map();
+  // Corpus algs rotate mid-step and use wide moves: pro move set only (always
+  // on in the app; postProcessCall reads rotated steps' claims only then).
+  if (!session.proMoves || typeof f2lCorpusAlgs !== 'function' || typeof MASKS === 'undefined') return out;
+  const byGoal = new Map();
+  for (const p of plan) {
+    if (p.isPseudo) continue;
+    byGoal.set(p.allCorners.slice().sort().join(','), p);
+  }
+  if (!byGoal.size) return out;
+  const { algs, prefixes } = corpusTable();
+  const state = replayFacelets(session.scramble, session.rotation, session.scoredPath, '');
+  const committed = new Set(session.currentNode.state.corners || []);
+  const seen = new Set();
+  for (const { r, a, perm, checks } of prefixes) {
+    // st[j] = sticker at j after the prefix; then a corpus alg's perm.
+    const st = new Array(54);
+    for (let j = 0; j < 54; j++) st[j] = state[perm[j]];
+    const solved = (c, k) => {
+      const ch = checks[k];
+      for (let i = 0; i < ch.length; i += 2) if (st[c[ch[i]]] !== st[c[ch[i + 1]]]) return false;
+      return true;
+    };
+    for (const entry of algs) {
+      const c = entry.perm;
+      if (!solved(c, 0)) continue; // cross
+      const pairs = [];
+      let broken = false;
+      for (let k = 1; k <= 4; k++) {
+        const ok = solved(c, k);
+        if (ok) pairs.push(F2L_SLOTS[k - 1]);
+        else if (committed.has(F2L_SLOTS[k - 1])) { broken = true; break; }
+      }
+      if (broken || pairs.length === committed.size) continue;
+      const p = byGoal.get(pairs.sort().join(','));
+      if (!p || entry.turns > p.maxLength) continue;
+      const core = joinAuf(a, entry.toks);
+      if (!core) continue;
+      const alg = r ? `${r} ${core}` : core;
+      const key = `${p.allCorners}|${alg}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!out.has(p)) out.set(p, []);
+      out.get(p).push(alg);
+    }
+  }
+  return out;
+}
+
 /** Pseudo-engine counterpart of solverCallFor: independent edge and corner home-slot lists. */
 function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLength, postAlg, maxSolutions = DEFAULT_MAX_SOLUTIONS, deadline = 0, allowedMoves = MOVE_RESTRICT) {
   const toLetters = list => list.slice().sort();
@@ -894,6 +1017,13 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     p.cores = engineCallMemo(session, callKey, () => Promise.resolve().then(run).then(raw => stripEnginePrefix(raw, knownPrefix)))
       .then((r) => { p.doneAt = Date.now(); return r; })
       .catch((err) => { console.error('Solver error', err); return null; });
+  }
+  // Corpus candidates (later steps; see corpusSolutions) join their call's
+  // engine solutions.
+  if (!isRoot) {
+    for (const [p, extra] of corpusSolutions(session, plan)) {
+      p.cores = p.cores.then(c => (c === null ? null : c.concat(extra)));
+    }
   }
   let truncatedCalls = 0;
   // Engine calls that failed (an engine error or a crashed worker): the list
@@ -1388,12 +1518,14 @@ const DEFAULT_LOOKAHEAD_BREADTH = 5;
 // Below the first look-ahead level only the best few continuations of each
 // node are followed, or depth 5 would need breadth^4 searches.
 const LOOKAHEAD_INNER_BREADTH = 2;
-// Result lists can hold tens of thousands of candidates; keep the memo bounded
-// by entries and by candidates held (~450 bytes each). A depth-5 look-ahead
-// makes ~76 searches, so the entry limit must exceed that or committing an
-// explored candidate searches it again (the old limit was 48).
+// Result lists can hold hundreds of thousands of candidates (10,000 solutions
+// per call); keep the memo bounded by entries and by candidates held (~440
+// bytes each, so the cap is ~440 MB). A wide look-ahead at that default
+// holds more than this; its oldest searches are then searched again if
+// needed. A depth-5 look-ahead makes ~76 searches, so the entry limit must
+// exceed that or committing an explored candidate searches it again.
 const SEARCH_MEMO_LIMIT = 200;
-const SEARCH_MEMO_CANDIDATES = 500000;
+const SEARCH_MEMO_CANDIDATES = 1000000;
 function trimSearchMemo(memo) {
   let held = 0;
   for (const p of memo.values()) held += p.size || 0;
@@ -1709,6 +1841,6 @@ if (typeof module !== 'undefined' && module.exports) {
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
     isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
-    solutionLines, cubedbUrl,
+    solutionLines, cubedbUrl, corpusSolutions,
   };
 }

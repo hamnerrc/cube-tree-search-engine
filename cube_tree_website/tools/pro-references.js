@@ -16,16 +16,23 @@ function normalizeAlg(alg) {
   return alg.replace(/2'/g, '2').trim().split(/\s+/).filter(Boolean).join(' ');
 }
 
-/** Parses pro_references.txt into [{ scramble, inspection, steps: [{ label, alg }] }]. */
+/**
+ * Parses pro_references.txt (or data/reco_solves.txt) into
+ * [{ scramble, inspection, steps: [{ label, alg }], source }]; `source` is the
+ * "# ..." line just before the scramble, if any.
+ */
 function parseProReferences(text) {
   const lines = text.split('\n').map(l => l.trim());
   const solves = [];
   let cur = null;
+  let source = '';
   for (const line of lines) {
     if (!line) { cur = null; continue; }
+    if (line.startsWith('#')) { cur = null; source = line.slice(1).trim(); continue; }
     if (!line.includes('//')) {
-      if (/^([URFDLB]['2]?\s*)+$/.test(line)) { cur = { scramble: normalizeAlg(line), inspection: '', steps: [] }; solves.push(cur); }
+      if (/^([URFDLB]['2]?\s*)+$/.test(line)) { cur = { scramble: normalizeAlg(line), inspection: '', steps: [], source }; solves.push(cur); }
       else cur = null;
+      source = '';
       continue;
     }
     if (!cur) continue;
@@ -36,8 +43,9 @@ function parseProReferences(text) {
   return solves;
 }
 
-function loadProReferences() {
-  return parseProReferences(PRO_FS.readFileSync(PRO_PATH.join(__dirname, '..', 'data', 'pro_references.txt'), 'utf8'));
+/** Solves of data/pro_references.txt, or of another file in the same format (e.g. data/reco_solves.txt). */
+function loadProReferences(file = PRO_PATH.join(__dirname, '..', 'data', 'pro_references.txt')) {
+  return parseProReferences(PRO_FS.readFileSync(file, 'utf8'));
 }
 
 /** Physical state after a facelet string: cross colour, cross, per-slot pairs/pieces. */

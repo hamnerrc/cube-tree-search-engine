@@ -695,6 +695,28 @@ async function atest(name, fn) {
   }
 }
 
+test('corpusSolutions: corpus algs that solve exactly the goal, written rotation + AUF + alg', () => {
+  const { corpusSolutions, replayFacelets } = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
+  // Yellow cross (no rotation) and three pairs solved; the FR pair out by R U' R'.
+  const session = { scramble: "R U' R'", rotation: '', scoredPath: '', proMoves: true, currentNode: { state: { corners: ['BL', 'BR', 'FL'] } } };
+  const p = { isPseudo: false, allCorners: ['BL', 'BR', 'FL', 'FR'], maxLength: 10 };
+  const pseudo = { isPseudo: true, allCorners: ['BL', 'BR', 'FL', 'FR'], maxLength: 10 };
+  assert.strictEqual(corpusSolutions({ ...session, proMoves: false }, [p]).size, 0, 'pro move set only');
+  const out = corpusSolutions(session, [p, pseudo]);
+  assert.ok(!out.has(pseudo), 'pseudo calls get none');
+  const algs = out.get(p);
+  assert.ok(algs.includes("R U R'"), 'the plain insert');
+  assert.ok(algs.length > 5, `several corpus algs (${algs.length})`);
+  for (const alg of algs) {
+    const f = solvedFlags(replayFacelets(session.scramble, '', '', alg));
+    assert.ok(f.cross && f.BL && f.BR && f.FL && f.FR, alg);
+    assert.ok(!/ y2/.test(alg), `${alg}: no mid-step y2`);
+  }
+  // Every committed slot is solved after an offered alg (here FL starts unsolved).
+  const short = corpusSolutions({ ...session, scramble: "R U' R' L' U L" }, [p]).get(p) || [];
+  for (const alg of short) assert.ok(solvedFlags(replayFacelets("R U' R' L' U L", '', '', alg)).FL, alg);
+});
+
 asyncTests().then(() => {
   if (failures > 0) {
     console.error(`\n${failures} test(s) failed.`);

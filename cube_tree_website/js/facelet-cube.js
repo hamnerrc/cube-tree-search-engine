@@ -86,14 +86,6 @@ for (const name of Object.keys(MOVE_TABLE)) {
     if (name.endsWith('2')) MOVE_TABLE[`${name}'`] = MOVE_TABLE[name];
 }
 
-// Hot path (every candidate of every search is replayed): char codes into a
-// reused buffer, then one fromCharCode, instead of 54 string concatenations.
-const PERM_BUF = new Uint16Array(54);
-function applyPerm(facelets, perm) {
-    for (let i = 0; i < 54; i++) PERM_BUF[i] = facelets.charCodeAt(perm[i]);
-    return String.fromCharCode.apply(null, PERM_BUF);
-}
-
 // MOVE_TABLE is complete at this point; a Map lookup instead of
 // hasOwnProperty on every token.
 const MOVE_PERMS = new Map(Object.entries(MOVE_TABLE));

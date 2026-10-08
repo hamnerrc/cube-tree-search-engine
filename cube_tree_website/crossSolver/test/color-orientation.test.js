@@ -6,7 +6,7 @@
  * Background: cube⑂tree's stated convention (README.md "Orientation") is
  * that a scramble is interpreted in the standard orientation White=U,
  * Green=F (so, by the standard color wheel, Yellow=D, Blue=B, Red=R,
- * Orange=L). `cross_xcross.js`/`backend_test.js` had a COLOR_ORIENTATIONS
+ * Orange=L). The original Node pipeline had a COLOR_ORIENTATIONS
  * table mapping each color to the rotation that brings it to D -- but
  * white and yellow were swapped (white: rotation='', yellow: rotation='z2'),
  * backwards from this convention. green/blue/red/orange were already
@@ -32,7 +32,7 @@ const ANTIPODE = { U: 'D', D: 'U', F: 'B', B: 'F', R: 'L', L: 'R' };
 const FACE_TO_COLOR = { U: 'white', D: 'yellow', F: 'green', B: 'blue', R: 'red', L: 'orange' };
 
 // rotation -> expected color now sitting on D, per the fixed
-// COLOR_ORIENTATIONS tables in cross_xcross.js / backend_test.js.
+// COLOR_ROTATIONS table in js/solver-bridge.js.
 const EXPECTED = {
   '': 'yellow',
   'x': 'blue',
@@ -77,7 +77,7 @@ async function newUFace(helper, rotation) {
   }
 
   if (failures > 0) {
-    console.error(`\n${failures} case(s) failed. The color<->rotation convention in cross_xcross.js/backend_test.js's COLOR_ORIENTATIONS no longer matches solver.wasm's actual behavior.`);
+    console.error(`\n${failures} case(s) failed. The color<->rotation convention (js/solver-bridge.js) no longer matches solver.wasm's actual behavior.`);
     process.exit(1);
   }
 

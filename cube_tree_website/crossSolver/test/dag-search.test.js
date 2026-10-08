@@ -18,6 +18,9 @@ const assert = require('assert');
 const root = path.join(__dirname, '..', '..');
 Object.assign(global, require(path.join(root, 'js', 'facelet-cube.js')));
 const bridge = require(path.join(root, 'js', 'solver-bridge.js'));
+// A move list without R2/L2 (the results-page option that used it is gone;
+// the case still checks a restricted list).
+const withoutR2L2 = moves => moves.split('_').filter(t => !/^[RL]2$/.test(t)).join('_');
 const CrossSolverHelperNode = require(path.join(__dirname, '..', 'solver-helper-node.js'));
 
 const S1 = "R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2";
@@ -32,7 +35,7 @@ const CALLS = [
   ['solveXcross', S1, 2, { ...pro("z2 y'"), maxLength: 10, maxSolutions: 300 }],
   ['solveXcross', S2, 0, { ...pro('x'), maxLength: 10, maxSolutions: 200 }],
   ['solveXxcross', S1, 0, 1, { ...pro('z2'), maxLength: 11, maxSolutions: 300 }],
-  ['solveXxcross', S2, 2, 3, { ...pro('z2'), allowedMoves: bridge.withoutR2L2(bridge.proEngineOptions('z2').allowedMoves), maxLength: 11, maxSolutions: 200 }],
+  ['solveXxcross', S2, 2, 3, { ...pro('z2'), allowedMoves: withoutR2L2(bridge.proEngineOptions('z2').allowedMoves), maxLength: 11, maxSolutions: 200 }],
   ['solveXxxcross', S1, 1, 2, 3, { ...pro("z2 y'"), postAlg: `U' L U D2 F' L2 U2 R L ${bridge.POSTALG_BOUNDARY}`, maxLength: 12, maxSolutions: 300 }],
   ['solveXxxxcross', S1, { ...pro('z2'), postAlg: LATER, maxLength: 12, maxSolutions: 300 }],
   ['solveXxxxcross', S1, { ...pro('z2'), postAlg: LATER, maxLength: 12, maxSolutions: 2 }],

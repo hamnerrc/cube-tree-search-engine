@@ -15,6 +15,7 @@
 'use strict';
 const version = self.location.search || '';
 importScripts(
+  `pro-steps.js${version}`,
   `script.js${version}`,
   `facelet-cube.js${version}`,
   `facelet-flags.js${version}`,

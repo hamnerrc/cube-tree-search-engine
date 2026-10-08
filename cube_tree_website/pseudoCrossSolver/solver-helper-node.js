@@ -60,8 +60,7 @@ class PseudoSolverHelperNode {
     }
     // pseudo.js (non-MODULARIZE build) picks up a pre-set globalThis.Module
     // as its init options and mutates/exports that same object -- this is
-    // the pattern already proven against the real WASM binary in
-    // cross_xcross.js / backend_test.js (see PROJECT_STATUS.md §3).
+    // verified against the real WASM binary.
     globalThis.Module = {
       wasmBinary: fs.readFileSync(this.pseudoWasmPath),
       locateFile: (p) => (p.endsWith('.wasm') ? this.pseudoWasmPath : p),

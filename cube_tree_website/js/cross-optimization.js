@@ -96,29 +96,6 @@ function keepsCrossOnBottom(rhoPerm) {
     return findFaceTurnName(relabelMovePerm(MOVE_TABLE.D, rhoPerm)) === 'D';
 }
 
-/**
- * Explores every subset of convertible-move positions in `moves` (a
- * tokenized face-turn-only algorithm), relabeling every move by whichever
- * rotation has accumulated so far, and keeps only the combinations whose
- * final accumulated rotation leaves cross on the bottom face.
- *
- * Returns an array of { moves: string[], rotation: '' | 'y' | 'y2' | "y'" }
- * — `moves` is the rewritten algorithm (wide tokens where converted, plain
- * relabeled face turns otherwise), `rotation` is the final residual
- * whole-cube rotation (always a pure y-rotation, by construction of the
- * filter above). The all-identical-to-original (no conversions) case is
- * included, with `rotation: ''`.
- */
-const ROTATION_NAME_BY_PERM = { '': IDENTITY_PERM, y: MOVE_TABLE.y, y2: MOVE_TABLE.y2, "y'": MOVE_TABLE["y'"] };
-
-function rotationNameFor(rhoPerm) {
-    const s = rhoPerm.join(',');
-    for (const [name, perm] of Object.entries(ROTATION_NAME_BY_PERM)) {
-        if (perm.join(',') === s) return name;
-    }
-    return null; // shouldn't happen once keepsCrossOnBottom has already passed
-}
-
 // Canonical face-turn name of any MOVE_TABLE token that is a face turn
 // (findFaceTurnName's answer), built once on first use.
 let faceNameOfToken = null;
@@ -141,6 +118,19 @@ function canonicalFaceName(token) {
  * loop kept the first (smallest) mask of each distinct output, which is the
  * mask with only the effective bits set, so outputs are sorted by that mask.
  * test/cross-optimization.test.js checks it against the original.
+ */
+/**
+ * Explores every subset of convertible-move positions in `moves` (a
+ * tokenized face-turn-only algorithm), relabeling every move by whichever
+ * rotation has accumulated so far, and keeps only the combinations whose
+ * final accumulated rotation leaves cross on the bottom face.
+ *
+ * Returns an array of { moves: string[], rotation: '' | 'y' | 'y2' | "y'" }
+ * — `moves` is the rewritten algorithm (wide tokens where converted, plain
+ * relabeled face turns otherwise), `rotation` is the final residual
+ * whole-cube rotation (always a pure y-rotation, by construction of the
+ * filter above). The all-identical-to-original (no conversions) case is
+ * included, with `rotation: ''`.
  */
 function optimizeCrossSolution(moves) {
     const n = moves.length;

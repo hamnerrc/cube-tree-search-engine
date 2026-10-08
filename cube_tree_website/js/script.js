@@ -383,31 +383,29 @@ function altAlgs(algorithms) {
     });
 }
 
-// algSpeed's tunable constants in signature order (tools/pro-ranking.js
-// sweeps them against the professional reference solves). One deliberate
-// change from untuned MCC: pushMult 1.3 -> 0.8 (finger pushes on U/D turns
-// cheaper), which ranks the professional reference algs higher on both the
-// tuning and the held-out solves (PROJECT_STATUS.md §4.32).
-const ALG_SPEED_DEFAULTS = { wristMult: 0.8, pushMult: 0.8, ringMult: 1.4, destabilize: 0.5, addRegrip: 1, double: 1.65, sesliceMult: 1.25, overWorkMult: 2.25, moveblock: 0.8, rotation: 3.5 };
+// algSpeed's tunable constants (MCC's, in signature order) and the per-step
+// penalties on top of it, fitted together on professional solves
+// (README "Ranking"; tools/tune-alg-speed.js): reconstructions from reco.nz
+// (data/reco_solves.txt), each pro step ranked among the engine's (and the
+// corpus') alternatives for the same goal. Fitted on Yiheng Wang's 637
+// solves (coordinate search on the mean log10 rank of the pro's step; the
+// naturalness model out-of-fold), held out: Xuanyi Geng's 297 solves and
+// data/pro_references.txt. Mean log10 rank, before -> after: Yiheng 0.751 ->
+// 0.522, Xuanyi (held out) 0.759 -> 0.595, references (held out) 0.521 ->
+// 0.351; held-out later steps in the top 10: 86.9% -> 93.7% and 91.5% ->
+// 97.9%. Slice costs (sesliceMult, wideOther) keep their earlier values:
+// 19 of 3,342 pro steps use a slice, too few to fit them.
+// Penalties only (no move costs less than MCC says); a rotation at the very
+// start of a step (done while looking ahead) is free of penalties. The same
+// function at every step (README "One scoring function for every step").
+const ALG_SPEED_DEFAULTS = { wristMult: 0.836, pushMult: 1.2, ringMult: 1.72, destabilize: 0.245, addRegrip: 0.25, double: 3.23, sesliceMult: 1.25, overWorkMult: 0.395, moveblock: 0.28, rotation: 6.86 };
 
-// Per-step penalties on top of MCC: one function for every step of the solve
-// (README "One scoring algorithm for every step", PROJECT_STATUS.md §4.46).
-// D/F/B, wide and slice turns and mid-step y rotations came from the pro
-// reference solves (§4.35, §4.43; penalties only, so no move costs less than
-// MCC says); a rotation at the very start of a step (done while looking
-// ahead) is free.
-// `natural` (§4.47) weighs the alg's naturalness surprise (algSurprise, in
-// bits): how unlike human F2L algorithms its move sequence is. MCC prices
-// finger mechanics move by move but cannot tell `R U R' U' R U R'` (one
-// fluent, familiar motion) from `R2 U2 F R F' U2 R2` (each move cheap, the
-// sequence unfamiliar); human execution speed depends on both. Chosen with
-// leave-one-solve-out on the pro references (tools/pro-ranking.js --app,
-// flat from 0.15 to 0.25) and cross-validated on the developer's speed
-// comparisons (tools/fit-alg-speed.js; they alone fit 0.12). Versus §4.46's
-// flat 0.5 per turn, which it replaces: pro steps' mean log10 rank 1.170 ->
-// 0.967 (later steps 0.624 -> 0.402), top 10 37 -> 43 of 66; held-out
-// comparison pairs ordered right 73.2% -> 76.8%.
-const STEP_PENALTIES = { D: 1.06, F: 0.86, B: 2.22, wideRL: 2.35, wideUDFB: 2.5, wideOther: 3.31, rotMidY: 3.70, natural: 0.15 };
+// `natural` weighs the alg's naturalness surprise (algSurprise, in bits):
+// how unlike real F2L its move sequence is. MCC prices finger mechanics
+// move by move but cannot tell `R U R' U' R U R'` (one fluent, familiar
+// motion) from `R2 U2 F R F' U2 R2` (each move cheap, the sequence
+// unfamiliar); human execution speed depends on both.
+const STEP_PENALTIES = { D: 0, F: 2.41, B: 5, wideRL: 1.15, wideUDFB: 4.31, wideOther: 3.31, rotMidY: 0, natural: 0.84 };
 
 /**
  * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
@@ -625,32 +623,14 @@ F R U R' U' F'
 F' U' F R U R'
 `;
 
-// Every step of every solve in data/pro_references.txt, in order (one array
-// per solve, as tools/pro-references.js segments them), so a tool can leave a
-// solve out (buildNaturalnessModel({ excludeSolve })).
-const PRO_STEP_ALGS = [
-    ["D' U' L F' U R' U2 R U L2", "R U' R' L' U L", "R U2 R' U R U R'", "U' R' U R U R' U R U' R' U R"],
-    ["R2 U' R F R U' l U' l'", "U' L U L'", "U' L' U L R' U R", "U L' U2 L U L' U' L"],
-    ["U' L' U L D' U' R' U R'", "D' U' R U R' U' D", "y' R U R' U2 R U' R2 U R U2 R' U' R"],
-    ["L F2 D' L U L' R' F", "U R U' R2 U' R", "U' R' F R2 U R' U2 F'"],
-    ["D U' R B' R' F' D2 U' R2", "R U' R'", "L' U L U' L' U L", "U R' U' R y U' R U R'"],
-    ["l L' U L' B L R' U R U R' F R U' D", "R U' R' U2 R' U R", "U R U2 R' U2 L' U' L", "U R' F R F' R U' R'"],
-    ["r2 U' D' x D' U' F R' U' R2 U' R", "y' U R' U' R2 U' R'"],
-    ["F r2 U2 L' U L D' U L' U' L2 F L'", "U2 R' U2 R2 U R'", "y R U R' U R U' R'"],
-    ["U F' R B2 D2 U R D' F D", "R' U R U' R U R2 U R"],
-    ["R' U' D' R' F U' R' U R U L'", "U' L' U2 L U L' U' L", "y U2 L' U L U' L' U L"],
-    ["F' B R2 U' F R U' L U L' U' D'", "L U L' y' U L' U' L", "R U R' U' R U R'", "U R' U' R U' R' U R"],
-    ["U' R' r' U' D r U D R2 D'", "L' U L R' U' R U R' U R", "U' L' U L", "U R U2 R' U R U' R'"],
-    ["U' r' U' B' R2 B' R' D", "R' F R F'", "U L U L'", "U' L' U L U' L' U' L", "y U' R U2 R' U R U' R'"],
-    ["D' U' B2 F L2 R' F R L' U L U' D", "U' L U2 L' U' L U L'", "U R U' R' y U' L' U L"],
-    ["U' D B' L U L' U' D R", "U2 R U R'", "L' U' L R' U R", "y' U R U' R2 F R F'"],
-    ["D' r' U' L' D' U' L2 F'", "U L' U L2 U L'", "U' R U' R'", "y' R U' R' U R' F R F'"],
-    ["r' U' F r2 F U' R' U R U' D'", "R' F R F' R U' R'", "U2 L' U L x' U L' U' r", "U L' U' L"],
-    ["F' R2 B R U D L R' F' R2 U R'", "U' L' U2 L U2 L' U2 L2 U' L'"],
-    ["R U' F D U D R D'", "y' U L' U' L U R U' R'", "U R' U' R U L' U L", "R' U' R"],
-];
+// The professional corpus (PRO_STEP_ALGS: every step of every professional
+// solve, one array per solve) is generated into js/pro-steps.js, loaded
+// before this file in the pages and workers.
+function proStepAlgs() {
+    return typeof PRO_STEP_ALGS !== 'undefined' ? PRO_STEP_ALGS : require('./pro-steps.js').PRO_STEP_ALGS;
+}
 
-const NATURALNESS = { order: 3, discount: 0.75, floor: 0.02, proWeight: 3 };
+const NATURALNESS = { order: 3, discount: 0.95, floor: 0.02, proWeight: 3 };
 
 // Every move token (faces, wide turns, slices, rotations; plain, ' and 2) and the end token.
 const NATURAL_VOCAB = [...'UDFBRLudfbrlMESxyz'].flatMap(f => [f, `${f}'`, `${f}2`]).concat('</s>');
@@ -679,12 +659,16 @@ function mirrorMove(t) {
 
 /**
  * Builds a naturalness model; `excludeSolve` (1-based) leaves that pro solve's
- * steps out of the training algs (leave-one-solve-out benchmarks).
+ * steps out of the training algs (leave-one-solve-out benchmarks). `proSteps`
+ * (one array of step algs per solve) replaces proStepAlgs(), for tuning
+ * tools that train on part of the data; `order` / `discount` override
+ * NATURALNESS.
  */
-function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight } = {}) {
-    const { order, discount: D, floor } = NATURALNESS;
+function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight, proSteps = proStepAlgs(), order = NATURALNESS.order, discount = NATURALNESS.discount } = {}) {
+    const { floor } = NATURALNESS;
+    const D = discount;
     const algs = HUMAN_F2L_ALGS.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-    PRO_STEP_ALGS.forEach((steps, k) => {
+    proSteps.forEach((steps, k) => {
         if (k + 1 === excludeSolve) return;
         for (let n = 0; n < proWeight; n++) algs.push(...steps);
     });
@@ -764,6 +748,28 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
         return total;
     }
     return { surprise, bits, algs: algs.length };
+}
+
+/**
+ * The corpus' later-step algorithms (every HUMAN_F2L_ALGS line and every
+ * professional step after the first, with left-right mirrors; leading
+ * rotations dropped, notation normalised), distinct. solver-bridge.js tries
+ * them on every later step (corpusSolutions): the engine lists the
+ * shortest solutions first and often never reaches the natural ones.
+ */
+let f2lCorpusCache = null;
+function f2lCorpusAlgs() {
+    if (!f2lCorpusCache) {
+        const set = new Set();
+        const add = (alg) => {
+            const toks = naturalTokens(alg);
+            if (toks.length) for (const seq of [toks, toks.map(mirrorMove)]) set.add(seq.join(' '));
+        };
+        HUMAN_F2L_ALGS.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).forEach(add);
+        for (const steps of proStepAlgs()) steps.slice(1).forEach(add);
+        f2lCorpusCache = [...set];
+    }
+    return f2lCorpusCache;
 }
 
 let naturalnessModel = null;
@@ -1597,14 +1603,6 @@ function calculateSolvedPieces(sourceNode, targetNode) {
     return newCorners + newEdges + crossAdded;
 }
 
-function scoreAlgorithms(algorithms) {
-    return algorithms.map(alg => {
-        const algString = Array.isArray(alg) ? alg.join(' ') : String(alg).trim();
-        const score = algSpeed(algString);
-        return typeof score === 'number' && !Number.isNaN(score) ? score : 99.0;
-    });
-}
-
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         algSpeed,
@@ -1617,12 +1615,13 @@ if (typeof module !== 'undefined' && module.exports) {
         buildNaturalnessModel,
         useNaturalnessModel,
         HUMAN_F2L_ALGS,
-        PRO_STEP_ALGS,
+        proStepAlgs,
+        f2lCorpusAlgs,
+        NATURALNESS,
         altAlgs,
         cleanScramble,
         isPseudoState,
         calculateSolvedPieces,
-        scoreAlgorithms,
         pruneGraph,
         normalizeCriteria,
         parseTimeLimit,

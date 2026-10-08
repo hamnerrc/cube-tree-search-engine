@@ -5,7 +5,7 @@
  * Background: the vendored docs (README.md, IMPLEMENTATION_NOTES.md) and the
  * JSDoc comments in solver-helper.js / solver-helper-node.js previously
  * claimed `0=BR, 1=BL, 2=FL, 3=FR`, while the only code that actually drove
- * the solver end-to-end (../../cross_xcross.js, ../../backend_test.js) used
+ * the solver end-to-end (the original Node pipeline, since removed) used
  * `{ BL: 0, BR: 1, FR: 2, FL: 3 }` -- the opposite pairing. One of these was
  * wrong, and picking the wrong slot silently searches for the wrong F2L pair
  * instead of erroring. This test pins down the correct mapping empirically

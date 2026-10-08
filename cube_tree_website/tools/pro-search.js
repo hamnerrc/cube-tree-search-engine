@@ -52,8 +52,10 @@ function call(h, pairs, scramble, o) {
  * `raw` are the engine's step algs (prefix stripped), `cores` the
  * commuteNormalize'd set incl. rotation spellings (with the pro move set the
  * bridge offers those too), and `target` the pro's searched suffix.
+ * `extraDepth` searches that many moves beyond the segment's own length;
+ * `deadline` (epoch ms) stops the engine there with what it found.
  */
-async function searchSegment(h, solve, seg, prior, cfg, maxSolutions, split = 0) {
+async function searchSegment(h, solve, seg, prior, cfg, maxSolutions, split = 0, extraDepth = 0, deadline = 0) {
   const frame = canonicalizeForEngine(solve.inspection, prior);
   const centerOffset = cfg.centerOffset === 'keep-cross-on-D'
     ? offsetsKeepingCrossDown(frame.rotation, seg.after.crossColor[0].toUpperCase())
@@ -70,8 +72,9 @@ async function searchSegment(h, solve, seg, prior, cfg, maxSolutions, split = 0)
   // Goal slots in the frame the segment STARTS in (§4.20: a mid-step
   // rotation relabels the end-frame names).
   const sols = await call(h, seg.afterStart.pairs, solve.scramble, {
-    rotation: frame.rotation, postAlg, maxLength: segTokens.length - cut, maxSolutions,
+    rotation: frame.rotation, postAlg, maxLength: segTokens.length - cut + extraDepth, maxSolutions,
     allowedMoves: cfg.moves.join('_'), maxRotCount: cfg.maxRotCount, centerOffset, noopMoves: NOOP_MOVES,
+    ...(deadline ? { deadline } : {}),
   });
   const prefix = [frame.rotation, postAlg].filter(Boolean).join(' ');
   const raw = [...new Set(sols.map(s => s.trim().slice(prefix.length).trim()))];

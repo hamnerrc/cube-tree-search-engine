@@ -2,7 +2,7 @@
 /**
  * Regression tests for the pure, exported functions in script.js
  * (pruneGraph, isPseudoState, calculateSolvedPieces, cleanScramble,
- * altAlgs, scoreAlgorithms).
+ * altAlgs).
  *
  * These had zero test coverage before this file, and a real bug
  * (tree_gen.py's extract_solved_slots() mislabeling every node's
@@ -21,7 +21,6 @@ const {
   cleanScramble,
   isPseudoState,
   calculateSolvedPieces,
-  scoreAlgorithms,
   algSpeed,
 } = require(path.join(__dirname, '..', 'js', 'script.js'));
 
@@ -128,21 +127,6 @@ test('altAlgs: y-rotated variants correctly remap R->F->L->B under successive y 
   assert.deepStrictEqual(result, ["R U", "y F U", "y2 L U", "y' B U"]);
 });
 
-// ---------------------------------------------------------------------
-// scoreAlgorithms
-// ---------------------------------------------------------------------
-
-test('scoreAlgorithms: returns a finite number for a valid algorithm', () => {
-  const [score] = scoreAlgorithms(["R U R' U'"]);
-  assert.strictEqual(typeof score, 'number');
-  assert.ok(Number.isFinite(score));
-});
-
-test('scoreAlgorithms: falls back to the 99.0 penalty for unrecognized move tokens instead of throwing', () => {
-  const [score] = scoreAlgorithms(['bogus move xyz']);
-  assert.strictEqual(score, 99.0);
-});
-
 // Every action has a cost (user decision 2026-10-04, PROJECT_STATUS §4.21).
 test('algSpeed: every single move, wide move, slice and rotation has a positive cost', () => {
   const T = [...'UDRLFBudrlfbMESxyz'].flatMap(f => [f, f + "'", f + '2']);
@@ -247,7 +231,8 @@ test('stepPenalty (PROJECT_STATUS §4.35, §4.47): penalties only, step-aware ro
 });
 
 test('algSurprise (PROJECT_STATUS §4.47): human F2L sequences are natural, machine-like ones are not', () => {
-  const { algSurprise, buildNaturalnessModel, useNaturalnessModel, PRO_STEP_ALGS } = require('../js/script.js');
+  const { algSurprise, buildNaturalnessModel, useNaturalnessModel, proStepAlgs } = require('../js/script.js');
+  const PRO_STEP_ALGS = proStepAlgs();
   const perMove = a => algSurprise(a) / a.split(' ').filter(t => !/^[xyz]/.test(t)).length;
   // Familiar inserts beat sequences of individually cheap but unfamiliar moves.
   assert.ok(algSurprise("U R U' R'") < algSurprise("U R2 U' R2"));
@@ -265,7 +250,9 @@ test('algSurprise (PROJECT_STATUS §4.47): human F2L sequences are natural, mach
   // A mid-step rotation is a token, not a fresh start.
   assert.ok(algSurprise("U l' x' U2 R U R' U' R") > algSurprise("U2 R U R' U' R"));
   // Leave-one-solve-out models (tools/pro-ranking.js) see less of that solve.
-  assert.strictEqual(PRO_STEP_ALGS.length, 19);
+  // js/pro-steps.js: pro_references.txt's 19 solves first, then reco.nz's.
+  assert.ok(PRO_STEP_ALGS.length > 900);
+  assert.strictEqual(PRO_STEP_ALGS[3][0], 'L F2 D\' L U L\' R\' F', 'pro_references.txt #4 at index 3');
   const held = buildNaturalnessModel({ excludeSolve: 4 });
   const pro4 = PRO_STEP_ALGS[3][0];
   assert.ok(held.surprise(pro4) > algSurprise(pro4), 'held-out solve is less familiar');

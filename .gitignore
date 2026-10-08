@@ -15,5 +15,3 @@
 __pycache__/
 *.pyc
 
-# Optional: Big JSON data trees if purely generated
-# F2L_tree.json
