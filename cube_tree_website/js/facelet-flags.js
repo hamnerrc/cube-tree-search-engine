@@ -141,6 +141,79 @@ function pseudoSolvedFlags(facelets) {
     return { cornerAt, edgeAt };
 }
 
+// What a solver sees of the unsolved pairs during look-ahead (README "Pair
+// choice"). Kociemba facelet tables (as in random-state-scramble.js):
+// corners URF UFL ULB UBR DFR DLF DBL DRB, edges UR UF UL UB DR DF DL DB FR
+// FL BL BR. A slot's pieces are found by their colours, read off the centres,
+// so any whole-cube rotation is fine.
+const LOOK_CORNERS = [
+    [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
+    [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51],
+];
+const LOOK_EDGES = [
+    [5, 10], [7, 19], [3, 37], [1, 46], [32, 16], [28, 25],
+    [30, 43], [34, 52], [23, 12], [21, 41], [50, 39], [48, 14],
+];
+// Slot -> its home corner and edge position.
+const LOOK_SLOTS = { FR: [4, 8], FL: [5, 9], BL: [6, 10], BR: [7, 11] };
+const LOOK_FEATURES = ['trappedCorners', 'trappedEdges', 'piecesHome', 'bothInU', 'connected'];
+
+// Colours as bits, so a piece's colour set is one number.
+const LOOK_BIT = { W: 1, R: 2, G: 4, Y: 8, O: 16, B: 32 };
+const LOOK_CORNER_KEYS = new Array(8);
+const LOOK_EDGE_KEYS = new Array(12);
+
+/**
+ * Counts over the unsolved F2L pairs of a cube with the cross solved, in
+ * LOOK_FEATURES order: corners stuck in a D-layer slot (not home and
+ * oriented), edges stuck in a middle-layer slot (likewise), pieces already
+ * home and oriented without their partner, pairs with both pieces in the U
+ * layer, and of those, pairs already connected (adjacent, both shared
+ * stickers matching). Unchanged by any y rotation of the cube.
+ */
+function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0]) {
+    out.fill(0);
+    const f = facelets;
+    const center = i => f[i - (i % 9) + 4];
+    for (let p = 0; p < 8; p++) {
+        const idx = LOOK_CORNERS[p];
+        LOOK_CORNER_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]] | LOOK_BIT[f[idx[2]]];
+    }
+    for (let p = 0; p < 12; p++) {
+        const idx = LOOK_EDGES[p];
+        LOOK_EDGE_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]];
+    }
+    const flags = solvedFlags(f);
+    for (const slot of ['FR', 'FL', 'BL', 'BR']) {
+        if (flags[slot]) continue;
+        const [hc, he] = LOOK_SLOTS[slot];
+        const hcIdx = LOOK_CORNERS[hc];
+        const heIdx = LOOK_EDGES[he];
+        const wantC = LOOK_BIT[center(hcIdx[0])] | LOOK_BIT[center(hcIdx[1])] | LOOK_BIT[center(hcIdx[2])];
+        const wantE = LOOK_BIT[center(heIdx[0])] | LOOK_BIT[center(heIdx[1])];
+        const c = LOOK_CORNER_KEYS.indexOf(wantC);
+        const e = LOOK_EDGE_KEYS.indexOf(wantE);
+        const cHome = c === hc && f[hcIdx[0]] === center(hcIdx[0]) && f[hcIdx[1]] === center(hcIdx[1]) && f[hcIdx[2]] === center(hcIdx[2]);
+        const eHome = e === he && f[heIdx[0]] === center(heIdx[0]) && f[heIdx[1]] === center(heIdx[1]);
+        if (cHome) out[2]++; else if (c >= 4) out[0]++;
+        if (eHome) out[2]++; else if (e >= 8) out[1]++;
+        if (c < 4 && e < 4) {
+            out[3]++;
+            let shared = 0;
+            let match = 0;
+            for (const ci of LOOK_CORNERS[c]) {
+                for (const ei of LOOK_EDGES[e]) {
+                    if (ci - (ci % 9) !== ei - (ei % 9)) continue;
+                    shared++;
+                    if (f[ci] === f[ei]) match++;
+                }
+            }
+            if (shared === 2 && match === 2) out[4]++;
+        }
+    }
+    return out;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS };
+    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS, pairLookFeatures, LOOK_FEATURES };
 }

@@ -210,7 +210,7 @@ function loadSearchCriteria() {
 // the logo instead of inline captions.
 // ---------------------------------------------------------------------------
 const INFO_SECTIONS = [
-    ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). click a result to commit it and search the next step.'],
+    ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). tpp also weighs what a step leaves for the next pairs, as look-ahead would: free pairs help, trapped pieces cost. click a result to commit it and search the next step.'],
     ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
     ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
     ['always on', 'pro move set (wide <span class="moves">r/l</span>, one mid-step <span class="moves">y</span> or <span class="moves">x</span> rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
@@ -770,6 +770,15 @@ function f2lCorpusAlgs() {
     }
     return f2lCorpusCache;
 }
+
+// Pair choice (README "Pair choice"): look-ahead intuition. What a solver
+// sees of the unsolved pairs after a step (facelet-flags.js pairLookFeatures:
+// trapped corners, trapped edges, lone pieces home, pairs with both pieces
+// in U, connected pairs), weighed and added to the path cost -- once, for
+// the state the path leaves, not summed per step, and 0 once F2L is solved,
+// so a complete solution's cost is unchanged. Fitted so the single-step
+// ranking anticipates the 2-step look-ahead (tools/pair-choice.js).
+const PAIR_CHOICE_LOOK = [0.54, 0.78, 0.45, -1.43, -5.66];
 
 let naturalnessModel = null;
 /** Naturalness surprise of an alg in bits (see buildNaturalnessModel); built on first use. */
@@ -1610,6 +1619,7 @@ if (typeof module !== 'undefined' && module.exports) {
         ALG_SPEED_DEFAULTS,
         STEP_PENALTIES,
         stepPenalty,
+        PAIR_CHOICE_LOOK,
         algSurprise,
         buildNaturalnessModel,
         useNaturalnessModel,

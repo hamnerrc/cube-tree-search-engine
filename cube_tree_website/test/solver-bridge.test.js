@@ -408,7 +408,8 @@ const PSEUDO_ALG = "R' D R U2 L2";
 
 test('checkCandidateAgainstRealCubeState: a genuine pseudo claim (corner BL + edge FR) passes', () => {
   const r = checkCandidateAgainstRealCubeState(PSEUDO_SCRAMBLE, PSEUDO_ROT, '', PSEUDO_ALG, ['BL'], ['FR']);
-  assert.deepStrictEqual(r, { ok: true });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.facelets.length, 54, "the cube after the candidate");
 });
 
 test('checkCandidateAgainstRealCubeState: the same result fails as a MATCHED claim of either slot', () => {

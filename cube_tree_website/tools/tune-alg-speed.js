@@ -14,7 +14,9 @@
  *       algs under the current scoring, a random sample of --keep of the
  *       rest, and the pool size. Cached per solve in --cache
  *       (JSON lines; resumable). ~0.1-1 s per step.
- *   node tools/tune-alg-speed.js eval [--params k=v,...]
+ *   node tools/tune-alg-speed.js eval [--params k=v,...] [--look app|w1,...,w5]
+ *       --look adds the pair-choice term (script.js PAIR_CHOICE_LOOK, README
+ *       "Pair choice") of the cube each alg leaves, replayed physically.
  *       Where the pro steps rank under the app's scoring, per group.
  *   node tools/tune-alg-speed.js corpus
  *       Writes js/pro-steps.js (the language model's professional corpus) from the data files.
@@ -327,9 +329,30 @@ function setup(sample) {
   return { solves, params, models, train, held };
 }
 
+// Adds weights . pairLookFeatures(cube after the alg) to every cached cost.
+// A root pool also lists algs relabelled for another inspection y: the frame
+// is the one in which the alg solves the cross (the features ignore y).
+function addLook(cache, weights) {
+  for (const c of cache) {
+    const before = [c.solve.scramble, c.solve.inspection, ...c.prior].filter(Boolean).join(' ');
+    for (let i = 0; i < c.algs.length; i++) {
+      let f = null;
+      for (const t of c.isRoot ? ['', 'y', 'y2', "y'"] : ['']) {
+        const g = F.applyAlgorithm(SOLVED_FACELETS, [before, t, c.algs[i]].filter(Boolean).join(' '));
+        if (solvedFlags(g).cross) { f = g; break; }
+      }
+      if (!f) continue;
+      const x = pairLookFeatures(f);
+      for (let k = 0; k < 5; k++) c.mcc[i] += weights[k] * x[k];
+    }
+  }
+}
+
 function evaluate() {
   const t0 = Date.now();
   const { params, train, held } = setup(Number(opt('sample', 'Infinity')));
+  const look = opt('look', '');
+  if (look) addLook([...train, ...held], look === 'app' ? S.PAIR_CHOICE_LOOK : look.split(',').map(Number));
   const res = rankCache([...train, ...held], params);
   printSummary(summarize(res));
   console.log(`\npro step found by the search: ${res.filter(r => r.proInPool).length}/${res.length}; ${((Date.now() - t0) / 1000).toFixed(1)} s`);

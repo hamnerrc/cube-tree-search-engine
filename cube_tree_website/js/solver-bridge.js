@@ -316,7 +316,7 @@ function replayFacelets(scramble, rotation, priorPath, coreAlg) {
  * (see replayFacelets) and checks, via facelet-flags.js, that the result
  * solves EXACTLY what the candidate's DAG edge claims -- cross, plus every
  * claimed corner/edge, and no additional complete pair. Returns
- * { ok: true } or { ok: false, reason }. See this file's header comment for
+ * { ok: true, facelets } (the cube after it) or { ok: false, reason }. See this file's header comment for
  * why this exact replay order is correct and where it's verified.
  *
  * `claimedEdges` defaults to `claimedCorners` (a matched claim: a slot is
@@ -355,7 +355,7 @@ function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreA
       return { ok: false, reason: `slot ${slot} claimed solved but is not actually solved (edge)` };
     }
   }
-  return { ok: true };
+  return { ok: true, facelets };
 }
 
 /**
@@ -1151,6 +1151,7 @@ function postProcessContext(session, isRoot) {
     firstColor: session.committedRows[0] ? session.committedRows[0].color : '',
     nodeIndex: nodeByLabelsIndex.get(session.tree),
     rootTargets: isRoot ? session._rootTargetsByLabels : null,
+    lookWeights: typeof PAIR_CHOICE_LOOK !== 'undefined' && PAIR_CHOICE_LOOK.some(w => w) ? PAIR_CHOICE_LOOK.slice() : null,
   };
 }
 
@@ -1202,12 +1203,26 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   const candidates = [];
   const { isRoot } = ctx;
   const wideOn = ctx.wideMoves !== false;
-  // Every candidate goes through here: no wide move with wide moves off, and
-  // the flags the results page's filters hide by: unorthodox (every step)
-  // and multislot (a later step solving more than one pair).
-  const push = (c) => {
+  // Every candidate goes through here: no wide move with wide moves off, the
+  // pair-choice term `look` of the cube it leaves (script.js
+  // PAIR_CHOICE_LOOK, added to the path cost: every caller passes TPP = path
+  // cost / pieces; the same for every spelling, the features do not change
+  // under y rotations), and the flags the results page's filters hide by:
+  // unorthodox (every step) and multislot (a later step solving more than
+  // one pair).
+  const weights = ctx.lookWeights;
+  const lookFeatures = [0, 0, 0, 0, 0];
+  const lookCost = (facelets) => {
+    if (!weights || !facelets) return 0;
+    pairLookFeatures(facelets, lookFeatures);
+    let x = 0;
+    for (let k = 0; k < weights.length; k++) x += weights[k] * lookFeatures[k];
+    return x;
+  };
+  const push = (c, look = 0) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
     if (hasWideB(c.coreAlg)) return;
+    if (look) c.tpp += look / p.pieces;
     if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
     else delete c.unorthodox;
     if (!isRoot && ((c.corners || []).length > 1 || (c.edges || []).length > 1)) c.multislot = true;
@@ -1283,7 +1298,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
           coreAlg: optAlg,
           tpp: Number.isFinite(optTpp) ? optTpp : Infinity,
           targetNodeId: p.target,
-        });
+        }, lookCost(optLuckCheck.facelets));
       }
     }
 
@@ -1410,7 +1425,8 @@ async function postProcessCall(ctx, p, cores, yieldState) {
         targetNodeId: reachedNodeId,
       };
       if (p.fullPseudoOnly) candidate.fullPseudoOnly = true;
-      push(candidate);
+      const look = lookCost(luckCheck.facelets);
+      push(candidate, look);
 
       // Every spelling of this alg with a final rotation r is physically
       // "alg, then r", so the node it reaches depends only on r: replayed
@@ -1444,7 +1460,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
           if (!nodeId) continue;
           const spTpp = pathCostFor(ctx, spelling)
             / p.pieces;
-          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId });
+          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(spTpp) ? spTpp : Infinity, targetNodeId: nodeId }, look);
         }
       }
 
@@ -1471,7 +1487,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
           }
           if (!nodeId) continue;
           const wTpp = pathCostFor(ctx, spelling) / p.pieces;
-          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(wTpp) ? wTpp : Infinity, targetNodeId: nodeId });
+          push({ ...candidate, coreAlg: spelling, tpp: Number.isFinite(wTpp) ? wTpp : Infinity, targetNodeId: nodeId }, look);
         }
       }
 
@@ -1489,7 +1505,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
             rotation: rotationName(`${fullRotation} ${v.inspection}`),
             coreAlg: v.alg,
             tpp: Number.isFinite(vTpp) ? vTpp : Infinity,
-          });
+          }, look);
         }
       }
     }

@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-07 (twenty-sixth pass).*
+*Last updated 2026-10-08 (twenty-seventh pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -11,50 +11,35 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
 
-**Twenty-sixth pass (2026-10-07).** User tasks: remove the terminal
-speed-comparison data (it made the rankings worse), clean up the codebase
-and shorten the docs, get professional solve data from reco.nz (Yiheng
-Wang, Xuanyi Geng) and tune `alg_speed` on it.
+**Twenty-seventh pass (2026-10-08).** User tasks: (1) "hide unorthodox"
+missed a top result, (2) multislot and wide moves as instant filters,
+(3) pair-choice intuition for alg_speed trained on look-ahead outcomes,
+(4) UI/UX redesign: on hold until the developer's designs arrive. The tree
+was clean and every fast suite passed at the start.
 
-1. **Removed:** `tools/pair-compare.js`, `pair-compare-lib.js`,
-   `fit-alg-speed.js`, `test/pair-compare.test.js`,
-   `data/speed_comparisons.jsonl`, `data/speed_pool.json`; the comparison
-   roadmap item. Also the superseded Node-only pipeline
-   (`tools/backend_test.js`, `cross_xcross.js`, `harness.js`,
-   `data/F2L_tree.json`) and `tools/fit-step-penalties.js`. README and this
-   file rewritten (690 → ~290 and 4,300 → ~250 lines).
-2. **Data:** `tools/reco.js` downloads reconstructions and converts them to
-   `data/reco_solves.txt` (pro_references format, one `# reco.nz/solve/<id>`
-   line per solve): 936 reconstructions → 934 solves (637 Yiheng Wang, 297
-   Xuanyi Geng), 3,652 DAG steps; every solve replayed on the simulated cube.
-3. **Tuning** (`tools/tune-alg-speed.js`, method below): every MCC
-   constant, step penalty and the language model refitted on Yiheng Wang,
-   checked on held-out Xuanyi Geng and pro_references.txt. The naturalness
-   corpus is now every pro solve (`js/pro-steps.js`, 953 solves). Mean
-   log10 rank of the pro's step, before → after: Yiheng 0.751 → 0.522,
-   Xuanyi (held out) 0.759 → 0.595, references (held out) 0.521 → 0.351.
-   In the app's own lists (`pro-ranking.js --app`, held out per solve):
-   0.967 → 0.529, reference steps in the top 10: 43 → 51 of 66.
-4. **Corpus candidates** (README): later steps also try every corpus alg
-   (standard F2L algs + every pro step, mirrored, × y-rotation × AUF); those
-   that solve exactly a searched goal join that call's solutions. ~8 ms per
-   step; on random scrambles about half of the top-10 rows are corpus algs
-   (`test/corpus-candidates-e2e.js`). The engine-only coverage test
-   (`pro-references-e2e.js`) is unaffected by them.
-5. **Found and fixed:** with the 10,000-solutions default the look-ahead's
-   memo (500k candidates) evicted every follow-up search at once, so
-   committing an explored candidate searched again (`lookahead-e2e` failed).
-   Cap now 1M candidates (~440 MB); the test runs at 500 per call.
-   `crossSolver/test/dag-search.test.js` still called the removed
-   `withoutR2L2` (twenty-first pass); fixed with a local helper.
-6. **Time limit honoured again** (worst case 155 s → 58–59 s with a 60 s
-   limit): post-processing stops at the limit (`POST_SHARE`, live candidate
-   count), and the final ranking keeps only the best candidates by TPP that
-   fit in the time left (`RANK_MS_PER_CANDIDATE`). `test/search-budget.test.js`.
-7. Also removed as dead code: `scoreAlgorithms`, `applyPerm`,
-   `rotationNameFor`. Corpus candidates need the pro move set (always on in
-   the app; sessions without it, e.g. `solver-bridge-e2e.js` without
-   `--pro`, get none).
+1. **Unorthodox fix.** The user's top result (`U' F2 U' B2 D' L2 B2 R2 U2 F2
+   U F R2 D2 B' U L R U R B' F'`, yellow `y2 | R' U' R2 F R D L2 F' L'`, an
+   XCross) was a *first* step, and first steps were exempt by design. The
+   flag (`isUnorthodox`, unchanged) is now set at every step; the
+   inspection rotation comes before the step and does not count. Browser:
+   that row is #1 unfiltered and hidden with the filter.
+2. **Multislot and wide moves are filters.** The results page always
+   searches with both (`searchOptions` multislot/wideMoves true) and hides
+   them in `resultFilter` (candidates carry `multislot`; wide = `isWideAlg`),
+   like unorthodox: toggling either way takes ~10 ms in headless Chrome, no
+   search. Cost: later steps always search multislots, ~2x a later step's
+   search (Node, 10,000/call, xcross start: 5 s → 11 s). While multislots are
+   hidden the look-ahead's follow-ups are searched without them
+   (`lookaheadMultislot`; identical lists, `search-options-e2e.js`), so the
+   look-ahead keeps its old cost (depth 2: 18 s; 35 s with them). Hiding
+   wide moves now shows the wide search's non-wide results (fewer than a
+   search without wide moves would list; the old "wide twin" did the same
+   after a search). The bridge's `multislot`/`wideMoves` session settings
+   and wide-twin memo remain (tools and tests use them).
+3. **Pair choice** (README "Pair choice", `tools/pair-choice.js`,
+   `PAIR_CHOICE_LOOK` in script.js, `pairLookFeatures` in facelet-flags.js):
+   TPP = (path cost + w · look features of the cube the path leaves) / pieces.
+   Details and numbers under "Pair choice tuning" below.
 
 ## Layout
 
@@ -80,7 +65,8 @@ archived_attempts/          earlier ML attempts, not used by the site
 
 ## Tests
 
-Fast suites (run before and after any change, from the repo root):
+Fast suites (run before and after any change, from the repo root;
+`test/pair-choice.test.js` is one of them):
 
 ```
 python3 cube_tree_website/tools/test_tree_gen.py
@@ -92,12 +78,13 @@ the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 (full sessions, physical replay), `test/progressive-e2e.js`,
 `search-options-e2e.js`, `lookahead-e2e.js`, `offload-e2e.js`,
 `wide-moves-e2e.js`, `wide-spellings-e2e.js`, `cubedb-export-e2e.js`,
-`corpus-candidates-e2e.js`,
+`corpus-candidates-e2e.js`, `pair-choice-e2e.js`,
 `crossSolver/test/{dag-search,slot-mapping,color-orientation}.test.js`.
 Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
 
-Tools: `tune-alg-speed.js` (tuning, below), `reco.js` (data),
+Tools: `tune-alg-speed.js` (tuning, below), `pair-choice.js` (pair-choice
+weights, below), `reco.js` (data),
 `pro-ranking.js` (rank of the 19 reference steps in the app's real lists,
 `--app`), `pro-references.js` (parser, segmenter), `pro-search.js`,
 `worst-case-bench.js`, `engine-battery.js` (engine rebuilds must give
@@ -197,6 +184,60 @@ Rejected or not worth retrying:
 - Negative per-move weights (made `U` padding cheaper); first-step-only
   values (the README requires one function for every step).
 
+## Pair choice tuning
+
+Model: `pair_choice` = Σ w_k × count_k over the unsolved pairs of the cube a
+path leaves (`pairLookFeatures`: trapped corners, trapped edges, lone
+pieces home, pairs with both pieces in U, connected pairs in U; unchanged by
+y rotations, so every spelling of an alg shares it). Added to the path cost
+once (not per step), 0 when F2L is solved.
+
+Data (`pair-choice.js data`, ~1-2 min per scramble, 1,000 solutions per
+call, white, xcross + xxcross, multislots): random-state solves; at every
+step the 3 best candidates of each target node plus the top 10, each
+labelled with its 2-step look-ahead TPP (a real search of its next step);
+then one of the 3 best by label is committed. Data files are not in the
+repo (scratch; regenerate with seeds 1-4, 50 scrambles each).
+
+Fit (`fit`): listwise loss = expected label of the first-ranked candidate
+under a softmax of the adjusted TPPs (temp 0.3), l2 0.002; 5-fold CV by
+scramble. Metric: regret = label of the first-ranked candidate − best label.
+
+| model (held out, 435 steps, 134 scrambles) | regret all | first steps | later steps |
+|---|---|---|---|
+| none (alg_speed alone) | 0.300 | 0.590 | 0.169 |
+| solved-slot values only (y-invariant; frame-relative the same) | 0.297 | 0.592 | 0.164 |
+| look features only (**app**) | 0.222 | 0.398 | 0.143 |
+| look + y-invariant slot values | 0.209 | 0.384 | 0.130 |
+
+Top-1 (the look-ahead's best candidate ranked first): 52.9% → 58.4%.
+
+Solved-slot values ("back slots first") do not generalise: a step may start
+with a free `y`, so which slots are open hardly predicts the next step's
+cost. With look features they add noise-level gains and hurt the pro check
+below at first steps (they push plain crosses down), so the app has only
+the 5 weights: [0.54, 0.78, 0.45, -1.43, -5.66]. Unregularised fits blow up
+(connected −12, slot values ±8) for little gain.
+
+Independent checks (no pro data in the fit):
+- `pair-choice.js pro` / `proeval` (134 Xuanyi Geng solves, 357 steps): the
+  pro's pair choice (which physical pairs a step solves) ranked first among
+  the app's choices: later steps 60.9% → 65.1% (MRR 0.779 → 0.802), first
+  steps 19.7% → 14.8% (MRR 0.394 → 0.367): the look-ahead prefers first
+  steps that pros do not plan in inspection. Kept for every step anyway
+  (README: one function for every step).
+- `tune-alg-speed.js eval --look app` (the pro's step among same-goal
+  alternatives, mean log10 rank): Xuanyi Geng 0.597 → 0.564, Yiheng Wang
+  0.520 → 0.504, references 0.347 → 0.338; first steps clearly better
+  (Xuanyi 1.261 → 1.142, top 10 45% → 52%), later steps slightly worse
+  (0.274 → 0.282).
+- Post-processing cost: not measurable (features once per luck-checked
+  alg, ~3 µs).
+
+To refit: run `data` shards, `features` (only for files from before the
+path was recorded), then `fit --data a,b,c,d` and copy the last 5 printed
+values into `PAIR_CHOICE_LOOK`.
+
 ## Traps (verified the hard way)
 
 - Verify cube-state claims physically (facelet replay, cross-checked against
@@ -222,6 +263,9 @@ Rejected or not worth retrying:
 - Search memo keys use the committed steps, not the joined path text (step
   penalties depend on step boundaries).
 - Pro steps are in the LM corpus: never quote in-sample ranks of pro steps.
+- `pgrep -f "<script> data"` inside a wait loop matches the loop's own
+  command line: wait on a PID or a file instead.
+- zsh does not word-split `${X:+--flag $X}`: pass flags explicitly.
 - The dev machine has 2 physical cores: timings are noisy; alternate A/B
   runs, kill leftover headless Chromes.
 - GitHub Pages: after `git push origin master:main`, check
@@ -242,6 +286,14 @@ Rejected or not worth retrying:
    fetch <raw.json> "Name"`, then `convert`, `corpus`, `pools`, `fit`).
    Yiheng Wang's style (many mid-step rotations) dominates the fit; another
    CFOP solver would make it less personal.
-4. **Visual redesign** (README): waiting on the developer's design.
+4. **Visual redesign** (README): waiting on the developer's design (user
+   task 4, twenty-seventh pass: on hold).
 5. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
+6. **Pair choice:** more look-ahead data (pair-choice.js shards) and richer
+   features (e.g. edge orientation of U-layer pieces, pairs one turn from
+   connected) are the next levers; first-step pair choice (which xcross)
+   gains most from the look-ahead and still trails it most.
+7. **Later-step search cost doubled** by always searching multislots
+   (task 2); a split multislot search (singles first, multislots merged
+   in as the wide twin does) would make the visible list final sooner.

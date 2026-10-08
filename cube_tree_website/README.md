@@ -60,7 +60,8 @@ All results (every step type, colour and rotation) form **one ranked list**,
 sorted by
 
 ```
-TPP = alg_speed(entire path so far, including this step) / pieces solved by that path
+TPP = (alg_speed(entire path so far, including this step) + pair_choice(cube it leaves))
+      / pieces solved by that path
 ```
 
 Lower is better. TPP is scored over the whole path, so a longer but smoother
@@ -102,6 +103,42 @@ in the top 10 of their alternatives 94% of the time (87% before), and puts
 51 of the 66 reference steps in the app's own top 10 (43 before). A
 professional sometimes executes a slower step than the best available, so
 the target is where pro steps rank overall, not every pro step on top.
+
+### Pair choice
+
+Which pair to solve next matters beyond the step itself: a fast step that
+leaves the remaining pairs trapped can lose to a slower one that leaves a
+free pair. The look-ahead computes this; `pair_choice` gives the
+single-step ranking the same **intuition**, the way a solver picks a pair
+without working out the next one. It is learned, not a hand-written rule:
+
+- **What it sees** is what a solver sees during look-ahead, of the pairs
+  still unsolved after the step: corners stuck in a bottom slot, edges stuck
+  in a middle slot, lone pieces already home, pairs with both pieces in the
+  top layer, and pairs already connected there. Each count has a weight.
+- **What it is trained on**: random-state solves, where at every step the
+  candidates (the best few of each pair choice) are labelled with their
+  2-step look-ahead TPP from a real search of the next step. The weights
+  minimise the expected look-ahead TPP of the candidate the single-step
+  ranking puts first (`tools/pair-choice.js`); the look-ahead's TPPs are
+  only the training signal. It cannot be exact (the next step depends on
+  more than a solver sees at a glance); it learns the heuristics.
+- It is added once, for the cube the path leaves (not per step), and is 0
+  once F2L is solved, so the cost of a complete solution is unchanged. Like
+  the rest of `alg_speed`, it is the same at every step.
+
+Learned weights (time units, per counted pair or piece): connected pair
+−5.7, both pieces in the top layer −1.4, edge stuck +0.78, corner stuck
++0.54, lone piece home +0.45. On held-out scrambles the candidate ranked
+first is on average 26% closer to the look-ahead's best (first steps 33%,
+later steps 15%). Checked on professional solves it never saw: their
+executed steps rank higher among same-goal alternatives, and at later
+steps their pair choice ranks first more often (61% → 65% of Xuanyi
+Geng's); at first steps less often (20% → 15%), where the look-ahead
+prefers first steps that are hard to plan in inspection. Which slots
+are solved (e.g. "back slots first") was offered to the fit as well and
+did not generalise: a step may start with a free `y`, so the solved slots'
+position hardly predicts the next step's cost.
 
 ## What the DAG edges mean
 
