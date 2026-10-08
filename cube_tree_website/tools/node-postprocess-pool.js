@@ -25,7 +25,8 @@ if (!isMainThread && workerData && workerData.postProcessPool) {
   const { postProcessCall } = require(path.join(js, 'solver-bridge.js'));
   parentPort.on('message', async ({ id, ctx, job, cores }) => {
     try {
-      parentPort.postMessage({ id, candidates: await postProcessCall(ctx, job, cores, null) });
+      const candidates = await postProcessCall(ctx, job, cores, null);
+      parentPort.postMessage({ id, candidates, stopped: !!candidates.stopped });
     } catch (err) {
       parentPort.postMessage({ id, error: String((err && err.stack) || err) });
     }
@@ -60,7 +61,8 @@ async function createPostProcessPool(size) {
     }
   };
   for (const w of workers) {
-    w.on('message', ({ id, candidates, error }) => {
+    w.on('message', ({ id, candidates, error, stopped }) => {
+      if (stopped && candidates) candidates.stopped = true;
       const p = inFlight.get(id);
       inFlight.delete(id);
       w.pending--;

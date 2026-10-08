@@ -47,7 +47,11 @@ Wang, Xuanyi Geng) and tune `alg_speed` on it.
    Cap now 1M candidates (~440 MB); the test runs at 500 per call.
    `crossSolver/test/dag-search.test.js` still called the removed
    `withoutR2L2` (twenty-first pass); fixed with a local helper.
-6. Also removed as dead code: `scoreAlgorithms`, `applyPerm`,
+6. **Time limit honoured again** (worst case 155 s → 58–59 s with a 60 s
+   limit): post-processing stops at the limit (`POST_SHARE`, live candidate
+   count), and the final ranking keeps only the best candidates by TPP that
+   fit in the time left (`RANK_MS_PER_CANDIDATE`). `test/search-budget.test.js`.
+7. Also removed as dead code: `scoreAlgorithms`, `applyPerm`,
    `rotationNameFor`. Corpus candidates need the pro move set (always on in
    the app; sessions without it, e.g. `solver-bridge-e2e.js` without
    `--pro`, get none).
@@ -125,9 +129,12 @@ Everything in the README is implemented except the visual redesign
 - Defaults (10,000 solutions per call, first-step limits 9/10/10/11; Node,
   xcross + xxcross + multislot, no pseudo): first step ~18 s, later steps
   ~4.7 s; headless Chrome first step 20.8 s (286k results), second 3.7 s.
-- Worst case (every option, no time limit) was 165 s for a root search
-  before the 10,000 default; the time limit is the guarantee. **Needs
-  re-measuring** with `tools/worst-case-bench.js --max 10000`.
+- Worst case (`worst-case-bench.js --max 10000 --budget 60 --post 2`: every
+  colour, xcross..xxxcross, multislot, full pseudo, pro moves): a root search
+  took 155 s with the 60 s limit (2.7M results; post-processing and ranking
+  ignored the limit). Now post-processing stops at the limit and the final
+  ranking keeps only the best candidates that fit: 58–59 s (130–160k
+  results), later steps 48–51 s. Without a limit a root search runs minutes.
 - Coverage: 44/66 reference steps are in the engine's search tree
   (`pro-references-e2e.js`). For the reco data, 2,732 of 3,342 pro steps are
   in their tuning pool (engine up to the pro's length + 2, capped at 5,000,
@@ -227,8 +234,10 @@ Rejected or not worth retrying:
    steps' lists; first steps (cross / xcross from inspection) have no such
    source and rank worst. Ideas: deeper R/U-restricted searches for the last
    pairs, more than one engine rotation per step, an inspection model.
-2. **Worst case** with the 10,000 default: re-measure; pseudo calls are the
-   expensive tail.
+2. **Worst case:** within the limit now, but only by cutting: with every
+   option on, a root search lists ~150k of the ~1M+ candidates it could.
+   Faster post-processing / ranking (commuteNormalize dedupe keys are most
+   of the ~6.3 µs per candidate) would keep more.
 3. **More tuning data:** more solvers from reco.nz (`node tools/reco.js
    fetch <raw.json> "Name"`, then `convert`, `corpus`, `pools`, `fit`).
    Yiheng Wang's style (many mid-step rotations) dominates the fit; another

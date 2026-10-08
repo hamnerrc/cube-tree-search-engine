@@ -27,7 +27,8 @@ self.onmessage = async (event) => {
   const { id, ctx, job, cores } = event.data;
   try {
     const candidates = await postProcessCall(ctx, job, cores, null);
-    self.postMessage({ id, candidates });
+    // (an array's own flags do not survive postMessage)
+    self.postMessage({ id, candidates, stopped: !!candidates.stopped });
   } catch (err) {
     self.postMessage({ id, error: String((err && err.stack) || err) });
   }

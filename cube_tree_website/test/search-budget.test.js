@@ -3,8 +3,9 @@
  * The per-search time budget (README "Performance goal", PROJECT_STATUS.md
  * §4.36), against a stub engine (no WASM): every call gets the deadline,
  * calls start cheapest first under a budget (plan order without one), a call
- * finishing late below its cap marks the results truncated, and a truncated
- * search is not kept in the look-ahead memo.
+ * finishing late below its cap marks the results truncated, calls finishing
+ * after the post-processing stop are dropped, and a truncated search is not
+ * kept in the look-ahead memo.
  *
  * Run: node test/search-budget.test.js
  */
@@ -79,6 +80,23 @@ async function test(name, fn) {
     const h = stubEngine(m => (m === 'solveXxcross' ? 400 : 0));
     const res = await searchCurrentNode(newSession(200), h, null, null);
     assert.ok(res.truncatedCalls >= 1, `truncatedCalls ${res.truncatedCalls}`);
+  });
+
+  await test('budget: calls that finish after the post-processing stop are dropped and counted', async () => {
+    // Every call reaches its cap (3 solutions), so only the post-processing
+    // stop (engine share + POST_SHARE of the rest: 950 ms of 1000) can cut it.
+    const calls = [];
+    const h = { __gated: true };
+    for (const m of ['solveCross', 'solveXcross', 'solveXxcross', 'solveXxxcross', 'solveXxxxcross']) {
+      h[m] = () => { calls.push(m); return new Promise(r => setTimeout(() => r(["R U R'", "R U' R'", "F R F'"]), 1000)); };
+    }
+    const session = newSession(1000);
+    session.maxSolutions = 3;
+    const t0 = Date.now();
+    const res = await searchCurrentNode(session, h, null, null);
+    assert.strictEqual(res.length, 0);
+    assert.strictEqual(res.truncatedCalls, calls.length);
+    assert.ok(Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
   });
 
   await test('memoSearch drops a truncated search, keeps a complete one', async () => {

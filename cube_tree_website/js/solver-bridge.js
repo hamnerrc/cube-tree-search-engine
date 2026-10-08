@@ -632,8 +632,18 @@ function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLeng
 // skipped. The engines get this share of the budget; the rest is left for
 // post-processing the last calls' solutions. With look-ahead, the step's own
 // search gets LOOKAHEAD_FIRST_SHARE of it and the follow-up searches the rest.
+// Post-processing stops at POST_SHARE of the rest, and ranking is planned to
+// end at RANK_END_SHARE of it (a margin for the rest of the step): with
+// 10,000 solutions per call, a root search with every option on used to
+// post-process for ~110 s after the engines' deadline (155 s in all).
 const SEARCH_ENGINE_SHARE = 0.75;
 const LOOKAHEAD_FIRST_SHARE = 0.5;
+const POST_SHARE = 0.7;
+const RANK_END_SHARE = 0.85;
+// Ranking (sort + dedupe) after post-processing costs ~6.3 us per candidate
+// here (1.1M candidates: 6.9 s); post-processing stops early enough to leave
+// that time.
+const RANK_MS_PER_CANDIDATE = 0.007;
 function budgetDeadline(session, share, start = Date.now()) {
   const budget = session && session.timeBudgetMs > 0 ? session.timeBudgetMs : 0;
   return budget ? start + budget * share : 0;
@@ -837,6 +847,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   const isRoot = session.isAtRoot;
   // Absolute deadline (epoch ms) for this search's engine calls; 0 = none.
   if (deadline === undefined) deadline = budgetDeadline(session, SEARCH_ENGINE_SHARE);
+  // When post-processing stops (time budget; 0 = never): calls not processed
+  // by then are dropped, a call being processed keeps what it has.
+  const postStop = deadline && session.timeBudgetMs > 0 ? deadline + session.timeBudgetMs * (1 - SEARCH_ENGINE_SHARE) * POST_SHARE : 0;
   let edges = session.outgoingEdges();
   // Multislot off (results page): later steps solve one pair at a time -- the
   // same edges pruneGraph drops without "multislotting", removed before
@@ -921,7 +934,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     });
   }
 
-  const yieldState = { lastYield: now() };
+  const yieldState = { lastYield: now(), listed: 0 };
 
   const colorList = isRoot ? session.colors : [null];
 
@@ -1026,6 +1039,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     }
   }
   let truncatedCalls = 0;
+  // Candidates post-processed so far (their ranking is still to come): live
+  // on the main thread (yieldState.listed, every call's pushes), per finished
+  // call for a worker pool.
+  let listed = 0;
+  const listedNow = () => Math.max(listed, yieldState.listed || 0);
   // Engine calls that failed (an engine error or a crashed worker): the list
   // is missing their results, so it is marked and not memoised.
   let failedCalls = 0;
@@ -1042,6 +1060,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     if (onStatus) onStatus(`searching ${edgeLabel(pairCount, isRoot, isPseudo).toLowerCase()}${color ? ' (' + color + ')' : ''}…`);
     const cores = await p.cores;
     if (cores === null) { failedCalls++; return; }
+    if (postStop && Date.now() + listedNow() * RANK_MS_PER_CANDIDATE >= postStop) { truncatedCalls++; return; }
     // Finished at or after the deadline without reaching its cap: cut short
     // (or skipped) by the time budget, so its list may be incomplete.
     if (deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions) truncatedCalls++;
@@ -1049,9 +1068,13 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // a page can run it off the main thread (session.postProcessor, a worker
     // pool; PROJECT_STATUS.md §4.40) -- same function, same output.
     const job = postProcessJob(session, p);
+    if (postStop) { job.stopAt = postStop; job.listedBefore = listedNow(); job.rankMsPerCandidate = RANK_MS_PER_CANDIDATE; }
     p.candidates = session.postProcessor
       ? await session.postProcessor(ctx, job, cores, rank)
       : await postProcessCall(ctx, job, cores, yieldState);
+    listed += p.candidates.length;
+    // Cut short by the time budget (postProcessCall stopped at job.stopAt).
+    if (postStop && p.candidates.stopped && !(deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions)) truncatedCalls++;
   };
   // Progressive results (README "Results table"): while calls are still
   // running, the calls finished so far are ranked exactly like the final
@@ -1076,6 +1099,28 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     maybeEmitPartial();
   })));
 
+  // Time budget: ranking costs ~RANK_MS_PER_CANDIDATE per candidate; if all
+  // of them would not fit in what is left, only the best (by TPP) that do
+  // are ranked. Those dropped are the bottom of a list of a million or more.
+  if (postStop) {
+    const end = deadline + session.timeBudgetMs * (1 - SEARCH_ENGINE_SHARE) * RANK_END_SHARE;
+    const room = Math.max(1000, Math.floor((end - Date.now()) / RANK_MS_PER_CANDIDATE));
+    let total = 0;
+    for (const p of plan) total += (p.candidates || []).length;
+    if (total > room) {
+      const tpps = new Float64Array(total);
+      let k = 0;
+      for (const p of plan) for (const c of p.candidates || []) tpps[k++] = c.tpp;
+      tpps.sort();
+      const cut = tpps[room - 1];
+      let kept = 0;
+      for (const p of plan) {
+        if (!p.candidates) continue;
+        p.candidates = p.candidates.filter(c => c.tpp < cut || (c.tpp === cut && kept < room && ++kept));
+      }
+      truncatedCalls = Math.max(truncatedCalls, 1);
+    }
+  }
   const out = rankCandidates(plan);
   // How many engine calls the time budget cut short (absent = complete).
   if (truncatedCalls) out.truncatedCalls = truncatedCalls;
@@ -1166,6 +1211,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
       else delete c.unorthodox;
     }
     candidates.push(c);
+    if (yieldState && yieldState.listed !== undefined) yieldState.listed++;
   };
   const {
     isPseudo, newEdges, pairCount, allCorners, allEdges, color, baseRotation,
@@ -1176,8 +1222,15 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   const uniqueCoreAlgs = new Set();
   for (const coreAlg of cores) if (coreAlg) uniqueCoreAlgs.add(coreAlg);
 
+  let processed = 0;
   for (const coreAlg of uniqueCoreAlgs) {
     if (yieldState) await yieldIfDue(yieldState);
+    // Time budget (searchCurrentNode's postStop): keep what is done.
+    const listedSoFar = yieldState && yieldState.listed !== undefined ? yieldState.listed : (p.listedBefore || 0) + candidates.length;
+    if (p.stopAt && (++processed & 31) === 0 && Date.now() + listedSoFar * (p.rankMsPerCandidate || 0) >= p.stopAt) {
+      candidates.stopped = true;
+      break;
+    }
 
     // Cross optimisation (README "Wide moves and Cross optimisation") --
     // a first-step-only, Cross-only (pairCount=0) post-process, kept

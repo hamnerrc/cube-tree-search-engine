@@ -255,7 +255,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           const w = new Worker(`js/postprocess-worker.js${UI_SCRIPT_QUERY}`);
           w.pending = new Set();
           w.onmessage = (e) => {
-            const { id, candidates, error } = e.data;
+            const { id, candidates, error, stopped } = e.data;
+            if (stopped && candidates) candidates.stopped = true; // the time budget cut it (postProcessCall)
             const job = jobs.get(id);
             if (!job) return;
             jobs.delete(id);

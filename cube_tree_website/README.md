@@ -154,7 +154,9 @@ XXXCross, multislot, full pseudo, the pro move set, every colour, the
 deepest look-ahead) finishes in **under 1 minute**. The **search time limit**
 (blank = none) guarantees it: the search stops at the limit and lists the
 best results so far, cheap searches running first so the limit cuts the
-expensive tail. The status line says when it did.
+expensive tail; if ranking every candidate found would overrun it, only the
+best ones (by TPP) are ranked. The status line says when the limit cut a
+search.
 
 ## Move set and spellings
 
