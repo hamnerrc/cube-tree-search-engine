@@ -1121,11 +1121,22 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // (finished calls), so a call's spellings only compete for places its type
   // still has (the type's N-th best only gets better).
   const typeBest = new Map();
+  // ... and the seed results of its type's big calls still being ranked
+  // (real candidates of other calls: their N-th best bounds this call too;
+  // dropped once that call is done, whose own results then count instead).
   const typeLimits = (p) => {
     const best = typeBest.get(p.category);
-    return RESULT_VIEWS.map((_, v) => (best && best[v].length >= p.topN ? best[v][p.topN - 1] : Infinity));
+    return RESULT_VIEWS.map((_, v) => {
+      let tpps = best ? best[v] : [];
+      for (const q of plan) {
+        if (q !== p && q.category === p.category && q.seedViews && !q.noted) tpps = tpps.concat(q.seedViews[v]);
+      }
+      if (tpps !== (best && best[v])) tpps = tpps.slice().sort((a, b) => a - b);
+      return tpps.length >= p.topN ? tpps[p.topN - 1] : Infinity;
+    });
   };
   const noteTypeBest = (p) => {
+    p.noted = true;
     if (!p.complete || !p.candidates.length) return;
     let best = typeBest.get(p.category);
     if (!best) typeBest.set(p.category, (best = RESULT_VIEWS.map(() => [])));
@@ -1171,6 +1182,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // N from scratch: 2 chunks of a first-step xcross did twice the work).
       const seedList = await session.postProcessor(ctx, { ...job, seedOnly: true, corpus: null }, cores, rank, refresh);
       job.limits = completeSeedLimits(seedList, p.topN, job.limits);
+      p.seedViews = RESULT_VIEWS.map(view => seedList.filter(view.test).map(c => c.tpp).sort((a, b) => a - b).slice(0, p.topN));
       const chunks = completeChunks(cores, session.postProcessor.workers);
       const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank, refresh)));
       p.candidates = [].concat(...parts);
