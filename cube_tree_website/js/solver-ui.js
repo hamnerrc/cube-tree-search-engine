@@ -76,10 +76,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // of its solver calls at once and the scheduler runs one per worker, so the
   // calls of a search (one per DAG edge and colour) run in parallel. One core
   // is left for the page itself; each worker holds its own tables (~100 MB).
-  // The complete search's engine calls are face turns only and mostly quick;
-  // ranking every spelling of their solutions (post-processing pool, below)
-  // is most of a search's time, so the engines get about half the cores.
-  const ENGINE_POOL_SIZE = Math.max(1, Math.min(3, Math.floor((((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1) / 2)));
+  // The complete search's engine calls are face turns only and quick (a first
+  // step's are all done in ~5 s on a 2-core machine); ranking every spelling
+  // of their solutions (post-processing pool, below) is most of a search's
+  // time, so the engines get one worker, two from 8 threads up.
+  const HARDWARE_THREADS = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
+  const ENGINE_POOL_SIZE = HARDWARE_THREADS >= 8 ? 2 : 1;
 
   // Prune-table sharing (PROJECT_STATUS.md §4.40). Every engine worker used
   // to build the same "cross + corner/edge" tables itself (~0.4 s per 4.5 MB
@@ -246,10 +248,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // the page's main thread, which used to be the bottleneck of root searches
   // and look-ahead. Same function, same output; any worker failure falls back
   // to running that call's post-processing here.
-  // Sized to the cores the engine pool leaves (at least one, at most 4): on
-  // a 2-core/4-thread machine one worker (warm depth-5 look-ahead ~12% faster,
-  // and the page stays responsive); more only where cores are free.
-  const POST_POOL_SIZE = Math.max(1, Math.min(6, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1 - ENGINE_POOL_SIZE));
+  // Sized to the threads the engine pool and the page leave (at least one,
+  // at most 12; big calls are ranked in chunks side by side).
+  const POST_POOL_SIZE = Math.max(1, Math.min(12, HARDWARE_THREADS - 1 - ENGINE_POOL_SIZE));
   let postPool = null;
   function postProcessor() {
     if (postPool === false) return null;

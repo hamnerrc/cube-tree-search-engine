@@ -141,6 +141,33 @@ test('known spellings are generated: wide u/f, rotations, side-cross inspections
   assert.ok(![...later, ...root].some(x => /(^| |\|)b/.test(x)), 'never a wide b');
 });
 
+test('forward rows meet the bound table at every cut', () => {
+  const t = SpellingSearch.tables();
+  const L = SpellingSearch.lmTables();
+  const mm = SpellingSearch.mccMinimum();
+  const pen = SpellingSearch.penalties();
+  let checked = 0;
+  for (const root of [false, true]) {
+    for (let k = 0; k < 30; k++) {
+      const face = randomFace(3 + (k % 8)).map(x => t.TID.get(x));
+      const n = face.length;
+      const H = SpellingSearch.boundTable(face, null, mm, pen, L, 0, Infinity, 0, false);
+      let want = Infinity;
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) want = Math.min(want, H[(n * t.NR + ld) * 3] + (lt >= 0 ? mm[lt] : 0));
+      let F = new Float64Array(t.NR * 3).fill(Infinity);
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) F[ld * 3] = Math.min(F[ld * 3], lt >= 0 ? mm[lt] : 0);
+      for (let cut = 0; cut <= n; cut++) {
+        let got = Infinity;
+        for (let x = 0; x < t.NR * 3; x++) got = Math.min(got, F[x] + H[(n - cut) * t.NR * 3 + x]);
+        assert.ok(Math.abs(got - want) < 1e-9, `${Array.from(face, i => t.TOK[i]).join(' ')} cut ${cut}: ${got} vs ${want}`);
+        checked++;
+        if (cut < n) F = SpellingSearch.forwardStep(face, cut, F, new Float64Array(t.NR * 3), mm, pen, L);
+      }
+    }
+  }
+  assert.ok(checked > 300, `${checked} cuts checked`);
+});
+
 test('the bound is a lower bound of the real cost', () => {
   // enumerate with an infinite budget and compare each leaf's real cost
   // with the bound the search pruned against (H at the root of its walk).
