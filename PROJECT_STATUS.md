@@ -90,7 +90,8 @@ the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
 
-Tools: `tune-alg-speed.js` (tuning, below), `pair-choice.js` (pair-choice
+Tools: `tune-alg-speed.js` (tuning, below), `pair-choice-pro.js` (pros'
+pair choices under the real search), `pair-choice.js` (pair-choice
 weights, below; `--model none+look+plan`), `continuity.js` (greedy solves:
 rotations, slot order, planning on/off), `complete-coverage.js` (pro steps
 in the complete search's space, no engine), `reco.js` (data),
@@ -513,8 +514,13 @@ not look-ahead optimal).
    tuning pools did not use, the app's full search at every pro node (best
    5 per pair choice, re-scored offline): the pro's pair choice ranks first
    at 28.0% of first steps (22.7% with the weights from before the pass)
-   and 62.8% of later steps (64.2%; MRR 0.788 vs 0.792). Still open: a
-   slot-order (visibility) preference fitted on pro pair choices.
+   and 62.8% of later steps (64.2%; MRR 0.788 vs 0.792). The open-back-
+   slot weight on that data: later steps prefer 0.54-1.8 (66.4% first),
+   first steps 2.5-3.5 (28%); overall MRR 0.671-0.678 for 1.5-2.5 (noise
+   level), same-goal metrics flat over 1.5-2.5: kept at 2.54. Tool:
+   `tools/pair-choice-pro.js collect|eval` (the app's search at every pro
+   node, best 5 per pair choice with features, re-scored by any checkout;
+   ~1 min per solve; data in scratch).
 7. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
 8. **Worst case** (every option on): not re-measured with the complete
