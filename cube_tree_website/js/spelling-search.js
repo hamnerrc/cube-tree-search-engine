@@ -67,6 +67,10 @@ const SpellingSearch = (() => {
     const NT = TOK.length;
     const IS_ROT = Uint8Array.from(TOK, t => (/^[xyz]/.test(t) ? 1 : 0));
     const IS_RL = Uint8Array.from(TOK, t => (t[0] === 'r' || t[0] === 'l' ? 1 : 0));
+    // for MCC's exceptions in enumerate's walk: U face turns 1, D face turns 2
+    const FACE_UD = Uint8Array.from(TOK, t => (t[0] === 'U' ? 1 : t[0] === 'D' ? 2 : 0));
+    const R_QUARTER = Uint8Array.from(TOK, t => (['R', "R'", 'r', "r'"].includes(t) ? 1 : 0));
+    const UD_QUARTER = Uint8Array.from(TOK, t => (["U'", 'U', "D'", 'D'].includes(t.toUpperCase()) ? 1 : 0));
     const AXIS = Int8Array.from(TOK, t => ({ U: 0, D: 0, u: 0, d: 0, y: 0, R: 1, L: 1, r: 1, l: 1, x: 1, F: 2, B: 2, f: 2 })[t[0]]);
     const CONJ = ROT24.map((r) => {
       const m = new Int32Array(NT).fill(-1);
@@ -91,7 +95,7 @@ const SpellingSearch = (() => {
     const QUARTERS = TOK.map(t => (FACE_T.includes(t) && t.endsWith('2') ? [TID.get(t[0]), TID.get(`${t[0]}'`)] : []));
     const LEAD_LATER = ['', 'y', "y'", 'y2'].map(t => [t ? TID.get(t) : -1, RIDX.get(RI(t))]);
     const LEAD_ROOT = ROT24.map((r, k) => [-1, k]);
-    T = { NR, YF, YIDX, ROT_NAME, MUL, TOK, TID, NT, IS_ROT, IS_RL, AXIS, CONJ, WIDES, MIDS, QUARTERS, LEAD_LATER, LEAD_ROOT, FACE_T };
+    T = { NR, YF, YIDX, ROT_NAME, MUL, TOK, TID, NT, IS_ROT, IS_RL, FACE_UD, R_QUARTER, UD_QUARTER, AXIS, CONJ, WIDES, MIDS, QUARTERS, LEAD_LATER, LEAD_ROOT, FACE_T };
     return T;
   }
   // facelet-cube.js keeps orientation names internal; rotationName of a
@@ -709,7 +713,7 @@ const SpellingSearch = (() => {
     const L = lmTables();
     const mccMin = mccMinimum();
     const pen = penalties();
-    const { NR, CONJ, WIDES, MIDS, MUL, YF, TOK, IS_ROT, IS_RL, QUARTERS } = t;
+    const { NR, CONJ, WIDES, MIDS, MUL, YF, TOK, IS_ROT, IS_RL, QUARTERS, FACE_UD, R_QUARTER, UD_QUARTER } = t;
     const lam = STEP_PENALTIES.natural;
     const lm = L.lm;
     const AFTER = L.AFTER;
@@ -787,6 +791,34 @@ const SpellingSearch = (() => {
       if (rootOf(k) > budgetNow()) return;
       walk(k);
     };
+    // Writes token `tok` at position at0 after a walk node's tokens: the new
+    // penalties + bits (wps), naturalness context (wa, wb), least MCC so far
+    // (wmcc) and the token's own least MCC (wown), from the given state.
+    let wps = 0;
+    let wa = 0;
+    let wb = 0;
+    let wmcc = 0;
+    let wown = 0;
+    const write = (tok, at0, ps0, a0, b0, mcc0, pend0, any0, isMove) => {
+      wps = ps0 + (at0 > 0 || !IS_ROT[tok] ? pen[tok] : 0);
+      wa = a0;
+      wb = b0;
+      if (any0 || isMove) {
+        const w = L.id[tok];
+        wps += lam * lm.trigramBits(a0, b0, w);
+        wa = b0;
+        wb = w;
+      }
+      // MCC's exceptions (mccMinimum): a D after a U (or U after D) may
+      // add nothing for the U; an R quarter two moves after itself
+      // across a U/D quarter gets 0.5 back
+      const pk = at0 > 0 ? written[at0 - 1] : -1;
+      const paired = pk >= 0 && FACE_UD[pk] && FACE_UD[pk] + FACE_UD[tok] === 3;
+      wown = mccMin[tok];
+      if (R_QUARTER[tok] && at0 >= 2 && written[at0 - 2] === tok && UD_QUARTER[pk]) wown = Math.max(0, wown - 0.5);
+      wmcc = mcc0 + (paired ? 0 : pend0);
+      written[at0] = tok;
+    };
     const walk = (k) => {
       const sol = sols[k];
       const face = sol.face;
@@ -802,7 +834,9 @@ const SpellingSearch = (() => {
         const budget = opts.budget(wide);
         // after a written non-plain token (f = 0) the next token's bits are
         // at least AFTER over the table's MIN1
-        if (ps + mcc + look + (f === 0 && i > 0
+        // the last token's own MCC (pend) is certain unless it is a U or D
+        // face turn (the next could pair with it: mccMinimum)
+        if (ps + mcc + (len > 0 && !FACE_UD[written[len - 1]] ? pend : 0) + look + (f === 0 && i > 0
           ? (walkK ? afterBound(n - i, d, written[len - 1], r) : H[at(i, d, 0)] + lam * AFTER[((written[len - 1] * NR + d) * 19 + (i < n ? face[i] : 18)) * 2 + r])
           : H[at(i, d, f)]) > budget) return;
         if (i === n) {
@@ -811,59 +845,28 @@ const SpellingSearch = (() => {
           opts.leaf(written.subarray(0, len), lead, d, sol);
           return;
         }
-        // Writes token `tok` after the node's tokens: the new penalties +
-        // bits (wps), naturalness context (wa, wb), least MCC so far (wmcc)
-        // and the token's own least MCC (wown), from the given state.
-        let wps = 0;
-        let wa = 0;
-        let wb = 0;
-        let wmcc = 0;
-        let wown = 0;
-        const write = (tok, at0, ps0, a0, b0, mcc0, pend0, any0, isMove) => {
-          wps = ps0 + (at0 > 0 || !IS_ROT[tok] ? pen[tok] : 0);
-          wa = a0;
-          wb = b0;
-          if (any0 || isMove) {
-            const w = L.id[tok];
-            wps += lam * lm.trigramBits(a0, b0, w);
-            wa = b0;
-            wb = w;
-          }
-          const pt = at0 > 0 ? TOK[written[at0 - 1]] : '';
-          const tt = TOK[tok];
-          const paired = (pt[0] === 'U' && tt[0] === 'D') || (pt[0] === 'D' && tt[0] === 'U');
-          wown = mccMin[tok];
-          if ((tt === 'R' || tt === "R'" || tt === 'r' || tt === "r'") && at0 >= 2 && written[at0 - 2] === tok) {
-            const m = pt.toUpperCase();
-            if (m === "U'" || m === 'U' || m === "D'" || m === 'D') wown = Math.max(0, wown - 0.5);
-          }
-          wmcc = mcc0 + (paired ? 0 : pend0);
-          written[at0] = tok;
-        };
-        const step = (tok, d2, r2, f2, rl2, udf2, isMove, wide2) => {
-          write(tok, len, ps, a, b, mcc, pend, anyTurn, isMove);
-          rec(isMove ? i + 1 : i, d2, r2, f2, rl2, udf2, wa, wb, wps, wmcc, wown, len + 1, anyTurn || isMove, wide2);
-        };
-        // two tokens for one (half-turn) move, the second with frame d2
-        const step2 = (t1, t2, d2, rl2, udf2) => {
-          write(t1, len, ps, a, b, mcc, pend, anyTurn, true);
-          write(t2, len + 1, wps, wa, wb, wmcc, wown, true, true);
-          rec(i + 1, d2, r, 0, rl2, udf2, wa, wb, wps, wmcc, wown, len + 2, true, true);
-        };
         if (!r && i > 0) {
-          for (let k2 = 0; k2 < MIDS.length; k2++) step(MIDS[k2][0], MUL[d][MIDS[k2][1]], 1, 0, nRL, nUDF, false, wide);
+          for (let k2 = 0; k2 < MIDS.length; k2++) {
+            write(MIDS[k2][0], len, ps, a, b, mcc, pend, anyTurn, false);
+            rec(i, MUL[d][MIDS[k2][1]], 1, 0, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, anyTurn, wide);
+          }
         }
-        const w = CONJ[d][face[i]];
-        step(w, d, r, f === 2 ? 2 : f + 1, nRL, nUDF, true, wide);
+        const fi = face[i];
+        const w = CONJ[d][fi];
+        write(w, len, ps, a, b, mcc, pend, anyTurn, true);
+        rec(i + 1, d, r, f === 2 ? 2 : f + 1, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, true, wide);
         const ws = WIDES[w];
         for (let k2 = 0; k2 < ws.length; k2++) {
           const W = ws[k2][0];
           if (IS_RL[W] ? nRL >= maxRL : nUDF >= maxUDF) continue;
-          step(W, MUL[d][ws[k2][1]], r, 0, IS_RL[W] ? nRL + 1 : nRL, IS_RL[W] ? nUDF : nUDF + 1, true, true);
+          write(W, len, ps, a, b, mcc, pend, anyTurn, true);
+          rec(i + 1, MUL[d][ws[k2][1]], r, 0, IS_RL[W] ? nRL + 1 : nRL, IS_RL[W] ? nUDF : nUDF + 1, wa, wb, wps, wmcc, wown, len + 1, true, true);
         }
+        const quarters = QUARTERS[fi];
         if (!r) {
           // a half turn split by the mid-step rotation: q, rotation, q
-          for (const qf of QUARTERS[face[i]]) {
+          for (let qk = 0; qk < quarters.length; qk++) {
+            const qf = quarters[qk];
             const q = CONJ[d][qf];
             for (let k2 = 0; k2 < MIDS.length; k2++) {
               const dm = MUL[d][MIDS[k2][1]];
@@ -875,15 +878,23 @@ const SpellingSearch = (() => {
             }
           }
         }
-        for (const qf of QUARTERS[face[i]]) {
+        // a half turn as a plain and a wide quarter turn, either order
+        for (let qk = 0; qk < quarters.length; qk++) {
+          const qf = quarters[qk];
           const q = CONJ[d][qf];
-          for (const [W, rho] of WIDES[q]) {
+          const wq = WIDES[q];
+          for (let k2 = 0; k2 < wq.length; k2++) {
+            const W = wq[k2][0];
             if (IS_RL[W] ? nRL >= maxRL : nUDF >= maxUDF) continue;
-            const d2 = MUL[d][rho];
+            const d2 = MUL[d][wq[k2][1]];
             const rl2 = IS_RL[W] ? nRL + 1 : nRL;
             const udf2 = IS_RL[W] ? nUDF : nUDF + 1;
-            step2(q, W, d2, rl2, udf2);
-            step2(W, CONJ[d2][qf], d2, rl2, udf2);
+            write(q, len, ps, a, b, mcc, pend, anyTurn, true);
+            write(W, len + 1, wps, wa, wb, wmcc, wown, true, true);
+            rec(i + 1, d2, r, 0, rl2, udf2, wa, wb, wps, wmcc, wown, len + 2, true, true);
+            write(W, len, ps, a, b, mcc, pend, anyTurn, true);
+            write(CONJ[d2][qf], len + 1, wps, wa, wb, wmcc, wown, true, true);
+            rec(i + 1, d2, r, 0, rl2, udf2, wa, wb, wps, wmcc, wown, len + 2, true, true);
           }
         }
       };
@@ -1121,21 +1132,27 @@ const SpellingSearch = (() => {
       return m;
     };
     for (const c of o.extra || []) top.offer(c);
+    let budgets = null;
     let exact = 0;
     const stats = enumerate(sols, {
       root: o.root,
       seed: o.seed === undefined ? 2 * o.size : o.seed,
       maxRL: o.maxRL,
       maxUDF: o.maxUDF,
-      budget: wide => limitTpp(wide) * o.pieces - o.floor,
+      // the budgets only change when a candidate is kept
+      budget: (wide) => {
+        if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor, limitTpp(true) * o.pieces - o.floor, limitTpp(false)];
+        return budgets[wide ? 1 : 0];
+      },
       leaf: (ids, lead, end, sol) => {
         let alg = '';
         for (let k = 0; k < ids.length; k++) alg += (k ? ' ' : '') + t.TOK[ids[k]];
         exact++;
         const tpp = (o.costOf(alg) + (sol.lookByEnd ? sol.lookByEnd[t.YIDX[end]] : sol.look)) / o.pieces;
-        if (!(tpp <= limitTpp(false))) return;
+        if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor, limitTpp(true) * o.pieces - o.floor, limitTpp(false)];
+        if (!(tpp <= budgets[2])) return;
         const c = o.make(alg, lead, end, sol, tpp);
-        if (c) top.offer(c);
+        if (c && top.offer(c)) budgets = null;
       },
     });
     stats.exact = exact;
