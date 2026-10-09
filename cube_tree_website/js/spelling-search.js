@@ -339,6 +339,11 @@ const SpellingSearch = (() => {
   let KV = new Float64Array(0);
   let KN = new Uint8Array(0);
   let KB = new Uint8Array(0);
+  // GRP[(j * NR + d) * 4 + g]: with first-token rows, the least any option
+  // of group g (0 wide, 1 plain + wide split, 2 split around a rotation,
+  // 3 rotation before the move) adds from row j, frame d, its first token's
+  // bits as after anything: a walk skips a whole group above its budget.
+  let GRP = new Float64Array(0);
   let kNR = 24;
   let kNT1 = 0;
   let kEND = 0;
@@ -393,6 +398,7 @@ const SpellingSearch = (() => {
       const kv = new Float64Array(rows * NR * KS); kv.set(KV); KV = kv;
       const kn = new Uint8Array(rows * NR); kn.set(KN); KN = kn;
       const kb = new Uint8Array(rows * NR); kb.set(KB); KB = kb;
+      const gr = new Float64Array(rows * NR * 4); gr.set(GRP); GRP = gr;
     }
     kNR = NR; kNT1 = NT1; kEND = NT; kMIN2 = MIN2; kYF = YF; kLam = lam;
     // A token's least MCC as the bound counts it: an R quarter turn may get
@@ -432,7 +438,7 @@ const SpellingSearch = (() => {
       for (let d = 0; d < NR; d++) {
         const x = fc * NR + d;
         const kx = j * NR + d;
-        if (withK) KN[kx] = 0;
+        if (withK) { KN[kx] = 0; GRP[kx * 4] = Infinity; GRP[kx * 4 + 1] = Infinity; GRP[kx * 4 + 2] = Infinity; GRP[kx * 4 + 3] = Infinity; }
         const cd = CONJ[d];
         const pp = i > 0 ? cd[face[i - 1]] : -1;
         // bits of token k with flag f: i = 0 the start; else see bitsAt
@@ -461,7 +467,7 @@ const SpellingSearch = (() => {
           const W = WI[2 * k];
           const d2 = WI[2 * k + 1];
           const c = pen[W] + (pf ? 0 : OWNF[W]) + (withK ? afterBound(j - 1, d2, W, 0) : H[prevRow + d2 * 3] + lam * AFTER[((W * NR + d2) * 19 + next) * 2]);
-          if (withK) addK(kx, W, c);
+          if (withK) { addK(kx, W, c); const g = c + lam * MIN1[W]; if (g < GRP[kx * 4]) GRP[kx * 4] = g; }
           if (i === 0) {
             const v = c + lam * TRI[START + W];
             if (v < v0) v0 = v;
@@ -483,7 +489,7 @@ const SpellingSearch = (() => {
           const d2 = QI[3 * k + 2];
           const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + (withK ? afterBound(j - 1, d2, t2, 0) : H[prevRow + d2 * 3] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2]);
           const s0 = MIN2[t1 * NT1 + t2];
-          if (withK) addK(kx, t1, c + lam * s0);
+          if (withK) { addK(kx, t1, c + lam * s0); const g = c + lam * (MIN1[t1] + s0); if (g < GRP[kx * 4 + 1]) GRP[kx * 4 + 1] = g; }
           if (i === 0) {
             const v = c + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2]);
             if (v < v0) v0 = v;
@@ -511,7 +517,7 @@ const SpellingSearch = (() => {
           const c = pen[q] + OWNF[q] + pen[m] + mccMin[m] + lam * TRI[(q * NT1 + m) * NT1 + q2] + pen[q2] + (pf ? 0 : OWNF[q2])
             + H[prevRow + dm * 3] + lam * AFTER[((q2 * NR + dm) * 19 + next) * 2 + 1];
           const s0 = MIN2[q * NT1 + m];
-          if (withK) addK(kx, q, c + lam * s0);
+          if (withK) { addK(kx, q, c + lam * s0); const g = c + lam * (MIN1[q] + s0); if (g < GRP[kx * 4 + 2]) GRP[kx * 4 + 2] = g; }
           if (i === 0) {
             const v = c + lam * (TRI[START + q] + TRI[(NT * NT1 + q) * NT1 + m]);
             if (v < v0) v0 = v;
@@ -547,7 +553,7 @@ const SpellingSearch = (() => {
             const m = MID_T[k];
             const dm = MID_D[d * NM + k];
             const c = pen[m] + mccMin[m] + base[dm * 3] + lam * AFTER[((m * NR + dm) * 19 + fc) * 2 + 1];
-            if (withK) addK(kx, m, c);
+            if (withK) { addK(kx, m, c); const g = c + lam * MIN1[m]; if (g < GRP[kx * 4 + 3]) GRP[kx * 4 + 3] = g; }
             let v = c + lam * MIN1[m];
             if (v < v0) v0 = v;
             v = c + lam * (i === 1 ? TRI[ctx2 + m] : MIN2[pp * NT1 + m]);
@@ -874,7 +880,14 @@ const SpellingSearch = (() => {
           opts.leaf(written.subarray(0, len), lead, d, sol);
           return;
         }
-        if (!r && i > 0) {
+        // groups of children whose least cost is already above the budget
+        // (GRP; the last token's own MCC counts unless a split's first
+        // quarter could pair with it)
+        const gx = (( n - i) * NR + d) * 4;
+        const gBase = ps + mcc + look;
+        const gBudget = Math.max(budget, opts.budget(true));
+        const gPend = len > 0 && FACE_UD[written[len - 1]] ? 0 : pend;
+        if (!r && i > 0 && !(walkK && gBase + pend + GRP[gx + 3] > gBudget)) {
           for (let k2 = 0; k2 < MIDS.length; k2++) {
             write(MIDS[k2][0], len, ps, a, b, mcc, pend, anyTurn, false);
             rec(i, MUL[d][MIDS[k2][1]], 1, 0, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, anyTurn, wide);
@@ -885,14 +898,14 @@ const SpellingSearch = (() => {
         write(w, len, ps, a, b, mcc, pend, anyTurn, true);
         rec(i + 1, d, r, f === 2 ? 2 : f + 1, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, true, wide);
         const ws = WIDES[w];
-        for (let k2 = 0; k2 < ws.length; k2++) {
+        for (let k2 = 0; k2 < ws.length && !(walkK && gBase + pend + GRP[gx] > gBudget); k2++) {
           const W = ws[k2][0];
           if (IS_RL[W] ? nRL >= maxRL : nUDF >= maxUDF) continue;
           write(W, len, ps, a, b, mcc, pend, anyTurn, true);
           rec(i + 1, MUL[d][ws[k2][1]], r, 0, IS_RL[W] ? nRL + 1 : nRL, IS_RL[W] ? nUDF : nUDF + 1, wa, wb, wps, wmcc, wown, len + 1, true, true);
         }
         const quarters = QUARTERS[fi];
-        if (!r) {
+        if (!r && !(walkK && gBase + gPend + GRP[gx + 2] > gBudget)) {
           // a half turn split by the mid-step rotation: q, rotation, q
           for (let qk = 0; qk < quarters.length; qk++) {
             const qf = quarters[qk];
@@ -908,7 +921,7 @@ const SpellingSearch = (() => {
           }
         }
         // a half turn as a plain and a wide quarter turn, either order
-        for (let qk = 0; qk < quarters.length; qk++) {
+        for (let qk = 0; qk < quarters.length && !(walkK && gBase + gPend + GRP[gx + 1] > gBudget); qk++) {
           const qf = quarters[qk];
           const q = CONJ[d][qf];
           const wq = WIDES[q];
