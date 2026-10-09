@@ -102,17 +102,19 @@ test('searchLimitFor: distance-1 limits match the README table exactly', () => {
   assert.strictEqual(searchLimitFor(3, true, 3), 11); // XXXCross
 });
 
-test('searchLimitFor: later-step limits are keyed by TOTAL pairs in goal, not just new pairs', () => {
-  // First single-pair step (1 old... wait, 0 old + 1 new from Cross): total=1
-  assert.strictEqual(searchLimitFor(1, false, 1), 10); // matches spec's "single pair: 10"
-  // Multislot straight after Cross (0 old + 2 new): total=2
-  assert.strictEqual(searchLimitFor(2, false, 2), 12); // matches spec's "multislot: 12"
-  // A later single-pair step after 1 pair is already solved: total=2
-  assert.strictEqual(searchLimitFor(1, false, 2), 12);
-  // A later single-pair step after 2 pairs are solved: total=3 (empirically needed >10; see §4.8)
-  assert.strictEqual(searchLimitFor(1, false, 3), 14);
-  // Finishing the last pair after 3 are solved: total=4
-  assert.strictEqual(searchLimitFor(1, false, 4), 16);
+test('searchLimitFor: matched later steps are keyed by NEW pairs (complete search), pseudo ones by TOTAL pairs', () => {
+  // Complete search: every face-turn solution within 10 (one pair) or 12 moves.
+  assert.strictEqual(searchLimitFor(1, false, 1), 10);
+  assert.strictEqual(searchLimitFor(1, false, 2), 10);
+  assert.strictEqual(searchLimitFor(1, false, 4), 10);
+  assert.strictEqual(searchLimitFor(2, false, 2), 12);
+  assert.strictEqual(searchLimitFor(2, false, 4), 12);
+  assert.strictEqual(searchLimitFor(3, false, 4), 12);
+  // Pseudo engine calls stay capped and keyed by total pairs (§4.8).
+  assert.strictEqual(searchLimitFor(1, false, 1, null, true), 10);
+  assert.strictEqual(searchLimitFor(1, false, 2, null, true), 12);
+  assert.strictEqual(searchLimitFor(1, false, 3, null, true), 14);
+  assert.strictEqual(searchLimitFor(1, false, 4, null, true), 16);
 });
 
 test('DISTANCE1_LIMITS and LATER_LIMITS_BY_TOTAL have the expected shape', () => {
@@ -140,7 +142,7 @@ test('categoryFor: maps later-step pair counts to singlePair/multislot', () => {
 
 test('searchLimitFor: with no searchConfig, behaves exactly as before (no override)', () => {
   assert.strictEqual(searchLimitFor(0, true, 0), 9);
-  assert.strictEqual(searchLimitFor(1, false, 2), 12);
+  assert.strictEqual(searchLimitFor(1, false, 2), 10);
 });
 
 test('searchLimitFor: a matched-category override replaces the default for that category only', () => {
@@ -159,7 +161,7 @@ test('searchLimitFor: a singlePair/multislot override replaces the WHOLE per-tot
   const cfg = { multislot: { maxLength: 20 } };
   assert.strictEqual(searchLimitFor(2, false, 2, cfg), 20);
   assert.strictEqual(searchLimitFor(2, false, 4, cfg), 20); // same flat override regardless of total
-  assert.strictEqual(searchLimitFor(1, false, 2, cfg), 12); // singlePair untouched, falls back to default
+  assert.strictEqual(searchLimitFor(1, false, 2, cfg), 10); // singlePair untouched, falls back to default
 });
 
 test('maxSolutionsFor: falls back to the given default with no override', () => {

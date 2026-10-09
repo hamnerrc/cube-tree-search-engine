@@ -81,6 +81,7 @@ function _solveEnded() {
 let _broken = false;
 function _fatal(what) {
   _broken = true;
+  if (typeof _flushSolutions === 'function') _flushSolutions();
   if (_solveBusy) _solveEnded();
   originalPostMessage({ type: 'error', data: 'Engine failure: ' + what, fatal: true });
 }
@@ -90,8 +91,28 @@ self.addEventListener('unhandledrejection', function(event) {
   _fatal((r && r.message) || String(r));
 });
 
+// cube-tree modification: solutions are sent in batches ({ type: 'solutions',
+// data: [...] }), not one message each -- a complete search lists hundreds
+// of thousands, and one page event per solution was most of a browser step.
+// The batch is always flushed before any other message, so order is kept.
+let _batch = [];
+const BATCH_SIZE = 4096;
+function _flushSolutions() {
+  if (!_batch.length) return;
+  originalPostMessage({ type: 'solutions', data: _batch });
+  _batch = [];
+}
+
 globalThis.postMessage = function(message) {
   if (typeof message !== 'string') return;
+  const isSolution = !(message === 'Search finished.' || message === 'Search cancelled.' || message === 'Already solved.'
+    || message.startsWith('depth=') || message.startsWith('Error'));
+  if (isSolution) {
+    _batch.push(message);
+    if (_batch.length >= BATCH_SIZE) _flushSolutions();
+    return;
+  }
+  _flushSolutions();
   if (message === 'Search finished.' || message === 'Search cancelled.' || message === 'Already solved.' || message.startsWith('Error')) {
     _solveEnded();
   }

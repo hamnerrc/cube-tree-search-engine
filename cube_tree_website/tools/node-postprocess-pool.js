@@ -19,7 +19,7 @@ const { compareSearchRanks } = require('../js/search-scheduler.js');
 
 if (!isMainThread && workerData && workerData.postProcessPool) {
   const js = path.join(__dirname, '..', 'js');
-  for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js', 'solver-bridge.js']) {
+  for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js', 'spelling-search.js', 'solver-bridge.js']) {
     Object.assign(global, require(path.join(js, f)));
   }
   const { postProcessCall } = require(path.join(js, 'solver-bridge.js'));

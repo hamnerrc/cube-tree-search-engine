@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-08 (twenty-seventh pass).*
+*Last updated 2026-10-08 (twenty-eighth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -11,35 +11,29 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
 
-**Twenty-seventh pass (2026-10-08).** User tasks: (1) "hide unorthodox"
-missed a top result, (2) multislot and wide moves as instant filters,
-(3) pair-choice intuition for alg_speed trained on look-ahead outcomes,
-(4) UI/UX redesign: on hold until the developer's designs arrive. The tree
-was clean and every fast suite passed at the start.
+**Twenty-eighth pass (2026-10-08).** User tasks: (1) UI: "hide unorthodox"
+renamed "hide awkward f2l solutions" and never hides a first step; the
+configuration page's "search" box (solutions per search, time limit)
+removed; (2) solution continuity: EO-aware pair planning, learned, no rigid
+rules, toggleable for beginners; (3) a complete search: the best N
+solutions under the move limit, every rotation and wide-move insertion
+checked, optimisation after. The tree was clean and every fast suite
+passed at the start.
 
-1. **Unorthodox fix.** The user's top result (`U' F2 U' B2 D' L2 B2 R2 U2 F2
-   U F R2 D2 B' U L R U R B' F'`, yellow `y2 | R' U' R2 F R D L2 F' L'`, an
-   XCross) was a *first* step, and first steps were exempt by design. The
-   flag (`isUnorthodox`, unchanged) is now set at every step; the
-   inspection rotation comes before the step and does not count. Browser:
-   that row is #1 unfiltered and hidden with the filter.
-2. **Multislot and wide moves are filters.** The results page always
-   searches with both (`searchOptions` multislot/wideMoves true) and hides
-   them in `resultFilter` (candidates carry `multislot`; wide = `isWideAlg`),
-   like unorthodox: toggling either way takes ~10 ms in headless Chrome, no
-   search. Cost: later steps always search multislots, ~2x a later step's
-   search (Node, 10,000/call, xcross start: 5 s → 11 s). While multislots are
-   hidden the look-ahead's follow-ups are searched without them
-   (`lookaheadMultislot`; identical lists, `search-options-e2e.js`), so the
-   look-ahead keeps its old cost (depth 2: 18 s; 35 s with them). Hiding
-   wide moves now shows the wide search's non-wide results (fewer than a
-   search without wide moves would list; the old "wide twin" did the same
-   after a search). The bridge's `multislot`/`wideMoves` session settings
-   and wide-twin memo remain (tools and tests use them).
-3. **Pair choice** (README "Pair choice", `tools/pair-choice.js`,
-   `PAIR_CHOICE_LOOK` in script.js, `pairLookFeatures` in facelet-flags.js):
-   TPP = (path cost + w · look features of the cube the path leaves) / pieces.
-   Details and numbers under "Pair choice tuning" below.
+1. **UI.** Done as asked. Saved criteria from before (CRITERIA_VERSION 4)
+   lose `maxSolutions` / `timeLimit`; first steps are never flagged
+   `unorthodox` (`postProcessCall`, `postProcessComplete`).
+2. **Complete search** (README "Complete search", `js/spelling-search.js`,
+   `postProcessComplete` in solver-bridge.js). Details and numbers under
+   "Complete search" below. Correct and verified (exact against brute
+   force; zero of the old capped search's top-25 rows missing within the
+   limits; every result physically replayed), but **slower than before**:
+   on this 2-core machine a first step takes ~25-90 s and a later step
+   ~10-50 s (old: ~20 s and ~5-13 s). The performance goal (one step < 1
+   min with every option on) is **not met** yet: see Open 1.
+3. **Pair planning** (README "Pair planning", `planFeatures` in
+   facelet-flags.js, `PAIR_PLANNING` in script.js, results-page "ranking"
+   group). Details under "Pair choice tuning" below.
 
 ## Layout
 
@@ -51,7 +45,8 @@ cube_tree_website/          the site (GitHub Pages root)
   js/solver-bridge.js       SolveSession, searchCurrentNode, post-processing, look-ahead, export
   js/solver-ui.js           results page DOM, worker pools, IndexedDB prune-table cache
   js/facelet-cube.js        facelet simulator (verified against magiccube), spellings
-  js/facelet-flags.js       which pieces are solved (luck filter), pseudo masks
+  js/facelet-flags.js       which pieces are solved (luck filter), pseudo masks, look/plan features
+  js/spelling-search.js     complete search: every spelling of every face-turn solution, exact top N
   js/cross-optimization.js  first-step wide rewrites
   js/search-scheduler.js    one search at a time, active scramble first
   js/random-state-scramble.js, js/postprocess-worker.js
@@ -73,7 +68,11 @@ python3 cube_tree_website/tools/test_tree_gen.py
 for t in cube_tree_website/test/*.test.js; do node $t || echo FAIL $t; done
 ```
 
-Real-engine checks (slower): `test/pro-references-e2e.js` (pro solutions in
+`test/spelling-search.test.js` checks the complete search's branch and
+bound against brute force (fast). Real-engine checks (slower; most set
+small move limits with `test/fast-limits.js`): `test/complete-search-e2e.js`
+(complete vs the old capped search, physical replay, timings;
+`--multislot` as the app, `--no-old`), `test/pro-references-e2e.js` (pro solutions in
 the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 (full sessions, physical replay), `test/progressive-e2e.js`,
 `search-options-e2e.js`, `lookahead-e2e.js`, `offload-e2e.js`,
@@ -84,7 +83,9 @@ Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
 
 Tools: `tune-alg-speed.js` (tuning, below), `pair-choice.js` (pair-choice
-weights, below), `reco.js` (data),
+weights, below; `--model none+look+plan`), `continuity.js` (greedy solves:
+rotations, slot order, planning on/off), `complete-coverage.js` (pro steps
+in the complete search's space, no engine), `reco.js` (data),
 `pro-ranking.js` (rank of the 19 reference steps in the app's real lists,
 `--app`), `pro-references.js` (parser, segmenter), `pro-search.js`,
 `worst-case-bench.js`, `engine-battery.js` (engine rebuilds must give
@@ -97,37 +98,82 @@ Everything in the README is implemented except the visual redesign
 (waiting on the developer's design) and the gaps listed under "Open".
 
 - **Search loop:** DAG edges of the current node, deduplicated by target;
-  later steps include every solved slot in their goal; matched calls via the
-  crossSolver (pro move set, goal-DAG memoised search), pseudo calls via the
-  pseudoCrossSolver (aligned with `alignPseudoAlg`). Luck filter replays
-  every candidate on the facelet cube. Exact dedupe of rotation + alg.
-- **Spellings:** inspection variants, rotation spellings, side-cross
-  inspections, cross optimisation, wide spellings; no wide `b` anywhere.
-- **Results page:** progressive results, look-ahead (best-first), per-step
-  multislot / wide moves / filters, pagination, phone cards, Cubedb export,
-  undo, reload persistence, background searching with the active scramble
-  first, failed engine calls reported (worker restarted).
+  later steps include every solved slot in their goal. Matched calls: the
+  complete search (face turns only, uncapped, then spelling-search.js);
+  pseudo calls via the pseudoCrossSolver (capped, aligned with
+  `alignPseudoAlg`, old spelling path). Luck filter replays every solution
+  on the facelet cube. `SolveSession.completeSearch = false` restores the
+  old capped pro-move-set engine search (tools, comparisons).
+- **Spellings:** one grammar (spelling-search.js) replaces inspection
+  variants, rotation spellings, side-cross inspections, cross optimisation
+  and wide spellings for matched calls; pseudo calls keep the old ones.
+- **Results page:** progressive results, look-ahead (best-first), filters
+  (multislot, wide moves, hide awkward, simple pseudo), pair planning,
+  pagination, phone cards, Cubedb export, undo, reload persistence,
+  background searching with the active scramble first.
 - **Engines:** prune tables shared between workers and kept in IndexedDB per
-  `ENGINE_VERSION`; Asyncify kept off the hot recursion; post-processing on
-  a worker pool. Engine changes are listed in THIRD_PARTY_NOTICES.md.
+  `ENGINE_VERSION`; the cross engine worker sends solutions in batches
+  (`ENGINE_GLUE_VERSION`, its own URL parameter so the table cache stays).
 
 ### Measurements
 
-- Defaults (10,000 solutions per call, first-step limits 9/10/10/11; Node,
-  xcross + xxcross + multislot, no pseudo): first step ~18 s, later steps
-  ~4.7 s; headless Chrome first step 20.8 s (286k results), second 3.7 s.
-- Worst case (`worst-case-bench.js --max 10000 --budget 60 --post 2`: every
-  colour, xcross..xxxcross, multislot, full pseudo, pro moves): a root search
-  took 155 s with the 60 s limit (2.7M results; post-processing and ranking
-  ignored the limit). Now post-processing stops at the limit and the final
-  ranking keeps only the best candidates that fit: 58–59 s (130–160k
-  results), later steps 48–51 s. Without a limit a root search runs minutes.
-- Coverage: 44/66 reference steps are in the engine's search tree
-  (`pro-references-e2e.js`). For the reco data, 2,732 of 3,342 pro steps are
-  in their tuning pool (engine up to the pro's length + 2, capped at 5,000,
-  plus corpus algs, which include the solves' own steps).
-- Memory: ~440 bytes per listed candidate; a root list at the default is
-  ~300k candidates.
+- Complete search, this 2-core machine (4 threads), headless Chrome (1
+  engine worker, 2 post-processing workers), white, xcross + xxcross:
+  scramble `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2` first
+  step 82 s, second 48 s (old capped search: 21 s, 13 s). Node, same
+  pools: 65 s / 40 s. On it, every engine call of the first step is done
+  after 5.3 s; the rest is ranking spellings of 64,162 crosses (≤9 turns)
+  in 24 inspection orientations. Other scrambles: first steps 23-25 s,
+  later steps 2-57 s (`complete-search-e2e.js`).
+- `complete-search-e2e.js --scrambles 2 --seed 5` (2-core box, old search
+  run on the same cubes): 0 of the old top-25 rows within the limits
+  missing over 7 steps, 5,364 results replayed exact. Scramble `D R2 U' B2
+  U' R2 D2 R2 U B2 U' R2 B2 U' R' B2 F L D' F R' B2`: the complete search's
+  best first step `z' y' | D L' U L U' L' r' D2 L` has TPP 5.79, the old
+  search's best 7.21 (a side-cross spelling it never generated) -- but that
+  step took 179 s (old 55 s); later steps 0.5-93 s (old 2-5 s).
+- Solutions per goal (face turns, uncapped): cross ≤9 24k-65k; xcross ≤10
+  0.5k-4.5k per slot; 2nd pair ≤10 3k-54k (≤11: 35k-300k, ≤12: 0.2M-1.8M);
+  two pairs at once ≤12 1k-31k.
+- Coverage (`complete-coverage.js`): reco.nz later steps in the complete
+  search exactly as written 89.7% (limit 11: 92.8%), first steps 66.0%;
+  pro_references 45/47 later, 11/19 first (the rest are longer than the
+  limits). The old engine search had 44/66 of the reference steps in its
+  tree, and its 10,000-solution cap lost more in practice.
+
+## Complete search
+
+Design (README "Complete search"): the engine lists every face-turn
+solution within the limit (`COMPLETE_ENGINE_CAP` 3M only guards runaway
+settings); `SpellingSearch.topSpellings` finds exactly the best N of each
+RESULT_VIEWS filter among all spellings of all of them; calls of one step
+type share the N-th best (`typeLimits`, a big call waits for its type's
+smaller calls), and `trimToTypeBest` keeps exactly the best N per type and
+view at the end. Big calls (> 25,000 solutions) are ranked in chunks on the
+worker pool (`completeChunks`, solutions that end alike together).
+
+The bound (spelling-search.js header): cost ≥ C0 + Σ tokens (penalty +
+natural·bits + least MCC of the token) + look. C0 = least start time of the
+committed path's MCC checkpoint. Per-token least MCC from algSpeed's cases
+(`mccMinimum`; R quarter turns may get 0.5 back, the first of a U/D pair
+may add nothing). The remaining moves are bounded by a DP over (moves
+left, frame, context flag) with exact trigram bits for plain runs, bits
+conditioned on a known wide token after it, a looser term for mid-step
+rotations and rotation-split half turns. Rows depend only on the last moves
++ 2 of context, so solutions sorted by their endings share rows. Measured
+slack (true best spelling − bound) went 43 → 23 cost units per solution on
+real xcross solutions; MCC's regrips are most of what is left.
+
+Verification: `test/spelling-search.test.js` (best N of every view equal
+brute force, first and later steps, shared rows; physical spellings; bound
+≤ real cost; known spellings generated); `complete-search-e2e.js` (old
+top-25 rows within the limits all present: 0 missing over 8 steps;
+thousands of results replayed, all exact).
+
+Things that did not help (do not retry as is): stopping a solution's bound
+early once its ending alone is too costly (an ending is almost never too
+costly alone); a prefix-shared walk without the per-solution DP (5x more
+nodes).
 
 ## alg_speed tuning
 
@@ -238,6 +284,46 @@ To refit: run `data` shards, `features` (only for files from before the
 path was recorded), then `fit --data a,b,c,d` and copy the last 5 printed
 values into `PAIR_CHOICE_LOOK`.
 
+### Pair planning (twenty-eighth pass)
+
+User task: whole-solve continuity (the top result at every step gave 2+
+rotations and front slots first), built around EO, learned, no rigid
+filters, togglable for beginners. `planFeatures` (facelet-flags.js), of the
+unsolved pairs **in the orientation the cube is held in** after the step:
+bad / good U-layer edges (top sticker of a front/back colour = good), bad
+middle-layer edges, open back slots. Verified: a y swaps good/bad U edges
+and keeps middle ones; `R U R'` leaves a good edge, `F' U' F` a bad one.
+Fitted with the look weights on the same 2-step look-ahead data (the
+twenty-seventh pass's 435 steps, features recomputed from the recorded
+paths; `pair-choice.js features`, `fit --model none+look+plan`):
+
+| model (held out, 435 steps) | regret all | first steps | later steps | top-1 | pair top-1 |
+|---|---|---|---|---|---|
+| look only (planning off) | 0.222 | 0.398 | 0.143 | 58.4% | 68.3% |
+| look + plan (**app default**) | 0.211 | 0.377 | 0.136 | 60.5% | 71.0% |
+
+In sample 0.205 (small gap: 4 extra weights). Weights: plan [0.6, -1.59,
+0.78, 0.54], look refitted [0.4, 0.2, 0.24, -1.4, -5.58]
+(`PAIR_PLANNING`). In the complete search the plan cost is per solution
+per end rotation (`lookByEnd`), so spellings that end rotated differently
+rank differently; in the old path it is computed from the cube as written.
+
+Continuity (`tools/continuity.js --scrambles 30 --seed 101 --max 1000`,
+capped search for speed, same ranking; top result committed every step):
+
+| planning | rotations/solve | rotating steps | first two pairs both front | bad U edges left/step | solve TPP |
+|---|---|---|---|---|---|
+| off | 1.17 | 33.3% | 23% | 0.72 | 9.477 |
+| on | 0.93 | 25.7% | 20% | 0.53 | 9.370 |
+
+Not done: the pro check (`pair-choice.js pro`/`proeval` needs regenerated
+data with plan features; the old file has no algs), and a visibility
+("back slots first") preference beyond what the look-ahead labels price:
+the fitted open-back-slot weight is mechanical, and "both front first"
+only fell 23% → 20%. Fitting slot order on professional choices is the
+next lever (avoid the twenty-seventh pass's trap: pros' first steps are
+not look-ahead optimal).
+
 ## Traps (verified the hard way)
 
 - Verify cube-state claims physically (facelet replay, cross-checked against
@@ -263,6 +349,16 @@ values into `PAIR_CHOICE_LOOK`.
 - Search memo keys use the committed steps, not the joined path text (step
   penalties depend on step boundaries).
 - Pro steps are in the LM corpus: never quote in-sample ranks of pro steps.
+- `canonicalizeForEngine(rot, alg)` returns `{ rotation, moves }` as
+  "rotation, then moves": the face turns are in the frame the alg ENDS in.
+  The face turns in the starting frame are
+  `relabelAlgForRotation(moves, inverseRotation(rotation))`.
+- The complete search ignores `maxSolutions` for matched calls: a test that
+  wants a quick search sets small limits (`test/fast-limits.js`).
+- The browser engine worker used to post one message per solution; with
+  hundreds of thousands per call that was most of a browser step (fixed:
+  batches). Measure browser and Node on the same scramble before blaming
+  the browser: scrambles differ by 3x.
 - `pgrep -f "<script> data"` inside a wait loop matches the loop's own
   command line: wait on a PID or a file instead.
 - zsh does not word-split `${X:+--flag $X}`: pass flags explicitly.
@@ -274,26 +370,33 @@ values into `PAIR_CHOICE_LOOK`.
 
 ## Open
 
-1. **Search coverage:** corpus candidates now put natural algs into later
-   steps' lists; first steps (cross / xcross from inspection) have no such
-   source and rank worst. Ideas: deeper R/U-restricted searches for the last
-   pairs, more than one engine rotation per step, an inspection model.
-2. **Worst case:** within the limit now, but only by cutting: with every
-   option on, a root search lists ~150k of the ~1M+ candidates it could.
-   Faster post-processing / ranking (commuteNormalize dedupe keys are most
-   of the ~6.3 µs per candidate) would keep more.
+1. **Complete search speed** (user task 3, twenty-eighth pass): exact but
+   slow; first steps ~25-90 s, later steps ~2-57 s on this 2-core machine
+   (old: ~20 s / ~5-13 s). Where the time goes: ranking spellings (the
+   engine is done in ~5 s); the bound pass over every solution (~6-15 µs
+   per bound row) and walks of solutions the bound cannot rule out. Levers,
+   in order: (a) a tighter MCC bound -- MCC's regrips are most of the ~23
+   units of slack; a DP over wrist states (MCC's own state machine,
+   minimising over grips is still a lower bound of its greedy result) would
+   let most solutions be skipped; (b) the first step's 24 inspection
+   orientations (most of a root walk's nodes): a per-orientation bound
+   table; (c) typed-array, closure-free boundTable (~2-3x per row); (d)
+   sharing work between the cross and xcross calls of a colour.
+2. **Search coverage:** 89.7% of pro later steps and 66% of first steps
+   are in the complete search exactly as written; the rest are longer than
+   the limits (single pair 10, first steps 9-11), use slices, or rotate
+   twice mid-step. First steps rank worst (no inspection model).
 3. **More tuning data:** more solvers from reco.nz (`node tools/reco.js
    fetch <raw.json> "Name"`, then `convert`, `corpus`, `pools`, `fit`).
    Yiheng Wang's style (many mid-step rotations) dominates the fit; another
-   CFOP solver would make it less personal.
-4. **Visual redesign** (README): waiting on the developer's design (user
-   task 4, twenty-seventh pass: on hold).
-5. A later step searched as the first call of a fresh browser worker once
+   CFOP solver would make it less personal. Also: refit `alg_speed` on the
+   complete search's pools (the fit used capped pools).
+4. **Visual redesign** (README): waiting on the developer's design.
+5. **Pair planning:** pro check of the planning weights; slot-order
+   (visibility) preference fitted on pro choices; more look-ahead data.
+6. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
-6. **Pair choice:** more look-ahead data (pair-choice.js shards) and richer
-   features (e.g. edge orientation of U-layer pieces, pairs one turn from
-   connected) are the next levers; first-step pair choice (which xcross)
-   gains most from the look-ahead and still trails it most.
-7. **Later-step search cost doubled** by always searching multislots
-   (task 2); a split multislot search (singles first, multislots merged
-   in as the wide twin does) would make the visible list final sooner.
+7. **Worst case** (every option on): not re-measured with the complete
+   search; the search time limit (`SolveSession.timeBudgetMs`) still exists
+   for tools but is no longer on the configuration page and does not cut
+   the complete search's ranking.

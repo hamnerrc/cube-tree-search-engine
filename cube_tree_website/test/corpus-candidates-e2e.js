@@ -14,6 +14,7 @@
  * Usage: node test/corpus-candidates-e2e.js [--scrambles 4] [--seed 7] [--max 10000]
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -47,6 +48,7 @@ function physicallyExact(session, r) {
     const scramble = generateRandomStateScramble(rnd);
     const session = new B.SolveSession(scramble, pruned, ['white'], advanced);
     session.maxSolutions = maxSolutions;
+    fastLimits(session, { depth: 1 });
     session.multislot = true;
     while (!session.isComplete) {
       const list = await B.searchCurrentNode(session, h, null);

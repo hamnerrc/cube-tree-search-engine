@@ -22,7 +22,7 @@ const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
 // always has the multislot edges; the results page decides if they are searched.
 const RETIRED_OPTIONS = ['simplified_pseudo', 'multislotting'];
 // Saved-criteria format; 2: the time limit is null for none (was 60 by default).
-const CRITERIA_VERSION = 3;
+const CRITERIA_VERSION = 4;
 
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
@@ -130,12 +130,6 @@ function persistAndNavigate() {
     const searchCriteria = {
         colors: getCheckedValues('#colors-group input[type="checkbox"]:checked'),
         advanced: getCheckedValues('#advanced-group input[type="checkbox"]:checked'),
-        // Solutions requested per engine call (README "Search limits":
-        // as high as practical); blank/invalid falls back to the default.
-        maxSolutions: parseInt(document.getElementById('max-solutions')?.value, 10) || undefined,
-        // Per-search time budget in seconds (README "Performance goal");
-        // blank (the default), 0 or invalid = no limit, stored as null.
-        timeLimit: parseTimeLimit(document.getElementById('time-limit')?.value),
         // Per-category overrides (README "Granular search configuration");
         // undefined when every per-category field was left blank.
         searchConfig: readSearchConfig(),
@@ -146,21 +140,11 @@ function persistAndNavigate() {
     window.location.href = 'solver.html';
 }
 
-/** Time limit field -> seconds, or null for none (blank, 0 or not a number). */
-function parseTimeLimit(raw) {
-    const v = parseInt(raw, 10);
-    return Number.isFinite(v) && v > 0 ? v : null;
-}
-
 function restoreCheckboxState() {
     const rawState = localStorage.getItem(STORAGE_KEY);
     if (!rawState) return;
 
-    const { colors = [], advanced = [], maxSolutions, searchConfig, timeLimit } = normalizeCriteria(JSON.parse(rawState));
-    const maxSolutionsInput = document.getElementById('max-solutions');
-    if (maxSolutionsInput && maxSolutions) maxSolutionsInput.value = maxSolutions;
-    const timeLimitInput = document.getElementById('time-limit');
-    if (timeLimitInput) timeLimitInput.value = timeLimit > 0 ? timeLimit : '';
+    const { colors = [], advanced = [], searchConfig } = normalizeCriteria(JSON.parse(rawState));
     restoreSearchConfigInputs(searchConfig);
 
     const checkMatching = (selector, values) => {
@@ -185,13 +169,12 @@ function normalizeCriteria(criteria) {
     const legacy = {};
     if ((criteria.advanced || []).includes('simplified_pseudo')) legacy.simplePseudo = true;
     if ((criteria.advanced || []).includes('multislotting')) legacy.multislot = true;
-    // Time limit: blank = none (null). Before CRITERIA_VERSION 2 the field
-    // defaulted to 60, so a stored 60 from then was the default, not a choice.
-    const limit = Number(criteria.timeLimit);
-    out.timeLimit = Number.isFinite(limit) && limit > 0 && !(limit === 60 && !(criteria.version >= 2)) ? limit : null;
-    // Solutions per search: before CRITERIA_VERSION 3 the field defaulted to
-    // 500, so a stored 500 from then was the default, not a choice (now 10000).
-    if (criteria.maxSolutions === 500 && !(criteria.version >= 3)) out.maxSolutions = 10000;
+    // The "search" settings (solutions per search, time limit) are gone
+    // (CRITERIA_VERSION 4): every search uses the default solutions per call
+    // (the per-type limits still override it) and has no time limit, even
+    // when a saved search from before set them.
+    delete out.maxSolutions;
+    delete out.timeLimit;
     if (criteria.lookaheadDepth > 1) legacy.lookaheadDepth = criteria.lookaheadDepth;
     if (criteria.lookaheadBreadth) legacy.lookaheadBreadth = criteria.lookaheadBreadth;
     delete out.lookaheadDepth;
@@ -214,9 +197,10 @@ const INFO_SECTIONS = [
     ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
     ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
     ['always on', 'pro move set (wide <span class="moves">r/l</span>, one mid-step <span class="moves">y</span> or <span class="moves">x</span> rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
-    ['search', 'solutions per search: candidates per solver call; more finds more, slower. time limit: each step stops after this many seconds and shows the best found (blank = no limit). per-type limits: max solutions / move depth per step type; blank = default.'],
+    ['per-type limits', 'max solutions (per solver call) and move depth per step type; blank = default (10000 solutions, the depths in the readme).'],
     ['results', 'results appear as they are found and re-rank as the search continues. click a row to commit that step; undo steps back. hover an option or a column title for a short hint.'],
-    ['filters', 'set per step; they hide results without searching again (unticked or ticked, the change is instant) and apply to the step on screen and every later one until changed; the status line says how many are hidden. multislot: show later steps that solve several pairs at once. wide moves: show results with wide moves (<span class="moves">r l u d f</span>; never a wide <span class="moves">b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>. hide unorthodox: hide steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, <span class="moves">R2</span> = +2 or -2, whichever stays closer to the start, so <span class="moves">R U R2 U\' R</span> is fine but <span class="moves">R U R U\' R\'</span> and a lone <span class="moves">R2</span> are not). simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['filters', 'set per step; they hide results without searching again (unticked or ticked, the change is instant) and apply to the step on screen and every later one until changed; the status line says how many are hidden. multislot: show later steps that solve several pairs at once. wide moves: show results with wide moves (<span class="moves">r l u d f</span>; never a wide <span class="moves">b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>. hide awkward f2l solutions: hide later steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, <span class="moves">R2</span> = +2 or -2, whichever stays closer to the start, so <span class="moves">R U R2 U\' R</span> is fine but <span class="moves">R U R U\' R\'</span> and a lone <span class="moves">R2</span> are not); first steps are never hidden. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
+    ['pair planning', 'on by default. the ranking also plans the rest of the solve as an experienced solver does: it prefers steps (and rotations) that leave the remaining pairs\' edges oriented, so they insert with <span class="moves">R U L</span> turns and no rotation later, and that solve the back slots first, keeping the open slots in view. off: steps are ranked by their own speed, plus free and trapped pairs. learned from look-ahead outcomes, not fixed rules.'],
     ['look-ahead', 're-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow.'],
     ['solution', 'the committed steps, labelled like a reconstruction. copy puts the scramble and the solution on the clipboard; cubedb opens them on cubedb.net for playback.'],
     ['background', 'every scramble keeps searching while you look at another one, or at another tab. browsers give background tabs less cpu, so searches there are slower (chrome\'s energy saver may pause them until you come back).'],
@@ -746,7 +730,18 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
         for (let i = order - 1; i < s.length; i++) total += bits(s.slice(i - order + 1, i), s[i]);
         return total;
     }
-    return { surprise, bits, algs: algs.length };
+    // Incremental form of surprise() (trigram models only), for searches that
+    // extend algs one token at a time: start with a = b = START, add
+    // trigramBits(a, b, w) for each token id w (then a = b, b = w) and
+    // trigramBits(a, b, END) at the end -- the same table, so the same sum.
+    function trigramBits(a, b, w) {
+        const k = (a * (V + 1) + b) * V + w;
+        let x = table[k];
+        if (x < 0) x = table[k] = bits([names[a], names[b]], names[w]);
+        return x;
+    }
+    const incremental = fast ? { trigramBits, tokenId: t => ids.get(t), START: V, END } : null;
+    return { surprise, bits, algs: algs.length, incremental };
 }
 
 /**
@@ -779,12 +774,25 @@ function f2lCorpusAlgs() {
 // so a complete solution's cost is unchanged. Fitted so the single-step
 // ranking anticipates the 2-step look-ahead (tools/pair-choice.js).
 const PAIR_CHOICE_LOOK = [0.54, 0.78, 0.45, -1.43, -5.66];
+// Pair planning (README "Pair planning", on by default; the results page can
+// turn it off): the pair-choice term also weighs the edge orientation of the
+// unsolved pairs' edges and the open back slots, in the orientation the cube
+// is left in (facelet-flags.js planFeatures, PLAN_FEATURES order), so a
+// rotation that leaves the remaining edges good, or a pair that leaves the
+// back slots solved, ranks higher. Fitted jointly with the look weights on
+// the same 2-step look-ahead data (tools/pair-choice.js --model none+look+plan).
+const PAIR_PLANNING = { look: [0.4, 0.2, 0.24, -1.4, -5.58], plan: [0.6, -1.59, 0.78, 0.54] };
 
 let naturalnessModel = null;
 /** Naturalness surprise of an alg in bits (see buildNaturalnessModel); built on first use. */
 function algSurprise(alg) {
     if (!naturalnessModel) naturalnessModel = buildNaturalnessModel();
     return naturalnessModel.surprise(alg);
+}
+/** The model algSurprise uses (built on first use). */
+function currentNaturalnessModel() {
+    if (!naturalnessModel) naturalnessModel = buildNaturalnessModel();
+    return naturalnessModel;
 }
 /** Swaps the model algSurprise uses (null: the default, rebuilt on next use); for benchmarks. */
 function useNaturalnessModel(model) {
@@ -1620,9 +1628,11 @@ if (typeof module !== 'undefined' && module.exports) {
         STEP_PENALTIES,
         stepPenalty,
         PAIR_CHOICE_LOOK,
+        PAIR_PLANNING,
         algSurprise,
         buildNaturalnessModel,
         useNaturalnessModel,
+        currentNaturalnessModel,
         HUMAN_F2L_ALGS,
         proStepAlgs,
         f2lCorpusAlgs,
@@ -1633,7 +1643,6 @@ if (typeof module !== 'undefined' && module.exports) {
         calculateSolvedPieces,
         pruneGraph,
         normalizeCriteria,
-        parseTimeLimit,
         CRITERIA_VERSION,
         RETIRED_OPTIONS,
         ALWAYS_ON_OPTIONS

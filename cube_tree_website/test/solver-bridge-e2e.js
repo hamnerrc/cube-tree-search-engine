@@ -23,6 +23,7 @@
  * (PROJECT_STATUS.md §4.16 -- a wrong-frame node let 26 of 501 candidates
  * on one scramble break a committed pair while passing the luck check).
  */
+const { fastLimits } = require('./fast-limits.js');
 const path = require('path');
 const fs = require('fs');
 const root = path.join(__dirname, '..');
@@ -78,7 +79,7 @@ function randomScramble(n) {
 
   for (let i = 0; i < nScrambles; i++) {
     const scramble = randomScramble(20);
-    const session = new SolveSession(scramble, pruned, colors, advanced);
+    const session = fastLimits(new SolveSession(scramble, pruned, colors, advanced));
     const trace = [];
     for (let step = 0; step < maxSteps && !session.isComplete; step++) {
       const t0 = Date.now();

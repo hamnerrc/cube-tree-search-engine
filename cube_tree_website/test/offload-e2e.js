@@ -17,6 +17,7 @@
  * Usage: node test/offload-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -46,6 +47,7 @@ async function test(name, fn) {
   const session = (offload, committed = []) => {
     const s = new SolveSession(SCRAMBLE, pruned, ['white'], advanced);
     s.maxSolutions = 60;
+    fastLimits(s);
     if (offload) s.postProcessor = post.process;
     for (const c of committed) s.commit(c);
     return s;

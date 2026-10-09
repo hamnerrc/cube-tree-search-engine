@@ -13,6 +13,7 @@
  * Usage: node test/lookahead-e2e.js [--pro]
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -34,7 +35,7 @@ const advanced = process.argv.includes('--pro') ? ['pro_moves'] : [];
   const h = new CrossSolverHelperNode(); await h.init();
   // 500 solutions per call (the default is 10,000): this tests the look-ahead
   // itself, and the memo must hold the whole look-ahead for the reuse check.
-  const newSession = () => { const s = new SolveSession(SCRAMBLE, pruned, ['white'], advanced); s.maxSolutions = 500; return s; };
+  const newSession = () => { const s = new SolveSession(SCRAMBLE, pruned, ['white'], advanced); s.maxSolutions = 500; return fastLimits(s); };
   const close = (a, b) => Math.abs(a - b) < 1e-9 || (a === Infinity && b === Infinity);
 
   /** Fresh sessions, no memo: commit `rows` one search at a time, matching by alg. */

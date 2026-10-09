@@ -12,6 +12,7 @@
  * Usage: node test/cubedb-export-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -40,6 +41,7 @@ async function solve(scramble, advanced, colors, opts, pick, h, ph) {
   const tree = JSON.parse(fs.readFileSync(path.join(root, 'data', 'f2l_nodes_and_edges.json'), 'utf8'));
   const s = new SolveSession(scramble, pruneGraph(tree, { advanced: [...advanced, 'multislotting'], colors }), colors, advanced);
   s.maxSolutions = 100;
+  fastLimits(s);
   for (let step = 0; !s.isComplete; step++) {
     assert.ok(step < 8, 'solve did not finish');
     const list = await searchWithLookahead(s, h, null, ph, opts);

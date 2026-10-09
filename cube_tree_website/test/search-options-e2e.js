@@ -19,6 +19,7 @@
  * Usage: node test/search-options-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -51,7 +52,7 @@ function physicallyExact(session, r) {
   const base = ['xcross', 'pro_moves', 'cross_opt'];
   const withMulti = pruneGraph(tree, { advanced: [...base, 'multislotting'], colors: ['white'] });
   const noMulti = pruneGraph(tree, { advanced: base, colors: ['white'] });
-  const session = (t) => { const s = new SolveSession(SCRAMBLE, t, ['white'], base); s.maxSolutions = 100; return s; };
+  const session = (t) => { const s = new SolveSession(SCRAMBLE, t, ['white'], base); s.maxSolutions = 100; return fastLimits(s); };
 
   // A later step: commit the best plain cross (3 pairs left, so multislots exist).
   const rootList = await searchWithLookahead(session(withMulti), h, null, null, {});
@@ -99,10 +100,9 @@ function physicallyExact(session, r) {
     console.log(`  ${halfTurn.length} R2/L2 results, ${halfTurn.filter(r => !r.unorthodox).length} orthodox, e.g. ${(halfTurn.find(r => !r.unorthodox) || {}).coreAlg}`);
   });
 
-  await test('first steps are flagged unorthodox too (inspection rotation not counted)', async () => {
-    assert.ok(rootList.some(r => /(^| )[RL]2/.test(r.coreAlg)), 'the root uses R2/L2');
-    assert.ok(rootList.every(r => !!r.unorthodox === isUnorthodox(r.coreAlg)), 'flag == isUnorthodox');
-    assert.ok(rootList.some(r => r.unorthodox) && rootList.some(r => !r.unorthodox));
+  await test('first steps are never flagged unorthodox (the awkward filter never hides them)', async () => {
+    assert.ok(rootList.some(r => isUnorthodox(r.coreAlg)), 'the root has steps the rule would call unorthodox');
+    assert.ok(rootList.every(r => !r.unorthodox), 'no first step flagged');
     assert.ok(rootList.every(r => !r.multislot), 'no first step is a multislot');
   });
 

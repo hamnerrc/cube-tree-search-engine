@@ -98,6 +98,12 @@ listed here with the date of the change.
   uncaught worker error) rejects with `err.fatal`; `terminate()` settles the
   in-flight call and pending table requests. Search behaviour is unchanged.
 
+- **2026-10-08** `crossSolver/worker-persistent.js`, `solver-helper.js`:
+  solutions are sent to the page in batches (`{ type: 'solutions', data:
+  [...] }`, flushed before any other message, so order is kept) instead of
+  one message each; the complete search lists hundreds of thousands per
+  call. The helper accepts both. No engine (WASM) change.
+
 ## Trangium's MCC (Movecount Coefficient) — MIT
 
 Source: https://github.com/trangium/trangium.github.io. The `algSpeed`

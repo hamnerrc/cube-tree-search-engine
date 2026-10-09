@@ -30,6 +30,10 @@
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
 const ENGINE_VERSION = '20261006-fatal1';
+// The engine worker's JS glue (crossSolver/worker-persistent.js) can change
+// without the engine: its own URL parameter, so the prune-table cache
+// (keyed by ENGINE_VERSION) stays valid.
+const ENGINE_GLUE_VERSION = 'batch1';
 
 // The cache-buster this script was loaded with (solver.html's ?v=...), passed
 // on to the post-processing workers so they load the same script versions.
@@ -72,7 +76,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // of its solver calls at once and the scheduler runs one per worker, so the
   // calls of a search (one per DAG edge and colour) run in parallel. One core
   // is left for the page itself; each worker holds its own tables (~100 MB).
-  const ENGINE_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+  // The complete search's engine calls are face turns only and mostly quick;
+  // ranking every spelling of their solutions (post-processing pool, below)
+  // is most of a search's time, so the engines get about half the cores.
+  const ENGINE_POOL_SIZE = Math.max(1, Math.min(3, Math.floor((((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1) / 2)));
 
   // Prune-table sharing (PROJECT_STATUS.md §4.40). Every engine worker used
   // to build the same "cross + corner/edge" tables itself (~0.4 s per 4.5 MB
@@ -171,7 +178,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       helper = (async () => {
         const stored = loadStoredTables();
         const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
-          const h = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}`);
+          const h = new CrossSolverHelper(`crossSolver/worker-persistent.js?v=${ENGINE_VERSION}&glue=${ENGINE_GLUE_VERSION}`);
           await h.init();
           return h;
         });
@@ -242,7 +249,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // Sized to the cores the engine pool leaves (at least one, at most 4): on
   // a 2-core/4-thread machine one worker (warm depth-5 look-ahead ~12% faster,
   // and the page stays responsive); more only where cores are free.
-  const POST_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1 - ENGINE_POOL_SIZE));
+  const POST_POOL_SIZE = Math.max(1, Math.min(6, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1 - ENGINE_POOL_SIZE));
   let postPool = null;
   function postProcessor() {
     if (postPool === false) return null;
@@ -323,13 +330,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const session = new SolveSession(scramble, prunedTree, getCheckedColors(), (criteria && criteria.advanced) || []);
       const post = postProcessor();
       if (post) session.postProcessor = post;
-      if (criteria && criteria.maxSolutions > 0) session.maxSolutions = criteria.maxSolutions;
       if (criteria && criteria.searchConfig) session.searchConfig = criteria.searchConfig;
-      // README "Performance goal": each step's search stops after the time
-      // limit and shows what it found (§4.36). Blank (null) = no limit, the
-      // default; so is anything that is not a positive number.
-      const limit = criteria ? Number(criteria.timeLimit) : NaN;
-      session.timeBudgetMs = Number.isFinite(limit) && limit > 0 ? limit * 1000 : 0;
       session._status = 'pending'; // README "Asynchronous background searching": pending|searching|done|error
       sessions.set(index, session);
     }
@@ -422,7 +423,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const DEFAULT_PAGE_SIZE = 25;
   const view = {
     lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, wideMoves: true,
-    hideUnorthodox: false, simplePseudo: false, pageSize: DEFAULT_PAGE_SIZE,
+    hideUnorthodox: false, simplePseudo: false, planning: true, pageSize: DEFAULT_PAGE_SIZE,
   };
   let currentPage = 0;
   let shownResults = null; // the list on screen (complete or partial)
@@ -447,6 +448,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     delete view.noR2L2; // a removed option (unorthodox filter replaces it), maybe still saved
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
+    view.planning = view.planning !== false;
   }
 
   function saveViewPrefs() {
@@ -475,6 +477,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (unorthodox) unorthodox.checked = view.hideUnorthodox;
     const simple = document.getElementById('simple-pseudo');
     if (simple) simple.checked = view.simplePseudo;
+    const planning = document.getElementById('pair-planning');
+    if (planning) planning.checked = view.planning;
     const size = document.getElementById('page-size');
     if (size) size.value = view.pageSize;
   }
@@ -494,6 +498,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('hide-unorthodox', 'change', (e) => { view.hideUnorthodox = e.target.checked; refine(); });
     on('wide-moves', 'change', (e) => { view.wideMoves = e.target.checked; refine(); });
     on('multislot', 'change', (e) => { view.multislot = e.target.checked; refine(); });
+    // Pair planning changes the ranking itself: the step is searched again
+    // (or taken from the memo, if it was searched with that setting before).
+    on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
     on('page-size', 'change', (e) => {
       view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
       saveViewPrefs();
@@ -649,13 +656,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       filterKey: filter.key,
       multislot: true,
       wideMoves: true,
+      planning: view.planning,
       lookaheadMultislot: view.multislot,
     };
   }
 
   function resultsFor(session, h, ph, priority) {
     const opts = searchOptions(priority);
-    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey].join('|');
+    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey, opts.planning ? '' : 'noplan'].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       session._status = 'searching';
       renderScrambleStatusIfActive(session);

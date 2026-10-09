@@ -20,6 +20,7 @@
  * Usage: node test/wide-moves-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -53,14 +54,15 @@ function checkPhysically(session, r) {
     const advanced = [...steps, 'cross_opt', 'pro_moves'];
     const s = new SolveSession(SCRAMBLE, pruneGraph(tree, { advanced: [...advanced, 'multislotting'], colors: ['white'] }), ['white'], advanced);
     s.maxSolutions = 500;
+    fastLimits(s);
     const results = await searchWithLookahead(s, h, null, null, { depth: 1 });
     const label = steps.length ? steps.join(' + ') : 'default config';
     const wide = results.filter(r => WIDE_RL.test(r.coreAlg));
     await test(`${label}: r/l first steps are generated`, () => {
-      assert.ok(wide.length > 1000, `only ${wide.length} of ${results.length} results use r/l`);
-      // the three sources: the engine's pro move set (wide move after the
-      // first turn), side-cross inspections (x/z inspection, wide first turn)
-      // and cross optimisation (Cross results)
+      // (the complete search keeps the best N of each type: a share, not a count)
+      assert.ok(wide.length >= results.length / 10, `only ${wide.length} of ${results.length} results use r/l`);
+      // the three kinds: a wide move inside the step, side-cross inspections
+      // (x/z inspection, wide first turn) and wide Crosses
       assert.ok(wide.some(r => !WIDE_RL.test(r.coreAlg.split(' ')[0])), 'a wide move inside the step');
       assert.ok(wide.some(r => /[xz]/.test(r.rotation) && WIDE_RL.test(r.coreAlg.split(' ')[0])), 'a side-cross inspection with a wide first turn');
       assert.ok(wide.some(r => r.type === 'Cross'), 'a wide Cross');

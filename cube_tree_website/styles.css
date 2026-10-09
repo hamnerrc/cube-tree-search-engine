@@ -176,7 +176,7 @@ legend {
 /* ---- config page --------------------------------------------------------- */
 .options-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
 }
 
@@ -194,13 +194,6 @@ legend {
     cursor: pointer;
 }
 
-.option-group label.field {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.3rem;
-    color: var(--muted);
-    cursor: default;
-}
 
 input[type="checkbox"] {
     appearance: none;
@@ -794,21 +787,6 @@ button:disabled {
         --gutter: 1rem;
     }
 
-    .options-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .options-grid #search-group {
-        grid-column: 1 / -1;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 0.5rem 1.5rem;
-    }
-
-    .options-grid #search-group label.field {
-        flex: 1 1 12rem;
-    }
-
     .results-table th,
     .results-table td {
         padding: 0.5rem 0.5rem;
@@ -1004,14 +982,6 @@ button:disabled {
 @media (max-width: 480px) {
     .options-grid {
         grid-template-columns: minmax(0, 1fr);
-    }
-
-    .options-grid #search-group {
-        flex-direction: column;
-    }
-
-    .options-grid #search-group label.field {
-        flex: none;
     }
 
     .options-grid #colors-group,

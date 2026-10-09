@@ -140,6 +140,42 @@ are solved (e.g. "back slots first") was offered to the fit as well and
 did not generalise: a step may start with a free `y`, so the solved slots'
 position hardly predicts the next step's cost.
 
+### Pair planning
+
+Picking the best step at every step is not the best solve: two front slots
+first leave the back slots (and their pieces) out of view, and a pair
+solved with a rotation can leave every remaining edge needing another.
+Experienced solvers plan with **edge orientation (EO)**: with the cross on
+the bottom, an unsolved pair's edge is *good* when it inserts with `R`, `U`
+and `L` turns alone (in the U layer: its top sticker has the front or back
+centre's colour; in a middle slot: its sticker facing front or back does)
+and *bad* otherwise. A `y` turns every U-layer edge good↔bad and leaves
+middle-layer edges alone, so solving the good edges first and then
+rotating once (or rotating once when all are bad) leaves the rest
+rotationless.
+
+`pair_choice` therefore also sees, of the unsolved pairs and **in the
+orientation the step leaves the cube in** (so two spellings of a step that
+end rotated differently score differently): bad and good U-layer edges,
+bad middle-layer edges, and open back slots. Like the look features it is
+learned, not a rule: its weights are fitted together with them on the same
+2-step look-ahead outcomes, and kept only because they rank the look-ahead's
+best candidate first more often on scrambles the fit never saw.
+
+Learned weights (time units per edge or slot): bad U edge +0.60, good U
+edge −1.59, bad middle edge +0.78, open back slot +0.54 (look weights
+refitted with them: connected −5.58, both in U −1.40, trapped corner +0.40,
+trapped edge +0.20, lone piece home +0.24). Held out, the candidate ranked
+first is closer to the look-ahead's best (regret 0.222 → 0.211; first
+steps 0.398 → 0.377, later steps 0.143 → 0.136), and in solves that commit
+the top result at every step, solves rotate less and solve the two front
+slots first less often (`tools/continuity.js`; numbers in
+PROJECT_STATUS.md).
+
+**Pair planning** is a results-page setting, on by default. Off, steps are
+ranked by their own speed plus the look features (`PAIR_CHOICE_LOOK`), for
+solvers who want the plain solution of each pair, not a plan.
+
 ## What the DAG edges mean
 
 A **distance-1** step starts from the unsolved node (the first step).
@@ -168,86 +204,95 @@ A result must solve **exactly** what its DAG edge claims. A result that
 solves more by luck is discarded there; it appears under the matching edge
 instead (an XCross that also solves a second pair is an XXCross result).
 
-## Search limits
+## Complete search
 
-| Step type | Max moves |
-|---|---|
-| Cross | 9 |
-| XCross | 10 |
-| XXCross | 10 |
-| XXXCross | 11 |
-| Single pair (later step) | 10 |
-| Two pairs at once / multislot (later step) | 12 |
+The search finds **exactly the best N results of every step type, among
+every solution within its move limit, in every spelling** (rotations and
+wide moves included). No solution is lost to a per-call cap or to the order
+an engine happens to list solutions in; the speed-ups below are exact.
 
-These are generous on purpose, to capture longer but smoother solutions.
-Solutions per solver call default to **10,000** for every type (a saved 500,
-the old default, becomes 10,000). Each row can get its own solution and depth
-limit, separately for matched and pseudo searches; blank keeps the default.
-A Single pair or Multislot override applies to every later step of that kind,
-however many pairs are already solved.
+1. **Every face-turn solution.** For each DAG edge the engine lists every
+   face-turn solution of its goal up to the move limit (the 18 face turns;
+   `U` turns may position pieces even when they move no goal piece, `R' U R'`
+   instead of `R2`). The limit counts turns: a wide turn is one turn, a
+   rotation none.
+2. **Every spelling.** A human may write each solution in many ways, and
+   every one is considered:
+   - a free **leading rotation**: the inspection rotation at the first step
+     (any orientation, so the cross may start on a side or on top and be
+     brought down by a wide turn, e.g. `x' y2 | l' U r ...`); `y`, `y'` or
+     `y2` at a later step;
+   - at most **one mid-step rotation**, `y`, `y'`, `x` or `x'` (never `y2`),
+     anywhere;
+   - any turn as a **wide turn** (`r` `l`, and at most three of `u` `d`
+     `f`; **never a wide `b`**), e.g. `D y R U' R'` as `u R U' R'`,
+     `B U' B'` as `f R' f'`, `L x` as `r`;
+   - a half turn as one plain and one wide quarter turn (`U2` + `y` as
+     `d' U'`), or as two quarter turns around the mid-step rotation
+     (`U y' U R' U' R`);
+   - the cross always ends on the bottom.
+   Every spelling of a solution is physically "that solution, then a
+   y-family rotation", so it solves the same pieces; the slots it reaches
+   are read off the physical result.
+3. **The best N, exactly.** Scoring every spelling would take far too long
+   (hundreds of spellings per solution, up to hundreds of thousands of
+   solutions per edge), so the ranking is a branch and bound that skips only
+   spellings provably outside the top N: each move adds at least its
+   penalties, its naturalness surprise and MCC's smallest time for that
+   move, and a bound over the moves still to write decides when a solution
+   or a partial spelling cannot reach the top N. Everything that can is
+   scored with the real `alg_speed`. Tests compare it with brute force.
 
-**Performance goal:** one step's search with every option on (XCross to
-XXXCross, multislot, full pseudo, the pro move set, every colour, the
-deepest look-ahead) finishes in **under 1 minute**. The **search time limit**
-(blank = none) guarantees it: the search stops at the limit and lists the
-best results so far, cheap searches running first so the limit cuts the
-expensive tail; if ranking every candidate found would overrun it, only the
-best ones (by TPP) are ranked. The status line says when the limit cut a
-search.
+The best N are kept for each step type (cross, xcross, ..., single pair,
+multislot) and for each combination of the instant filters (wide moves,
+hide awkward), so a filter never empties the list.
 
-## Move set and spellings
+**Corpus candidates** (later steps) are scored as well: the standard F2L
+algorithms and every professional step in the tuning data, mirrored, each
+after a free `y`-family rotation and an optional `U` turn, written as the
+professionals wrote them (they may rotate twice). Pseudo steps keep the
+capped engine search (10,000 solutions per call) with wide spellings only.
 
-The search uses the 18 face turns, plus the always-on **pro move set**: wide
-`r`/`l` and at most one mid-step `y`, `y'`, `x` or `x'` (never `y2`), with the
-cross still finishing on the bottom (matched searches; pseudo searches use
-face turns). `U` turns may position pieces even when
-they move no goal piece (`R' U R'` instead of `R2`).
+| Step type | Move limit | Results kept (N) |
+|---|---|---|
+| Cross | 9 | 300 |
+| XCross | 10 | 300 |
+| XXCross | 10 | 300 |
+| XXXCross | 11 | 300 |
+| Single pair (later step) | 10 | 300 |
+| Multislot (later step) | 12 | 300 |
 
-Results are also offered in equivalent spellings, which `alg_speed` ranks like
-any other result:
+These cover most of what professionals execute: of the reco.nz steps in
+the tuning data, 89.7% of later steps and 66% of first steps are in the
+complete search exactly as the professional wrote them (within the limit,
+in a spelling above; `tools/complete-coverage.js`). A single-pair limit of
+11 raises that to 92.8% but lists about five times as many solutions. A
+later goal with no solution within its limit is searched up to 3 turns
+deeper (its shortest solutions).
+The configuration page's per-type limits override both columns
+("max solutions" is N, "move depth" the limit); blank keeps the default. A
+Single pair or Multislot override applies to every later step of that kind.
 
-- **Inspection rotations.** One search derives every rotated variant of a
-  first step (`F` = `y L` = `y2 B` = `y' R`); the free inspection rotation
-  can make a step much faster. Variants leaving the cube in different
-  orientations stay distinct results.
-- **Rotation spellings.** The engine often returns `U' B U B'` for what a
-  human does as `y U' R U R'`; both are offered.
-- **Side-cross inspections.** An inspection with the cross on a side,
-  brought down by a wide move in the first step.
-- **Cross optimisation** (first step): rewrites with `r = L x`, `l = R x'`,
-  `u = D y`, keeping only those that leave the cross on the bottom.
-- **Wide spellings** (later steps): `D` as `u`, `U` as `d`, `B`/`F` as `f`,
-  the rest relabelled (`D y R U' R'` = `u R U' R'`, `B U' B'` = `f R' f'`).
-  Kept only if easier: fewer `D`/`F`/`B`/rotations, no extra `F`/`B`, at
-  most two wide turns of one kind, cross still down. Also for pseudo pairs.
-- **No wide `B`**: `b`, `b'`, `b2` never appear in any result.
-
-**Corpus candidates** (later steps): the engine lists the shortest
-solutions first, so with thousands of short ones a natural 9–11 move alg is
-often never generated. Every later step therefore also tries the F2L
-algorithms people actually use: the standard F2L algorithms and every
-professional step in the tuning data, with their left-right mirrors, each
-after a free `y`-family rotation and an optional `U` turn. Those that solve
-exactly a searched goal from the current cube join that search's solutions
-(luck filter, spellings and ranking as usual; at most the search limit's
-number of turns, no mid-step `y2`). They are written as the professionals
-wrote them, so they may rotate more than once.
+**Performance** comes after completeness. The engine calls are face turns
+only and mostly quick; ranking the spellings runs on a worker pool, big
+edges split across workers. Measured times are in PROJECT_STATUS.md; the
+goal stays one step in **under 1 minute** with every option on.
 
 Results-page filters, set per step. They only hide: every search includes
-multislot, wide-move and unorthodox results, so changing a filter either
-way is instant and never searches again; the look-ahead follows them.
+multislot, wide-move and awkward results, so changing a filter either way
+is instant and never searches again; the look-ahead follows them.
 
 - **Multislot** (default off): ticked, later steps that solve several pairs
   at once are shown.
 - **Wide moves** (default on): unticked, no result uses a wide or slice
   move.
-- **Hide unorthodox** (default off): hides steps that turn the `R` (or
-  `L`) layer two quarter turns away from where the step started. `R` = +1,
-  `R'` = −1; an `R2` at 0 reaches ±2 (unorthodox), at ±1 it goes to ∓1 (fine),
-  so `R U R2 U' R` is orthodox and `R U R U' R'` is not. `r` counts as `R`,
-  `l` as `L`; a `y`/`z` (also inside `u d f b`) resets both counts. This
-  applies to every step, the first included (its inspection rotation comes
-  before the step and does not count).
+- **Hide awkward F2L solutions** (default off): hides later steps that
+  turn the `R` (or `L`) layer two quarter turns away from where the step
+  started. `R` = +1, `R'` = −1; an `R2` at 0 reaches ±2 (awkward), at ±1 it
+  goes to ∓1 (fine), so `R U R2 U' R` is fine and `R U R U' R'` is not. `r`
+  counts as `R`, `l` as `L`; a `y`/`z` (also inside `u d f b`) resets both
+  counts. **First steps are never hidden**: crosses are often awkward by
+  nature, unlike F2L's set algorithms.
 
 ## Professional solves and coverage
 
@@ -259,25 +304,23 @@ pair" as one XXCross). Including **rotation choices during the search is a
 mandatory requirement**: professionals favour "spammable" `R`/`U` solutions
 with rotations because they ease look-ahead.
 
-Known gaps (measurements in PROJECT_STATUS.md): more than one rotation per
-step; slice-like combinations beyond `r`/`l`; goal-no-op moves other than
-`U` turns (pruned by the engine); steps longer than the search limits; and
-pro solutions that are in the tree but lost among thousands of equally long
-solutions when the per-call cap is reached.
+Known gaps (measurements in PROJECT_STATUS.md): more than one mid-step
+rotation (only corpus candidates have them); slice-like combinations beyond
+`r`/`l`; goal-no-op moves other than `U` turns (pruned by the engine); and
+steps longer than the move limits.
 
 ## Configuration and results pages
 
 The **configuration page** holds the search settings (colours, first-step
-types, pseudo F2L, solutions per search, time limit, per-type limits) and
-the scramble list. Generated scrambles are random-state (a uniformly random
+types, pseudo F2L, per-type limits) and the scramble list. Generated scrambles are random-state (a uniformly random
 state solved with a two-phase search and inverted, as WCA scramblers do).
 
 The **results page** holds the per-step settings in labelled groups: filter
-(multislot, wide moves, hide unorthodox, simple pseudo only), look-ahead
-(depth, breadth), and results per page. Every setting applies to later
-steps until changed; a look-ahead setting re-searches the current step
-(reusing what it can), a filter only hides, and the status line says how
-many.
+(multislot, wide moves, hide awkward F2L solutions, simple pseudo only),
+ranking (pair planning), look-ahead (depth, breadth), and results per
+page. Every setting applies to later steps until changed; a look-ahead or
+ranking setting re-searches the current step (reusing what it can), a
+filter only hides, and the status line says how many.
 
 The interface is lowercase and minimal (move notation keeps its case). No
 inline explanations: hovering shows a one-line hint and an info icon opens a

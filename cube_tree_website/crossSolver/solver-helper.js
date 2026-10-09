@@ -382,6 +382,14 @@ class CrossSolverHelper {
       if (this._onSolution) this._onSolution(msg.data);
       return;
     }
+    // cube-tree modification: batched solutions (worker-persistent.js)
+    if (msg.type === 'solutions') {
+      for (const sol of msg.data) {
+        this._solutions.push(sol);
+        if (this._onSolution) this._onSolution(sol);
+      }
+      return;
+    }
 
     if (msg.type === 'depth') {
       if (this._onProgress) {

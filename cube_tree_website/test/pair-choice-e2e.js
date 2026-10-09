@@ -10,6 +10,7 @@
  * Usage: node test/pair-choice-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -32,7 +33,10 @@ function checkList(s, list, n) {
     const node = s.nodeMap.get(r.targetNodeId);
     const pieces = calculateSolvedPieces(s.rootNode, node);
     const f = applyAlgorithm(SOLVED_FACELETS, [s.scramble, s.isAtRoot ? r.rotation : s.rotation, s.scoredPath, r.coreAlg].filter(Boolean).join(' '));
-    const look = pairLookFeatures(f).reduce((t, x, k) => t + x * PAIR_CHOICE_LOOK[k], 0);
+    const W = s.planning === false ? PAIR_CHOICE_LOOK : PAIR_PLANNING.look;
+    let look = pairLookFeatures(f).reduce((t, x, k) => t + x * W[k], 0);
+    // pair planning: the cube as the step leaves it held
+    if (s.planning !== false) look += planFeatures(f).reduce((t, x, k) => t + x * PAIR_PLANNING.plan[k], 0);
     if (look) nonzero++;
     const want = (s.pathCost(r.coreAlg) + look) / pieces;
     assert.ok(Math.abs(r.tpp - want) < 1e-9, `${r.rotation} | ${r.coreAlg}: tpp ${r.tpp}, expected ${want}`);
@@ -47,23 +51,26 @@ function checkList(s, list, n) {
   const pruned = pruneGraph(tree, { advanced: [...advanced, 'multislotting'], colors: ['white'] });
   const appLook = PAIR_CHOICE_LOOK.slice();
   const setWeights = (w) => { w.forEach((x, i) => { PAIR_CHOICE_LOOK[i] = x; }); };
-  for (const [label, w] of [
-    ['test weights', [0.3, 0.5, 0.7, -1.1, -1.3]],
-    ['app weights', appLook],
+  for (const [label, w, planning] of [
+    ['test weights, planning off', [0.3, 0.5, 0.7, -1.1, -1.3], false],
+    ['app weights, planning off', appLook, false],
+    ['app weights, planning on', appLook, true],
   ]) {
     setWeights(w);
     const s = new SolveSession(SCRAMBLE, pruned, ['white'], advanced);
+    s.planning = planning;
     s.maxSolutions = 300;
+    fastLimits(s);
     const rootList = await searchWithLookahead(s, h, null, null, { depth: 1 });
     await test(`${label}: first-step TPPs include the pair-choice terms`, () => {
       const nz = checkList(s, rootList, 400);
-      if (label === 'test weights') assert.ok(nz > 200, `${nz} of 400 with a nonzero term`);
+      if (label.startsWith('test weights')) assert.ok(nz > 200, `${nz} of 400 with a nonzero term`);
     });
     s.commit(rootList.find(r => r.type === 'XCross'));
     const later = await searchWithLookahead(s, h, null, null, { depth: 1 });
     await test(`${label}: later-step TPPs include them, spellings included`, () => {
       const nz = checkList(s, later, 600);
-      if (label === 'test weights') assert.ok(nz > 300, `${nz} of 600 with a nonzero term`);
+      if (label.startsWith('test weights')) assert.ok(nz > 300, `${nz} of 600 with a nonzero term`);
       assert.ok(later.slice(0, 600).some(r => /^[yu]|f|d/.test(r.coreAlg)), 'spellings among them');
     });
   }

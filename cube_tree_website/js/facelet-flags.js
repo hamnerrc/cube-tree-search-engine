@@ -214,6 +214,49 @@ function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0]) {
     return out;
 }
 
+/**
+ * Pair planning (README "Pair planning"): what a solver plans with, of the
+ * unsolved pairs, in the orientation the cube is held in (so, unlike
+ * pairLookFeatures, it changes with y rotations), in PLAN_FEATURES order:
+ * - edge orientation (EO; docs/general_EO_knowledge.txt) of each unsolved
+ *   pair's edge: one of its two colours belongs to the front/back centres.
+ *   In the U layer it is good (insertable with R, U and L turns) when its
+ *   top sticker has a front/back colour; in the middle layer when its
+ *   sticker facing front or back does. A y rotation turns every U-layer
+ *   edge from good to bad and back and leaves middle-layer edges alone: the
+ *   counts of bad and good U-layer edges and of bad middle-layer edges;
+ * - open back slots (BL, BR unsolved): with the back slots solved every
+ *   remaining piece is in view (docs/slot_and_rotation_info.txt).
+ */
+const PLAN_FEATURES = ['badEdgesU', 'goodEdgesU', 'badEdgesMiddle', 'openBackSlots'];
+function planFeatures(facelets, out = [0, 0, 0, 0]) {
+    out.fill(0);
+    const f = facelets;
+    const center = i => f[i - (i % 9) + 4];
+    const front = f[22];
+    const back = f[49];
+    for (let p = 0; p < 12; p++) {
+        const idx = LOOK_EDGES[p];
+        LOOK_EDGE_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]];
+    }
+    const flags = solvedFlags(f);
+    for (const slot of ['FR', 'FL', 'BL', 'BR']) {
+        if (flags[slot]) continue;
+        if (slot === 'BL' || slot === 'BR') out[3]++;
+        const he = LOOK_SLOTS[slot][1];
+        const heIdx = LOOK_EDGES[he];
+        const e = LOOK_EDGE_KEYS.indexOf(LOOK_BIT[center(heIdx[0])] | LOOK_BIT[center(heIdx[1])]);
+        // LOOK_EDGES lists the U (or F/B) sticker first
+        const sticker = f[LOOK_EDGES[e][0]];
+        const good = sticker === front || sticker === back;
+        if (e < 4) out[good ? 1 : 0]++;
+        else if (e >= 8 && !(e === he && f[heIdx[0]] === center(heIdx[0]) && f[heIdx[1]] === center(heIdx[1]))) {
+            if (!good) out[2]++;
+        }
+    }
+    return out;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS, pairLookFeatures, LOOK_FEATURES };
+    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS, pairLookFeatures, LOOK_FEATURES, planFeatures, PLAN_FEATURES };
 }

@@ -20,6 +20,7 @@ importScripts(
   `facelet-cube.js${version}`,
   `facelet-flags.js${version}`,
   `cross-optimization.js${version}`,
+  `spelling-search.js${version}`,
   `solver-bridge.js${version}`,
 );
 

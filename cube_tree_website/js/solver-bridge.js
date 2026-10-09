@@ -104,6 +104,10 @@
 
 const SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 };
 
+// spelling-search.js: a page global; Node scripts get it here.
+const SPELLING = typeof SpellingSearch !== 'undefined' ? SpellingSearch
+  : (typeof require === 'function' ? require('./spelling-search.js').SpellingSearch : null);
+
 // Which rotation brings each color to the bottom (D) face, given the
 // README's stated convention (White=U, Green=F -> Yellow=D, Blue=B, Red=R,
 // Orange=L by the standard color wheel). Verified empirically against
@@ -164,10 +168,29 @@ const NOOP_MOVES = "U U2 U'";
 // constrains nothing -- measured as a superset of both alternatives (§4.20).
 const POSTALG_BOUNDARY = 'y2 y2';
 
-// Solutions requested per engine call (README "Search limits"; the user's
-// default for every step type, 2026-10-07). SolveSession.maxSolutions
-// overrides it per session (the page's "solutions per search" field).
+// Solutions requested per pseudo engine call, and per matched call when the
+// complete search is off (SolveSession.completeSearch false: tools only).
 const DEFAULT_MAX_SOLUTIONS = 10000;
+
+// Complete search (README "Complete search"): a matched engine call lists
+// EVERY face-turn solution of its goal up to the move limit (this cap only
+// guards against runaway per-type settings; reaching it is reported as a cut
+// search), and spelling-search.js keeps exactly the best DEFAULT_TOP_N
+// results of each step type and results-page filter among every spelling
+// of them (SolveSession.topN; the per-type "max solutions" overrides it).
+const COMPLETE_ENGINE_CAP = 3000000;
+const DEFAULT_TOP_N = 300;
+// A later step whose goal has no solution within its limit is searched up
+// to this many moves deeper (its shortest solutions only).
+const LATER_DEEPEN = 3;
+// The results-page filters that hide results instantly; the best N are kept
+// for each, so a filter never empties the list (see README "Complete search").
+const RESULT_VIEWS = [
+  { test: () => true, wide: true },
+  { test: c => !isWideAlg(c.coreAlg), wide: false },
+  { test: c => !c.unorthodox, wide: true },
+  { test: c => !c.unorthodox && !isWideAlg(c.coreAlg), wide: false },
+];
 
 // searchCurrentNode's per-candidate loop (facelet replays for luck-filtering,
 // rotation-spelling/inspection expansion) is synchronous, CPU-bound JS -- the
@@ -207,6 +230,13 @@ const DISTANCE1_LIMITS = { 0: 9, 1: 10, 2: 10, 3: 11 };
 // only extends beyond the spec's flat table for deeper, more-constrained
 // later steps the spec's table didn't distinguish.
 const LATER_LIMITS_BY_TOTAL = { 1: 10, 2: 12, 3: 14, 4: 16 };
+// Complete search: a matched later step's limit by the pairs it solves (the
+// table above is for pseudo steps, whose engine calls stay capped): the
+// README's single pair 10, multislot 12. Every face-turn solution within it
+// is searched; 10 moves hold 89% of the professional later steps in
+// data/reco_solves.txt, 11 moves 93% but ~5x the solutions (a per-type
+// limit of 11 is a setting away; PROJECT_STATUS "Complete search").
+const LATER_LIMITS = { 1: 10, 2: 12, 3: 12 };
 
 // Semantic category keys matching the results table's "type" column
 // (edgeTypeLabel below) -- this is the axis granular per-type search config
@@ -234,7 +264,7 @@ function searchLimitFor(pairCount, isRoot, totalPairsInGoal, searchConfig, isPse
   const override = searchConfig && searchConfig[categoryKeyFor(pairCount, isRoot, isPseudo)];
   if (override && override.maxLength) return override.maxLength;
   if (isRoot) return DISTANCE1_LIMITS[pairCount];
-  return LATER_LIMITS_BY_TOTAL[totalPairsInGoal];
+  return isPseudo ? LATER_LIMITS_BY_TOTAL[totalPairsInGoal] : LATER_LIMITS[pairCount];
 }
 
 /** Same override lookup as searchLimitFor, for maxSolutions instead of maxLength. */
@@ -423,9 +453,9 @@ function withoutWide(allowedMoves) {
  * "R U R2 U' R" goes 1, 1, -1, -1, 0 and is fine; "R U R U' R'" (2 at the
  * second R), "R' U R'" and a lone "R2" are not. r counts as R and l as L
  * (the same hand turns that side); a y or z rotation (also inside u d f b E
- * S) puts other layers in the hands, so both counts start again. Every step
- * is filtered on this, the first one included (its inspection rotation comes
- * before the step, so it does not count).
+ * S) puts other layers in the hands, so both counts start again. Only later
+ * steps are flagged (the results page calls the filter "hide awkward f2l
+ * solutions"): first steps are never hidden.
  */
 function isUnorthodox(alg) {
   // The displacement after one more turn of the layer, or null at +-2.
@@ -606,7 +636,14 @@ function corpusSolutions(session, plan) {
       if (!p || entry.turns > p.maxLength) continue;
       const core = joinAuf(a, entry.toks);
       if (!core) continue;
-      const alg = r ? `${r} ${core}` : core;
+      // a corpus alg that starts with a rotation: one leading rotation, not two
+      let alg = r ? `${r} ${core}` : core;
+      const lead = alg.match(/^([xyz]['2]?) ([xyz]['2]?)(?= |$)/);
+      if (lead) {
+        const merged = rotationName(`${lead[1]} ${lead[2]}`);
+        alg = [merged, alg.slice(lead[0].length).trim()].filter(Boolean).join(' ');
+        if (merged.includes(' ')) continue; // not a single rotation (z or x combined with y)
+      }
       const key = `${p.allCorners}|${alg}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -662,7 +699,9 @@ class SolveSession {
     this.tree = prunedTree;
     this.colors = colors; // checked color names, e.g. ['white']
     this.crossOptEnabled = (advancedOptions || []).includes('cross_opt');
-    this.maxSolutions = DEFAULT_MAX_SOLUTIONS;
+    this.maxSolutions = DEFAULT_MAX_SOLUTIONS; // pseudo engine calls (and every call with completeSearch off)
+    this.topN = DEFAULT_TOP_N; // complete search: results kept per step type and filter
+    this.completeSearch = true; // README "Complete search"; false = the capped pro-move-set engine search (tools)
     this.searchConfig = null; // per-category {maxSolutions, maxLength} overrides; see searchLimitFor/maxSolutionsFor
     this.proMoves = (advancedOptions || []).includes('pro_moves');
     this.nodeMap = new Map(prunedTree.nodes.map(n => [n.id, n]));
@@ -680,6 +719,7 @@ class SolveSession {
     // look-ahead, and can change from step to step):
     this.multislot = true; // later steps may solve several pairs (if the tree has those edges)
     this.wideMoves = true; // false: no wide-move results at any step (see WIDE_TOKEN)
+    this.planning = true; // pair planning (EO, open back slots) in the pair-choice term
   }
 
   /**
@@ -688,8 +728,9 @@ class SolveSession {
    */
   get searchSettingsKey() {
     const wide = this.wideMoves === false ? 'nowide' : '';
-    if (this.isAtRoot) return wide;
-    return `${this.multislot ? '' : 'single'}${wide ? '|' + wide : ''}`;
+    const plan = this.planning === false ? '|noplan' : '';
+    if (this.isAtRoot) return wide + plan;
+    return `${this.multislot ? '' : 'single'}${wide ? '|' + wide : ''}${plan}`;
   }
 
   /**
@@ -698,7 +739,7 @@ class SolveSession {
    */
   withSettings(settings) {
     const s = this.fork();
-    for (const k of ['multislot', 'wideMoves']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
+    for (const k of ['multislot', 'wideMoves', 'planning']) if (settings && settings[k] !== undefined) s[k] = !!settings[k];
     return s;
   }
 
@@ -954,7 +995,12 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     const allEdges = targetNode.state.edges || [];
     const maxLength = searchLimitFor(pairCount, isRoot, allCorners.length, session.searchConfig, isPseudo);
     if (maxLength === undefined) continue;
-    const effectiveMaxSolutions = maxSolutionsFor(pairCount, isRoot, session.searchConfig, isPseudo, session.maxSolutions);
+    const complete = session.completeSearch !== false && !isPseudo;
+    // Complete search: the per-type "max solutions" is how many results of
+    // the type are kept (topN); the engine lists every solution.
+    const effectiveMaxSolutions = complete ? COMPLETE_ENGINE_CAP
+      : maxSolutionsFor(pairCount, isRoot, session.searchConfig, isPseudo, session.maxSolutions);
+    const topN = complete ? maxSolutionsFor(pairCount, isRoot, session.searchConfig, isPseudo, session.topN) : 0;
 
     for (const color of colorList) {
       const baseRotation = isRoot ? (COLOR_ROTATIONS[color] || '') : session.rotation;
@@ -986,6 +1032,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
         edge, targetNode, isPseudo, newEdges, pairCount, allCorners, allEdges, maxLength,
         effectiveMaxSolutions, color, baseRotation, scramble, callRotation, postAlgForCall,
         fullPseudoOnly: fullOnlyByKey.get(targetKey(edge)) === true,
+        complete, topN, category: categoryKeyFor(pairCount, isRoot, isPseudo),
       });
     }
   }
@@ -1008,11 +1055,22 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
     : plan;
   for (const p of startOrder) {
-    const extra = { ...(session.proMoves ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
+    // Complete search: face turns only (every rotation and wide spelling is
+    // derived from them afterwards, spelling-search.js), every solution.
+    const extra = { ...(session.proMoves && !p.complete ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
     if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
+    const deepen = async () => {
+      let raw = await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra);
+      // A later goal with no solution within the limit: its shortest ones.
+      for (let more = 1; !isRoot && raw && !raw.length && more <= LATER_DEEPEN; more++) {
+        raw = await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength + more, p.postAlgForCall, DEFAULT_MAX_SOLUTIONS, extra);
+      }
+      return raw;
+    };
     const run = () => (p.isPseudo
       ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline)
-      : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra));
+      : p.complete ? deepen()
+        : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra));
     // The same engine input can come up again: another look-ahead path to the
     // same cube state (a multislot and its two single-pair halves; different
     // moves that leave the same state), or the same step searched with other
@@ -1036,7 +1094,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // engine solutions.
   if (!isRoot) {
     for (const [p, extra] of corpusSolutions(session, plan)) {
-      p.cores = p.cores.then(c => (c === null ? null : c.concat(extra)));
+      // Complete search: they are scored as written, next to the spellings
+      // of the engine's solutions (those already include every face-turn
+      // solution within the limit).
+      if (p.complete) p.corpus = extra;
+      else p.cores = p.cores.then(c => (c === null ? null : c.concat(extra)));
     }
   }
   let truncatedCalls = 0;
@@ -1055,6 +1117,23 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // joined in plan order below, so the output is the same as processing the
   // calls one by one in plan order.
   const ctx = postProcessContext(session, isRoot);
+  // Complete search: the best TPPs of each step type and filter so far
+  // (finished calls), so a call's spellings only compete for places its type
+  // still has (the type's N-th best only gets better).
+  const typeBest = new Map();
+  const typeLimits = (p) => {
+    const best = typeBest.get(p.category);
+    return RESULT_VIEWS.map((_, v) => (best && best[v].length >= p.topN ? best[v][p.topN - 1] : Infinity));
+  };
+  const noteTypeBest = (p) => {
+    if (!p.complete || !p.candidates.length) return;
+    let best = typeBest.get(p.category);
+    if (!best) typeBest.set(p.category, (best = RESULT_VIEWS.map(() => [])));
+    RESULT_VIEWS.forEach((view, v) => {
+      const merged = best[v].concat(p.candidates.filter(view.test).map(c => c.tpp)).sort((a, b) => a - b);
+      best[v] = merged.slice(0, p.topN);
+    });
+  };
   const processCall = async (p) => {
     p.candidates = [];
     const { isPseudo, pairCount, color } = p;
@@ -1068,12 +1147,31 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // The per-candidate work is a pure function of (ctx, job, solutions), so
     // a page can run it off the main thread (session.postProcessor, a worker
     // pool; PROJECT_STATUS.md §4.40) -- same function, same output.
+    // A big call is ranked after the smaller calls of its type, so their
+    // results already bound it (typeLimits): most of its solutions then stop
+    // early (spelling-search.js boundTable's stopAbove).
+    if (p.complete && cores.length > COMPLETE_CHUNK) {
+      const others = plan.filter(q => q !== p && q.complete && q.category === p.category && q.processing && !q.big);
+      p.big = true;
+      await Promise.all(others.map(q => q.processing.catch(() => {})));
+    }
     const job = postProcessJob(session, p);
+    if (p.complete) job.limits = typeLimits(p);
     if (postStop) { job.stopAt = postStop; job.listedBefore = listedNow(); job.rankMsPerCandidate = RANK_MS_PER_CANDIDATE; }
-    p.candidates = session.postProcessor
-      ? await session.postProcessor(ctx, job, cores, rank)
-      : await postProcessCall(ctx, job, cores, yieldState);
+    if (p.complete && session.postProcessor && cores.length > COMPLETE_CHUNK) {
+      // A big call is ranked in chunks side by side on the worker pool (the
+      // best N of each chunk; trimToTypeBest keeps the best N of all).
+      // Chunks of solutions that end alike share most of their bound rows.
+      const chunks = completeChunks(cores);
+      const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank)));
+      p.candidates = [].concat(...parts);
+    } else {
+      p.candidates = session.postProcessor
+        ? await session.postProcessor(ctx, job, cores, rank)
+        : await postProcessCall(ctx, job, cores, yieldState);
+    }
     listed += p.candidates.length;
+    noteTypeBest(p);
     // Cut short by the time budget (postProcessCall stopped at job.stopAt).
     if (postStop && p.candidates.stopped && !(deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions)) truncatedCalls++;
   };
@@ -1095,7 +1193,8 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     lastPartial = now();
     onPartial(list);
   };
-  await Promise.all(plan.map(p => p.cores.then(() => processCall(p)).then(() => {
+  for (const p of plan) p.processing = p.cores.then(() => processCall(p));
+  await Promise.all(plan.map(p => p.processing.then(() => {
     p.processed = true;
     maybeEmitPartial();
   })));
@@ -1122,11 +1221,46 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       truncatedCalls = Math.max(truncatedCalls, 1);
     }
   }
+  // Complete search: exactly the best N of each step type and filter (calls
+  // post-processed before others of their type finished kept more).
+  trimToTypeBest(plan);
   const out = rankCandidates(plan);
   // How many engine calls the time budget cut short (absent = complete).
   if (truncatedCalls) out.truncatedCalls = truncatedCalls;
   if (failedCalls) out.failedCalls = failedCalls;
   return out;
+}
+
+// Complete search: solutions per post-processing job (see processCall).
+const COMPLETE_CHUNK = 25000;
+/** A big call's solutions in chunks of about COMPLETE_CHUNK, each a run of solutions that end alike. */
+function completeChunks(cores) {
+  const keyed = cores.filter(Boolean).map(c => [c.split(' ').reverse().join(' '), c]);
+  keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const count = Math.ceil(keyed.length / COMPLETE_CHUNK);
+  const size = Math.ceil(keyed.length / count);
+  const out = [];
+  for (let k = 0; k < keyed.length; k += size) out.push(keyed.slice(k, k + size).map(x => x[1]));
+  return out;
+}
+
+/** Keeps, per step type, the best topN candidates of each RESULT_VIEWS filter (complete calls only). */
+function trimToTypeBest(plan) {
+  const byType = new Map();
+  for (const p of plan) {
+    if (!p.complete || !p.candidates) continue;
+    if (!byType.has(p.category)) byType.set(p.category, []);
+    byType.get(p.category).push(p);
+  }
+  for (const calls of byType.values()) {
+    const top = new SPELLING.TopViews(RESULT_VIEWS.map(v => v.test), calls[0].topN);
+    for (const p of calls) for (const c of p.candidates) { c.key = dedupeKey(c); top.offer(c); }
+    const kept = new Set(top.list());
+    for (const p of calls) {
+      p.candidates = p.candidates.filter(c => kept.has(c));
+      for (const c of p.candidates) delete c.key;
+    }
+  }
 }
 
 /**
@@ -1151,8 +1285,26 @@ function postProcessContext(session, isRoot) {
     firstColor: session.committedRows[0] ? session.committedRows[0].color : '',
     nodeIndex: nodeByLabelsIndex.get(session.tree),
     rootTargets: isRoot ? session._rootTargetsByLabels : null,
-    lookWeights: typeof PAIR_CHOICE_LOOK !== 'undefined' && PAIR_CHOICE_LOOK.some(w => w) ? PAIR_CHOICE_LOOK.slice() : null,
+    lookWeights: lookWeightsFor(session),
+    planWeights: session.planning !== false && typeof PAIR_PLANNING !== 'undefined' && PAIR_PLANNING.plan.some(w => w) ? PAIR_PLANNING.plan.slice() : null,
   };
+}
+
+/** The pair-choice look weights: fitted with the planning features when planning is on. */
+function lookWeightsFor(session) {
+  const planning = session.planning !== false && typeof PAIR_PLANNING !== 'undefined';
+  const w = planning ? PAIR_PLANNING.look : (typeof PAIR_CHOICE_LOOK !== 'undefined' ? PAIR_CHOICE_LOOK : null);
+  return w && w.some(x => x) ? w.slice() : null;
+}
+
+/** Pair-planning cost of the cube `facelets` as held (planFeatures; 0 without weights). */
+const planScratch = [0, 0, 0, 0];
+function planCost(weights, facelets) {
+  if (!weights || !facelets) return 0;
+  planFeatures(facelets, planScratch);
+  let x = 0;
+  for (let k = 0; k < weights.length; k++) x += weights[k] * planScratch[k];
+  return x;
 }
 
 /** One planned engine call as postProcessCall needs it (plain data). */
@@ -1169,6 +1321,10 @@ function postProcessJob(session, p) {
     color: p.color,
     baseRotation: p.baseRotation,
     fullPseudoOnly: p.fullPseudoOnly,
+    complete: !!p.complete,
+    topN: p.topN,
+    corpus: p.corpus || null,
+    wideMoves: session.wideMoves !== false,
   };
 }
 
@@ -1200,6 +1356,7 @@ function pathCostFor(ctx, alg) {
  * `yieldState` (main thread only) lets the page breathe between solutions.
  */
 async function postProcessCall(ctx, p, cores, yieldState) {
+  if (p.complete) return postProcessComplete(ctx, p, cores);
   const candidates = [];
   const { isRoot } = ctx;
   const wideOn = ctx.wideMoves !== false;
@@ -1208,8 +1365,9 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   // PAIR_CHOICE_LOOK, added to the path cost: every caller passes TPP = path
   // cost / pieces; the same for every spelling, the features do not change
   // under y rotations), and the flags the results page's filters hide by:
-  // unorthodox (every step) and multislot (a later step solving more than
-  // one pair).
+  // unorthodox (later steps only: the "hide awkward f2l solutions" filter
+  // never hides a first step, whose crosses are often awkward by nature) and
+  // multislot (a later step solving more than one pair).
   const weights = ctx.lookWeights;
   const lookFeatures = [0, 0, 0, 0, 0];
   const lookCost = (facelets) => {
@@ -1222,8 +1380,10 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   const push = (c, look = 0) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
     if (hasWideB(c.coreAlg)) return;
+    // pair planning: the cube as the step leaves it held
+    if (ctx.planWeights) look += planCost(ctx.planWeights, replayFacelets(ctx.scramble, isRoot ? c.rotation : ctx.rotation, ctx.scoredPath, c.coreAlg));
     if (look) c.tpp += look / p.pieces;
-    if (isUnorthodox(c.coreAlg)) c.unorthodox = true;
+    if (!isRoot && isUnorthodox(c.coreAlg)) c.unorthodox = true;
     else delete c.unorthodox;
     if (!isRoot && ((c.corners || []).length > 1 || (c.edges || []).length > 1)) c.multislot = true;
     else delete c.multislot;
@@ -1513,6 +1673,159 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   return candidates;
 }
 
+/**
+ * Complete search (README "Complete search"): a matched call's face-turn
+ * solutions -> exactly the best p.topN results of each RESULT_VIEWS filter
+ * among every spelling of every solution (spelling-search.js), plus the
+ * call's corpus algs as written. Each solution is luck-filtered once (every
+ * spelling solves the same pieces, then a y-family rotation); the node a
+ * spelling reaches is read off the physical result per end rotation. Pure,
+ * like postProcessCall.
+ */
+function postProcessComplete(ctx, p, cores) {
+  const { isRoot } = ctx;
+  const base = isRoot ? p.baseRotation : ctx.rotation;
+  const weights = ctx.lookWeights;
+  const lookFeatures = [0, 0, 0, 0, 0];
+  const lookCost = (facelets) => {
+    if (!weights || !facelets) return 0;
+    pairLookFeatures(facelets, lookFeatures);
+    let x = 0;
+    for (let k = 0; k < weights.length; k++) x += weights[k] * lookFeatures[k];
+    return x;
+  };
+  const sols = [];
+  const seen = new Set();
+  for (const core of cores || []) {
+    if (!core || seen.has(core)) continue;
+    seen.add(core);
+    const check = checkCandidateAgainstRealCubeState(ctx.scramble, base, ctx.scoredPath, core, p.allCorners, p.allEdges);
+    if (!check.ok) {
+      if (check.reason.includes('claimed solved but is not actually solved')) {
+        console.warn(`Discarding solution: ${check.reason}`, { coreAlg: core, rotation: base });
+      }
+      continue;
+    }
+    const sol = { face: core.split(' '), core, look: lookCost(check.facelets) };
+    if (ctx.planWeights) {
+      // every spelling ends as this solution then a y-family rotation: its
+      // planning cost by that rotation (enumerate bounds with the least)
+      const tables = SPELLING.tables();
+      const base = sol.look;
+      sol.lookByEnd = new Float64Array(tables.NR).fill(Infinity);
+      let least = Infinity;
+      for (let d = 0; d < tables.NR; d++) {
+        if (!tables.YF[d]) continue;
+        const v = base + planCost(ctx.planWeights, tables.ROT_NAME[d] ? applyAlgorithm(check.facelets, tables.ROT_NAME[d]) : check.facelets);
+        sol.lookByEnd[d] = v;
+        if (v < least) least = v;
+      }
+      sol.look = least;
+    }
+    sols.push(sol);
+  }
+  pathCostFor(ctx, ''); // the committed path's MCC checkpoint and penalties
+  const floor = SPELLING.mccFloor(ctx._costBase.mcc) + ctx._costBase.penalty;
+  const tables = SPELLING.tables();
+  const reached = new Map();
+  const nodeAfter = (sol, endName) => {
+    const key = `${sol.core}|${endName}`;
+    let id = reached.get(key);
+    if (id === undefined) {
+      const after = solvedFlags(replayFacelets(ctx.scramble, base, ctx.scoredPath, [sol.core, endName].filter(Boolean).join(' ')));
+      id = after.cross ? ctxNodeByLabels(ctx, F2L_SLOTS.filter(sl => after[sl])) : null;
+      reached.set(key, id);
+    }
+    return id;
+  };
+  const type = edgeTypeLabel(p.pairCount, isRoot, false);
+  const multislot = !isRoot && p.pairCount > 1;
+  const finish = (c) => {
+    if (!isRoot && isUnorthodox(c.coreAlg)) c.unorthodox = true;
+    if (multislot) c.multislot = true;
+    if (p.fullPseudoOnly) c.fullPseudoOnly = true;
+    c.key = dedupeKey(c);
+    return c;
+  };
+  const make = (alg, lead, end, sol, tpp) => {
+    if (hasWideB(alg)) return null;
+    const endName = tables.ROT_NAME[end];
+    const targetNodeId = nodeAfter(sol, endName);
+    if (!targetNodeId) return null;
+    let rotation = ctx.rotation;
+    let corners;
+    let edges;
+    if (isRoot) {
+      const leadName = tables.ROT_NAME[lead];
+      // The inspection: a y-family one keeps the step's labels in the frame
+      // it starts in (as the y-variants always did); a side-cross one names
+      // the slots in the frame the step ends in.
+      if (tables.YF[lead]) {
+        rotation = composeRotations(base, leadName);
+        corners = relabelSlotsForRotation(p.allCorners, leadName);
+        edges = relabelSlotsForRotation(p.newEdges, leadName);
+      } else {
+        rotation = rotationName(`${base} ${leadName}`.trim());
+        corners = relabelSlotsForRotation(p.allCorners, endName);
+        edges = relabelSlotsForRotation(p.newEdges, endName);
+      }
+    } else {
+      corners = p.allCorners.filter(c => !ctx.currentCorners.includes(c));
+      edges = p.targetEdges.filter(e => !ctx.currentEdges.includes(e));
+    }
+    return finish({
+      color: isRoot ? p.color : ctx.firstColor,
+      type,
+      rotation,
+      edges,
+      corners,
+      coreAlg: alg,
+      tpp: Number.isFinite(tpp) ? tpp : Infinity,
+      targetNodeId,
+    });
+  };
+  // Corpus algs (later steps), scored as written: they may rotate twice.
+  const extra = [];
+  for (const alg of p.corpus || []) {
+    const stepRotation = netRotation(alg);
+    const check = checkCandidateAgainstRealCubeState(ctx.scramble, base, ctx.scoredPath,
+      stepRotation ? `${alg} ${inverseRotation(stepRotation)}` : alg, p.allCorners, p.allEdges);
+    if (!check.ok || hasWideB(alg) || (!ctx.wideMoves && isWideAlg(alg))) continue;
+    const held = replayFacelets(ctx.scramble, base, ctx.scoredPath, alg);
+    const after = solvedFlags(held);
+    const targetNodeId = after.cross ? ctxNodeByLabels(ctx, F2L_SLOTS.filter(sl => after[sl])) : null;
+    if (!targetNodeId) continue;
+    const tpp = (pathCostFor(ctx, alg) + lookCost(check.facelets) + planCost(ctx.planWeights, held)) / p.pieces;
+    extra.push(finish({
+      color: ctx.firstColor,
+      type,
+      rotation: ctx.rotation,
+      edges: p.targetEdges.filter(e => !ctx.currentEdges.includes(e)),
+      corners: p.allCorners.filter(c => !ctx.currentCorners.includes(c)),
+      coreAlg: alg,
+      tpp: Number.isFinite(tpp) ? tpp : Infinity,
+      targetNodeId,
+    }));
+  }
+  const wide = p.wideMoves !== false;
+  const { list } = SPELLING.topSpellings({
+    sols,
+    root: isRoot,
+    pieces: p.pieces,
+    floor,
+    costOf: alg => pathCostFor(ctx, alg),
+    views: RESULT_VIEWS,
+    size: p.topN,
+    initial: p.limits,
+    make,
+    extra,
+    maxRL: wide ? undefined : 0,
+    maxUDF: wide ? undefined : 0,
+  });
+  for (const c of list) delete c.key;
+  return list;
+}
+
 // A candidate's identity for deduplication, cached per candidate object
 // (partial result lists rank the same candidates repeatedly).
 const dedupeKeys = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
@@ -1777,10 +2090,10 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
  * further searches and the returned list is incomplete.
  */
 async function searchWithLookahead(session, helper, onStatus, pseudoHelper, options = {}) {
-  // Results-page search options (multislot, wideMoves) for this step and its
-  // look-ahead; unset ones keep the session's.
-  if (options.multislot !== undefined || options.wideMoves !== undefined) {
-    session = session.withSettings({ multislot: options.multislot, wideMoves: options.wideMoves });
+  // Results-page search options (multislot, wideMoves, planning) for this
+  // step and its look-ahead; unset ones keep the session's.
+  if (options.multislot !== undefined || options.wideMoves !== undefined || options.planning !== undefined) {
+    session = session.withSettings({ multislot: options.multislot, wideMoves: options.wideMoves, planning: options.planning });
   }
   const depth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, options.depth || 1));
   const breadth = Math.max(1, options.breadth || DEFAULT_LOOKAHEAD_BREADTH);

@@ -241,6 +241,7 @@ function addFeatures() {
         const f = cube(st, st.step === 0 ? c.rot : st.rot, c.alg);
         if (maskOf(f) !== c.mask) throw new Error(`${st.scr} step ${st.step}: ${c.alg} replays to another state`);
         c.look = pairLookFeatures(f);
+        c.plan = planFeatures(f); // in the frame the candidate ends in
       }
       prev = st;
     }
@@ -265,12 +266,14 @@ function loadSteps() {
 }
 
 // Parameters: V[0..15] by solved-slot mask (V[15] = 0), V[16..20] weights of
-// the look-ahead features (pairLookFeatures, LOOK_FEATURES order).
-const NPARAM = 21;
+// the look-ahead features (pairLookFeatures, LOOK_FEATURES order), V[21..24]
+// weights of the pair-planning features (planFeatures, PLAN_FEATURES order).
+const NPARAM = 25;
 function extra(c, V) {
   if (!V) return 0;
   let x = V[c.mask] || 0;
   if (c.look && V.length > 16) for (let k = 0; k < 5; k++) x += V[16 + k] * c.look[k];
+  if (c.plan && V.length > 21) for (let k = 0; k < 4; k++) x += V[21 + k] * c.plan[k];
   return x;
 }
 const score = (c, V) => (c.cost + extra(c, V)) / c.pieces;
@@ -283,7 +286,8 @@ const score = (c, V) => (c.cost + extra(c, V)) / c.pieces;
 // rotation tied: 5 free -- the solver may start a step with a free y) or
 // "none", plus "+look" for the look-ahead feature weights.
 function tieClasses(model) {
-  const [slots, look] = model.split('+');
+  const [slots, ...parts] = model.split('+');
+  const look = parts.includes('look') ? 'look' : '';
   const cls = new Array(NPARAM).fill(-1);
   if (slots === 'frame') for (let m = 0; m < 15; m++) cls[m] = m;
   else if (slots === 'turn') {
@@ -297,6 +301,7 @@ function tieClasses(model) {
     }
   }
   if (look === 'look') for (let k = 0; k < 5; k++) cls[16 + k] = 100 + k;
+  if (parts.includes('plan')) for (let k = 0; k < 4; k++) cls[21 + k] = 200 + k;
   return cls;
 }
 
@@ -347,6 +352,7 @@ function expectedLabel(steps, V, temp, grad) {
         const d = -(w[k] / Z / temp) * (c.label - E) / c.pieces;
         grad[c.mask] += d;
         if (c.look) for (let q = 0; q < 5; q++) grad[16 + q] += d * c.look[q];
+        if (c.plan) for (let q = 0; q < 4; q++) grad[21 + q] += d * c.plan[q];
       });
     }
   }
@@ -410,6 +416,7 @@ function fit() {
   console.log('values by solved slots (end-of-step frame):');
   for (let m = 0; m < 15; m++) console.log(`  ${maskName(m).padEnd(16)} ${V[m].toFixed(3)}`);
   LOOK_FEATURES.forEach((name, k) => console.log(`  ${name.padEnd(16)} ${V[16 + k].toFixed(3)} per piece/pair`));
+  PLAN_FEATURES.forEach((name, k) => console.log(`  ${name.padEnd(16)} ${V[21 + k].toFixed(3)} per edge/slot`));
   console.log(`[${V.map(v => +v.toFixed(2)).join(', ')}]`);
 }
 

@@ -19,6 +19,7 @@
  * Usage: node test/progressive-e2e.js
  */
 'use strict';
+const { fastLimits } = require('./fast-limits.js');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
@@ -47,6 +48,7 @@ async function test(name, fn) {
   const newSession = () => {
     const s = new SolveSession(SCRAMBLE, pruned, ['white'], adv);
     s.maxSolutions = 100;
+    fastLimits(s);
     return s;
   };
   const plain = await searchCurrentNode(newSession(), h, null, null);
@@ -102,7 +104,7 @@ async function test(name, fn) {
     const pAdv = ['xcross', 'multislotting', 'full_pseudo'];
     const full = pruneGraph(tree, { advanced: pAdv, colors: ['green'] });
     const simple = pruneGraph(tree, { advanced: [...pAdv, 'simplified_pseudo'], colors: ['green'] });
-    const mk = (t) => { const s = new SolveSession(PSEUDO_SCRAMBLE, t, ['green'], pAdv); s.maxSolutions = 40; return s; };
+    const mk = (t) => { const s = new SolveSession(PSEUDO_SCRAMBLE, t, ['green'], pAdv); s.maxSolutions = 40; return fastLimits(s); };
     let fullS = mk(full);
     let simpleS = mk(simple);
     let sawFullOnly = false;

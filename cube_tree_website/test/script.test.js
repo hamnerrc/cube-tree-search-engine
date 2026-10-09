@@ -297,35 +297,19 @@ test('normalizeCriteria: multislotting becomes the results-page multislot settin
   assert.deepStrictEqual(normalizeCriteria(old), old, 'idempotent');
 });
 
-test('solutions per search: default 10000; a stored 500 from before CRITERIA_VERSION 3 was the old default', () => {
+test('no search settings: solutions per search and time limit are gone, saved ones ignored', () => {
   const { normalizeCriteria, CRITERIA_VERSION } = require(path.join(__dirname, '..', 'js', 'script.js'));
-  assert.ok(CRITERIA_VERSION >= 3);
-  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500 }).maxSolutions, 10000, 'old default migrates');
-  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500, version: 2 }).maxSolutions, 10000);
-  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 500, version: CRITERIA_VERSION }).maxSolutions, 500, 'a chosen 500 stays');
-  assert.strictEqual(normalizeCriteria({ advanced: [], maxSolutions: 2000 }).maxSolutions, 2000, 'other values stay');
+  assert.ok(CRITERIA_VERSION >= 4);
+  for (const saved of [{ advanced: [], maxSolutions: 500 }, { advanced: [], maxSolutions: 2000, timeLimit: 30, version: 3 }]) {
+    const out = normalizeCriteria(saved);
+    assert.ok(!('maxSolutions' in out) && !('timeLimit' in out), JSON.stringify(saved));
+    assert.deepStrictEqual(normalizeCriteria(out), out, 'idempotent');
+  }
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.ok(/id="max-solutions" value="10000"/.test(html), 'page default 10000');
+  assert.ok(!/id="max-solutions"|id="time-limit"|id="search-group"/.test(html), 'no search fieldset');
   const { DISTANCE1_LIMITS } = require(path.join(__dirname, '..', 'js', 'solver-bridge.js'));
   assert.deepStrictEqual(DISTANCE1_LIMITS, { 0: 9, 1: 10, 2: 10, 3: 11 }, 'cross 9, xcross 10, xxcross 10, xxxcross 11');
-});
-
-test('time limit: blank is no limit (null), never 0 or an implicit 60', () => {
-  const { normalizeCriteria, parseTimeLimit, CRITERIA_VERSION } = require(path.join(__dirname, '..', 'js', 'script.js'));
-  assert.strictEqual(parseTimeLimit(''), null);
-  assert.strictEqual(parseTimeLimit(undefined), null);
-  assert.strictEqual(parseTimeLimit('0'), null);
-  assert.strictEqual(parseTimeLimit('-5'), null);
-  assert.strictEqual(parseTimeLimit('abc'), null);
-  assert.strictEqual(parseTimeLimit('45'), 45);
-  assert.strictEqual(normalizeCriteria({ advanced: [] }).timeLimit, null, 'missing = none');
-  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: null, version: CRITERIA_VERSION }).timeLimit, null);
-  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 0 }).timeLimit, null, 'old "0 = none"');
-  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 60 }).timeLimit, null, 'the old default, saved before blank existed');
-  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 60, version: CRITERIA_VERSION }).timeLimit, 60, 'a 60 chosen now is kept');
-  assert.strictEqual(normalizeCriteria({ advanced: [], timeLimit: 30 }).timeLimit, 30);
-  const saved = normalizeCriteria({ advanced: [], timeLimit: 60, version: CRITERIA_VERSION });
-  assert.deepStrictEqual(normalizeCriteria(saved), saved, 'idempotent');
+  assert.ok(/const DEFAULT_MAX_SOLUTIONS = 10000;/.test(fs.readFileSync(path.join(__dirname, '..', 'js', 'solver-bridge.js'), 'utf8')), '10000 per call');
 });
 
 test('algSpeedPrefix/algSpeedResume equal algSpeed of the whole sequence', () => {
