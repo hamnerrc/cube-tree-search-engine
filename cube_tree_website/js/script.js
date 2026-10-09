@@ -367,28 +367,27 @@ function altAlgs(algorithms) {
 }
 
 // algSpeed's tunable constants (MCC's, in signature order) and the per-step
-// penalties on top of it, fitted together on professional solves
-// (README "Ranking"; tools/tune-alg-speed.js): reconstructions from reco.nz
-// (data/reco_solves.txt), each pro step ranked among the engine's (and the
-// corpus') alternatives for the same goal. Fitted on Yiheng Wang's 637
-// solves (coordinate search on the mean log10 rank of the pro's step; the
-// naturalness model out-of-fold), held out: Xuanyi Geng's 297 solves and
-// data/pro_references.txt. Mean log10 rank, before -> after: Yiheng 0.751 ->
-// 0.522, Xuanyi (held out) 0.759 -> 0.595, references (held out) 0.521 ->
-// 0.351; held-out later steps in the top 10: 86.9% -> 93.7% and 91.5% ->
-// 97.9%. Slice costs (sesliceMult, wideOther) keep their earlier values:
-// 19 of 3,342 pro steps use a slice, too few to fit them.
+// penalties on top of it, fitted together (with the pair-choice weights) on
+// professional solves (README "Ranking"; tools/tune-alg-speed.js cpools /
+// fit): reconstructions from reco.nz (data/reco_solves.txt), each pro step
+// ranked in the complete search's own list for its goal; loss = mean log10
+// rank + 0.1 x the gap between how often each move type is in the top
+// result and in the pro's step (PROJECT_STATUS "alg_speed tuning"). Fitted
+// on 300 solves of Yiheng Wang and Xuanyi Geng (naturalness out of fold),
+// checked by cross-validation and on data/pro_references.txt (mean log10
+// rank 0.521 -> 0.454). Slice costs (sesliceMult, wideOther) keep their
+// earlier values: 19 of 3,342 pro steps use a slice, too few to fit them.
 // Penalties only (no move costs less than MCC says); a rotation at the very
 // start of a step (done while looking ahead) is free of penalties. The same
 // function at every step (README "One scoring function for every step").
-const ALG_SPEED_DEFAULTS = { wristMult: 0.836, pushMult: 1.2, ringMult: 1.72, destabilize: 0.245, addRegrip: 0.25, double: 3.23, sesliceMult: 1.25, overWorkMult: 0.395, moveblock: 0.28, rotation: 6.86 };
+const ALG_SPEED_DEFAULTS = { wristMult: 0.836, pushMult: 1.2, ringMult: 1.72, destabilize: 0.245, addRegrip: 0.25, double: 3.23, sesliceMult: 1.25, overWorkMult: 0.395, moveblock: 0.28, rotation: 4.8 };
 
 // `natural` weighs the alg's naturalness surprise (algSurprise, in bits):
 // how unlike real F2L its move sequence is. MCC prices finger mechanics
 // move by move but cannot tell `R U R' U' R U R'` (one fluent, familiar
 // motion) from `R2 U2 F R F' U2 R2` (each move cheap, the sequence
 // unfamiliar); human execution speed depends on both.
-const STEP_PENALTIES = { D: 0, F: 2.41, B: 5, wideRL: 1.15, wideUDFB: 4.31, wideOther: 3.31, rotMidY: 0, natural: 0.84 };
+const STEP_PENALTIES = { D: 0, F: 2.41, B: 3.5, wideRL: 2.3, wideUDFB: 3.02, wideOther: 3.31, rotMidY: 0, natural: 1.68 };
 
 /**
  * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
@@ -780,8 +779,10 @@ const PAIR_CHOICE_LOOK = [0.54, 0.78, 0.45, -1.43, -5.66];
 // is left in (facelet-flags.js planFeatures, PLAN_FEATURES order), so a
 // rotation that leaves the remaining edges good, or a pair that leaves the
 // back slots solved, ranks higher. Fitted jointly with the look weights on
-// the same 2-step look-ahead data (tools/pair-choice.js --model none+look+plan).
-const PAIR_PLANNING = { look: [0.4, 0.2, 0.24, -1.4, -5.58], plan: [0.6, -1.59, 0.78, 0.54] };
+// the same 2-step look-ahead data (tools/pair-choice.js --model none+look+plan),
+// then refined on professional solves with alg_speed (trapped edge 0.2 ->
+// -0.8, open back slot 0.54 -> 2.54; tools/tune-alg-speed.js).
+const PAIR_PLANNING = { look: [0.4, -0.8, 0.24, -1.4, -5.58], plan: [0.6, -1.59, 0.78, 2.54] };
 
 let naturalnessModel = null;
 /** Naturalness surprise of an alg in bits (see buildNaturalnessModel); built on first use. */

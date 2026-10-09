@@ -156,24 +156,46 @@ worker pool (`completeChunks`, solutions that end alike together).
 The bound (spelling-search.js header): cost ≥ C0 + Σ tokens (penalty +
 natural·bits + least MCC of the token) + look. C0 = least start time of the
 committed path's MCC checkpoint. Per-token least MCC from algSpeed's cases
-(`mccMinimum`; R quarter turns may get 0.5 back, the first of a U/D pair
-may add nothing). The remaining moves are bounded by a DP over (moves
-left, frame, mid rotation used, context flag): exact trigram bits for plain
-runs, and after any other written token (wide, rotation, split quarter) an
-exact-context continuation `afterKnown(j, frame, r, prev)`, memoised per
-row. Rows depend only on the last moves + 2 of context, so solutions sorted
-by their endings share rows. Per spelling the bound is within 0.2-3 units
-of the real cost (MCC); the DP's minimum over spellings was the loose part:
-without the rotation-used state and exact contexts after a frame change it
-hopped between relabelings (slack 26 units on root crosses), now 11-16.
+(`mccMinimum`; R quarter turns may get 0.5 back, the first of a same-axis
+pair may add nothing). The remaining moves are bounded by a DP over (moves
+left, frame, context flag) (`boundTable`): exact trigram bits for plain
+runs; after any other written token (wide, rotation, split quarter) the
+next token's bits are MIN1 plus `AFTER` (the least extra any first token of
+the next move has after that token). Rows depend only on the last moves +
+2 of context, so solutions sorted by their endings share rows.
+
+Twenty-ninth pass (speed; every change verified by identical result lists
+on captured real calls -- 6 later-step/cross captures and the 11 calls of a
+root search -- plus the brute-force tests):
+- The table above replaced an exact-context one (memo per written token,
+  rotation-used state): ~8x cheaper per row, looser (passes 8.6% vs 3.6% of
+  a later step's solutions, 12.5% vs 2.5% of root crosses), but walking
+  with it is faster: a 166k-solution later call 70 s -> 11 s.
+- First steps (`opts.root`) add a second tier: rows that keep, per frame,
+  the least rest-of-step cost by the move's first token (`afterBound`:
+  the exact first-token choice after a known token). Nearly as tight as the
+  old exact table (2.6% vs 2.5%), ~2x the plain row; only for solutions the
+  plain table cannot rule out, and their walks use it. Root calls -23% CPU.
+  At later steps rows dominate and the second tier costs more than it saves.
+- Meet in the middle (`forwardStep`): the plain table's DP forwards over a
+  solution's first moves, memoised by prefix, plus only the last 5
+  backward rows (shared by suffix) bound a solution; the rest of its table
+  only if it is walked. Equal to the full table's root at every cut
+  (tested). Backward rows 1.05M -> 0.44M on the 166k call; 0-12% faster
+  (rows were no longer most of the time).
+- Seeding: the plain spellings (every y-family lead) of the 2N
+  best-estimated solutions are scored before any walk, so the N-th best is
+  tight from the start (exactly scored spellings -25%).
+- Planning features of the four end rotations in one pass
+  (`planFeaturesY`): ~10% per later step.
+- Browser pools: 1 engine worker (2 from 8 threads), the other threads
+  (cap 12) rank.
 
 Order of work (`enumerate`): a cheap estimate of each solution's plain
-spelling picks 256 to walk first (a tight N-th best early); then every other
-solution in suffix order, its bound table shared with the previous one and
-walked at once if the bound fits (the walk reuses the table). Exact either
-way: each solution is walked or its bound exceeded the N-th best when it
-was checked. Root capture (scramble `D R2 U' B2 ...`, 4 big calls): 153 s
-→ 87 s single-threaded, identical top 50 per call.
+spelling picks 256 to walk first and 2N to seed; then every other solution
+in suffix order, bounded as above and walked at once if the bound fits.
+Exact either way: each solution is walked or its bound exceeded the N-th
+best when it was checked.
 
 Known exclusion: spellings whose turns cancel (`L' l r` for `R`) are not
 generated; the old pro-move-set engine produced some.
@@ -186,61 +208,100 @@ thousands of results replayed, all exact).
 
 Things that did not help (do not retry as is): stopping a solution's bound
 early once its ending alone is too costly (an ending is almost never too
-costly alone); a prefix-shared walk without the per-solution DP (5x more
-nodes).
+costly alone; with a per-move lower bound for the moves not reached yet,
+3% fewer rows); a prefix-shared walk without the per-solution DP (5x more
+nodes); the first-token tier at later steps (+5%). Not tried yet: an
+incremental exact MCC lower bound inside walks (MCC is a round-based grip
+simulation; walks of few-solution root calls are its main target).
 
 ## alg_speed tuning
 
-Cost of a path = MCC(path) + Σ stepPenalty(step); stepPenalty = weights ×
-(`D`, `F`, `B`, wide `r/l`, wide `u/d/f`, slices, mid-step `y`) + `natural`
-× algSurprise (Kneser-Ney trigram LM over move tokens; corpus
-`HUMAN_F2L_ALGS` + `js/pro-steps.js`, left-right mirrored; leading rotations
-dropped, mid-step rotations are tokens). Same function at every step.
+Cost of a path = MCC(path) + Σ stepPenalty(step) + pair_choice(cube left);
+stepPenalty = weights × (`D`, `F`, `B`, wide `r/l`, wide `u/d/f`, slices,
+mid-step `y`) + `natural` × algSurprise (Kneser-Ney trigram LM over move
+tokens; corpus `HUMAN_F2L_ALGS` + `js/pro-steps.js`, left-right mirrored;
+leading rotations dropped, mid-step rotations are tokens). Same function at
+every step.
 
-Method (`tools/tune-alg-speed.js`): for every pro step, the engine's
-solutions of the same goal up to the pro's length + 2 (≤ 5,000, with the
-app's spellings and corpus candidates) form a pool; the pool's 300 best under the current model
-are kept exactly, plus 700 random others (weighted). Metric: mean log10
-rank of the pro's step (also top-10 rate, mean percentile). Fit on Yiheng
-Wang (coordinate search), held out: Xuanyi Geng and pro_references.txt. The
-LM is out-of-fold for training solves (5 folds) and trained on Yiheng only
-for held-out ones; the app's LM uses everything.
+**Twenty-ninth pass: tuned on the complete search's own lists** (user:
+rankings got far worse with the complete search; loss always on pro
+solves, including how often each move type is in the top result vs the
+pro's step). `tune-alg-speed.js cpools`: for every pro step, a SolveSession
+at the pro's node runs the app's complete search restricted to the edge
+solving the same physical pairs (best 300 of the default view, corpus
+candidates included) and stores each alg with its pair-choice feature
+vector (checked against the app's own TPP). The pro's step is ranked
+against that list (censored at 301). Built with the naturalness model the
+solve is scored with (out of fold). ~25 s per solve with both cores
+(`--solves 150 --shard k/2`, ~1 h for 319 solves). Pools are scratch data.
 
-Current values (`js/script.js`): MCC wristMult 0.836, pushMult 1.2,
-ringMult 1.72, destabilize 0.245, addRegrip 0.25, double 3.23, sesliceMult
-1.25, overWorkMult 0.395, moveblock 0.28, rotation 6.86; penalties D 0,
-F 2.41, B 5, wideRL 1.15, wideUDFB 4.31, wideOther 3.31, rotMidY 0, natural
-0.84; LM order 3, discount 0.95, proWeight 3. Slice costs kept (19 of 3,342
-pro steps use a slice: not identifiable; the fit's values changed nothing
-measurable).
+Loss (`fit`): mean log10 rank of the pro steps + λ × move-type gap. The gap
+compares, separately for first and later steps, the share of the app's top
+results containing each move type (wide, wide r/l, wide u/d/f, slice, D, F,
+B, L, half turn, mid-step y, mid-step x/z, leading rotation) with the
+share of pro steps, Σ (a−b)² / (p(1−p) + 0.01), plus (turns gap / 2)². The
+coordinate search only changes a value for a gain > 0.002 (`--min-gain`;
+smaller gains were noise in weakly identified weights). Pair-choice weights
+(look + planning) are fitted with alg_speed (`look_*`, `plan_*`).
+`--fold k/K` holds out the training solvers' solves by hash (CV); `eval
+--explain` splits pro-vs-top cost differences by component.
 
-| group (mean log10 rank; top 10) | before | after |
+λ by 2-fold CV over both solvers' solves (held-out mean log10 rank of
+Yiheng / Xuanyi / references; first-step move-type gap):
+
+| λ | Yiheng | Xuanyi | refs | mean | gap |
+|---|---|---|---|---|---|
+| start | 0.651 | 0.789 | 0.549 | 0.663 | 0.81 |
+| 0 | 0.578 | 0.750 | 0.526 | 0.618 | 1.05 |
+| 0.05 | 0.581 | 0.767 | 0.543 | 0.630 | 0.74 |
+| **0.1** | 0.587 | 0.760 | 0.524 | 0.624 | 0.66 |
+| 0.2 | 0.615 | 0.784 | 0.519 | 0.639 | 0.58 |
+
+Fit on all 300 reco.nz solves (both solvers), λ 0.1: rotation 6.86 → 4.8,
+B 5 → 3.5, wideRL 1.15 → 2.3, wideUDFB 4.31 → 3.02, natural 0.84 → 1.68,
+look trapped edge 0.2 → −0.8, plan open back slot 0.54 → 2.54 (everything
+else unchanged; turns / mid-step x/z penalties offered, stayed 0).
+
+| (pro step's rank in the app's list for its goal) | before | after |
 |---|---|---|
-| Yiheng Wang (fit), all 2,503 steps | 0.751; 69.4% | 0.522; 81.2% |
-| Xuanyi Geng (held out), 773 | 0.759; 70.2% | 0.595; 77.7% |
-| … first steps, 253 | 1.612; 36.0% | 1.258; 45.1% |
-| … later steps, 520 | 0.344; 86.9% | 0.273; 93.7% |
-| … later steps that rotate, 107 | 0.503; 79.4% | 0.363; 94.4% |
-| pro_references (held out), 66 | 0.521; 75.8% | 0.351; 89.4% |
+| reco.nz, both solvers (fit), mean log10 rank | 0.694 | 0.646 |
+| … first steps top 10 | 21.1% | 26.8% |
+| … later steps top 10 | 91.4% | 92.4% |
+| pro_references (held out), mean log10 rank | 0.521 | 0.454 |
+| … top 10 (first steps) | 81.8% (42.1%) | 81.8% (42.1%) |
 
-A joint refit of the penalties on both solvers gained nothing on the
-references; a turn-count penalty and a mid-step x/z penalty were offered to
-the fit and stayed at 0. First steps remain the weakest (inspection
-planning is not modelled).
+Move types, first steps (top result vs pros): wide 54% → 45% (pros 46%),
+B 7% → 13% (16%), half turns 60% → 65% (74%). Later steps: the top result
+starts with a free y 32% (pros 18%) and rotates mid-step 9% (pros 17%):
+the naturalness model drops a leading rotation but charges a mid-step one
+(open).
 
-To retune: `node tools/tune-alg-speed.js pools --shard 0/2 --cache a.jsonl`
-and `--shard 1/2 --cache b.jsonl` (~45 min with both cores; a 20 s engine
-deadline per step), then `fit --cache a.jsonl,b.jsonl` (~1 h for all
-parameters, seconds for penalties only) and `eval`. After changing the data,
-`node tools/tune-alg-speed.js corpus` regenerates `js/pro-steps.js`.
+Where pro first steps lose (`--explain`, before the fit): naturalness +5.9
+units vs the top result on average, MCC +2.7, the pair-choice bonuses for
+crosses that happen to connect a pair +4.2 (pros do not plan that in
+inspection).
+
+Rejected: refitting the planning-off look weights (PAIR_CHOICE_LOOK) on pro
+solves (objective −0.01, references top 10 83% → 79%); λ 0 (best ranks but
+the move-type gap grows).
+
+Earlier (capped pools, twenty-sixth pass): fit on Yiheng Wang only, the
+`pools` command (pro's length + 2, ≤ 5,000 engine solutions, the old
+spellings, 300 best + 700 sampled). Its table and method:
+`git show 22e60f7:PROJECT_STATUS.md`.
+
+To retune: `node tools/tune-alg-speed.js cpools --solves 150 --shard 0/2
+--cache a.jsonl` (and 1/2 into b.jsonl), then `fit --cache a.jsonl,b.jsonl
+--train "Yiheng Wang,Xuanyi Geng" --fit <keys> --lambda 0.1` and `eval`.
+After changing the data, `node tools/tune-alg-speed.js corpus` regenerates
+`js/pro-steps.js`. Rebuild the pools after changing the search or the
+weights a lot (the lists are the best 300 under the weights they were
+built with).
 
 Rejected or not worth retrying:
 - Pairwise speed comparisons by the developer (twenty-third to twenty-fifth
   passes): too few answers, a flat per-turn cost fitted on them made the top
   results less ergonomic. Removed.
-- (Revised) a higher MCC rotation cost was rejected on 19 solves because it
-  buried rotating pro steps; on 3,000+ steps, rotation 6.86 together with
-  rotMidY 0 ranks rotating pro steps much higher (table above).
 - Negative per-move weights (made `U` padding cheaper); first-step-only
   values (the README requires one function for every step).
 

@@ -57,7 +57,10 @@ const cacheFile = cacheFiles[0];
 const DATA = [path.join(root, 'data', 'reco_solves.txt'), path.join(root, 'data', 'pro_references.txt')];
 // --train "A,B": the solvers fitted on (the rest is held out).
 const TRAIN = new Set(opt('train', 'Yiheng Wang').split(',').map(x => x.trim()));
-const isTrain = s => TRAIN.has(s.solver);
+// --fold k/K: cross-validation by solve -- the training solvers' solves in
+// fold k (by key hash) are held out too.
+const [FOLD, FOLDS] = opt('fold', '0/0').split('/').map(Number);
+const isTrain = s => TRAIN.has(s.solver) && !(FOLDS && hashKey(`cv${s.key}`) % FOLDS === FOLD);
 const EXCLUDED_LABEL = /zbls|vls|wvls|\bols\b/i;
 
 /** Every solve of the data files with a stable key and its solver. */
@@ -232,6 +235,8 @@ async function buildCompletePools() {
         const results = await B.searchCurrentNode(session, h, null);
         const pieces = calculateSolvedPieces(session.rootNode, targetNode);
         const proKey = F.commuteNormalize(seg.alg);
+        const held = alg => F.applyAlgorithm(SOLVED_FACELETS, [solve.scramble, session.isAtRoot ? alg.rotation : session.rotation, session.scoredPath, alg.coreAlg].filter(Boolean).join(' '));
+        record.topFeat = [];
         for (const r of results) {
           const lk = r.tpp * pieces - session.pathCost(r.coreAlg);
           if (F.commuteNormalize(r.coreAlg) === proKey) {
@@ -239,9 +244,16 @@ async function buildCompletePools() {
             if (Math.abs(lk - record.proLook) > 1e-6) record.lookMismatch = lk - record.proLook;
             continue;
           }
+          // pair-choice features of the cube as held after the step (look,
+          // then planning), checked against the app's own cost
+          const f = held(r);
+          const fv = [...pairLookFeatures(f), ...planFeatures(f)];
+          if (Math.abs(look(f) - lk) > 1e-6) throw new Error(`${solve.key} ${seg.labels}: pair-choice cost of ${r.rotation} | ${r.coreAlg} is ${lk}, features give ${look(f)}`);
           record.top.push(r.coreAlg);
           record.topLook.push(+lk.toFixed(6));
+          record.topFeat.push(fv);
         }
+        record.proFeat = [...pairLookFeatures(proEnd), ...planFeatures(proEnd)];
         record.size = record.top.length;
         record.proCost = +(proBase + record.proLook).toFixed(6);
       }
@@ -274,8 +286,16 @@ const MCC_KEYS = Object.keys(S.ALG_SPEED_DEFAULTS);
 const PEN_KEYS = Object.keys(S.STEP_PENALTIES);
 const LM_KEYS = ['order', 'discount', 'proWeight'];
 
+// The pair-choice weights (script.js PAIR_PLANNING, README "Pair choice",
+// "Pair planning"): look features then planning features of the cube a step
+// leaves. Complete pools store each alg's feature vector.
+const { LOOK_FEATURES, PLAN_FEATURES } = require(path.join(js, 'facelet-flags.js'));
+const PAIR_KEYS = [...LOOK_FEATURES.map(k => `look_${k}`), ...PLAN_FEATURES.map(k => `plan_${k}`)];
 function currentParams() {
-  return { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
+  const pair = {};
+  LOOK_FEATURES.forEach((k, i) => { pair[`look_${k}`] = S.PAIR_PLANNING.look[i]; });
+  PLAN_FEATURES.forEach((k, i) => { pair[`plan_${k}`] = S.PAIR_PLANNING.plan[i]; });
+  return { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, ...pair, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
 }
 
 /** Naturalness models: per training fold, and one for the held-out groups. */
@@ -295,7 +315,8 @@ function buildModels(solves, params) {
 // (--fit turns,midXZ): a turn count and mid-step x/z rotations.
 const FEATS = ['D', 'F', 'B', 'wideRL', 'wideUDFB', 'wideOther', 'rotMidY', 'natural'];
 const EXTRA_FEATS = ['turns', 'midXZ'];
-const ALL_FEATS = [...FEATS, ...EXTRA_FEATS];
+const ALL_FEATS = [...FEATS, ...EXTRA_FEATS, ...PAIR_KEYS];
+const PAIR_AT = FEATS.length + EXTRA_FEATS.length;
 const NF = ALL_FEATS.length;
 if (FEATS.slice().sort().join() !== PEN_KEYS.slice().sort().join()) throw new Error(`stepPenalty changed: ${PEN_KEYS} vs ${FEATS}; update FEATS`);
 function featuresInto(out, o, alg) {
@@ -331,13 +352,19 @@ function buildCache(pools, solvesByKey, sample, filter) {
       const rest = seg.rest.length > sample ? seg.rest.slice(0, sample) : seg.rest;
       const algs = [seg.pro, ...seg.top, ...rest];
       // Complete pools: each alg's pair-choice cost (look + planning), fixed.
+      // (with stored features: as weighted features instead, see fillFeatures)
       const look = new Float64Array(algs.length);
-      if (seg.complete) { look[0] = seg.proLook; seg.topLook.forEach((v, k) => { look[k + 1] = v; }); }
+      let pair = null;
+      if (seg.complete && seg.topFeat) {
+        pair = new Float64Array(algs.length * PAIR_KEYS.length);
+        pair.set(seg.proFeat, 0);
+        seg.topFeat.forEach((v, k) => pair.set(v, (k + 1) * PAIR_KEYS.length));
+      } else if (seg.complete) { look[0] = seg.proLook; seg.topLook.forEach((v, k) => { look[k + 1] = v; }); }
       cache.push({
         solve, group: solve.solver, isRoot: seg.isRoot, size: seg.size, nTop: seg.top.length, restWeight: rest.length ? seg.restSize / rest.length : 0,
         // the pro's step can be the app's top result: in its pool, or (complete pools) in the search's space
         proInPool: seg.complete ? seg.proInSpace === 'in the search' : seg.proInPool,
-        complete: !!seg.complete, prior: seg.priorSteps.join(' ').split(' ').filter(Boolean), algs, look, mcc: new Float64Array(algs.length), feat: new Float64Array(algs.length * NF),
+        complete: !!seg.complete, prior: seg.priorSteps.join(' ').split(' ').filter(Boolean), algs, look, pair, mcc: new Float64Array(algs.length), feat: new Float64Array(algs.length * NF),
       });
     }
   }
@@ -364,7 +391,10 @@ function fillFeatures(cache, models, onlyNatural = false) {
     S.useNaturalnessModel(models(c.solve));
     for (let i = 0; i < c.algs.length; i++) {
       if (onlyNatural) c.feat[i * NF + 7] = S.algSurprise(c.algs[i]);
-      else featuresInto(c.feat, i * NF, c.algs[i]);
+      else {
+        featuresInto(c.feat, i * NF, c.algs[i]);
+        if (c.pair) for (let k = 0; k < PAIR_KEYS.length; k++) c.feat[i * NF + PAIR_AT + k] = c.pair[i * PAIR_KEYS.length + k];
+      }
     }
   }
   S.useNaturalnessModel(null);
@@ -463,7 +493,8 @@ const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN)
 function summarize(results) {
   const groups = new Map();
   for (const r of results) {
-    for (const g of [r.group, `${r.group} ${r.isRoot ? 'first' : 'later'}`, `all ${r.isRoot ? 'first' : 'later'}`, ...(r.rotates && !r.isRoot ? [`${r.group} later, rotating`] : []), ...(r.train ? ['train'] : [])]) {
+    const grp = FOLDS && TRAIN.has(r.group) && !r.train ? `${r.group} (fold)` : r.group;
+    for (const g of [grp, `${grp} ${r.isRoot ? 'first' : 'later'}`, `all ${r.isRoot ? 'first' : 'later'}`, ...(r.rotates && !r.isRoot ? [`${r.group} later, rotating`] : []), ...(r.train ? ['train'] : [])]) {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(r);
     }
@@ -544,6 +575,33 @@ function addLook(cache, weights) {
   }
 }
 
+/**
+ * --explain: where the pro's step loses to the app's top result, by cost
+ * component (mean of pro minus top; positive = the pro pays more), first
+ * and later steps.
+ */
+function explain(cache, params) {
+  const w = ALL_FEATS.map(k => params[k] || 0);
+  const names = ['MCC', ...ALL_FEATS];
+  for (const first of [true, false]) {
+    const sums = new Float64Array(names.length);
+    let n = 0;
+    for (const c of cache) {
+      if (c.isRoot !== first) continue;
+      const cost = i => { let t = c.mcc[i]; for (let k = 0; k < NF; k++) t += w[k] * c.feat[i * NF + k]; return t; };
+      let top = -1;
+      let best = Infinity;
+      for (let i = 1; i <= c.nTop; i++) { const v = cost(i); if (v < best) { best = v; top = i; } }
+      if (top < 0 || cost(0) <= best) continue;
+      n++;
+      sums[0] += c.mcc[0] - c.mcc[top];
+      for (let k = 0; k < NF; k++) sums[k + 1] += w[k] * (c.feat[k] - c.feat[top * NF + k]);
+    }
+    console.log(`\n${first ? 'first' : 'later'} steps where the pro is not first (${n}): mean (pro - top result) by component`);
+    names.forEach((nm, k) => { if (Math.abs(sums[k] / n) > 0.005) console.log(`  ${nm.padEnd(26)} ${(sums[k] / n).toFixed(2).padStart(7)}`); });
+  }
+}
+
 function evaluate() {
   const t0 = Date.now();
   const { params, train, held } = setup(Number(opt('sample', 'Infinity')));
@@ -553,6 +611,7 @@ function evaluate() {
   const sum = summarize(res);
   printSummary(sum);
   printFrequencies(sum, ['all first', 'all later']);
+  if (args.includes('--explain')) explain([...train, ...held], params);
   console.log(`\npro step found by the search: ${res.filter(r => r.proInPool).length}/${res.length}; ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
@@ -563,12 +622,26 @@ function fit() {
   console.error(`cache built (${train.length} train steps, ${held.length} held out) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   const keys = (opt('fit', [...PEN_KEYS, ...MCC_KEYS].join(','))).split(',');
   const rounds = Number(opt('rounds', '3'));
+  // Objective (lower is better): mean log10 rank of the pro steps, plus
+  // lambda x the move-type frequency gap of the top results (first and later
+  // steps separately): the top result should use each move type about as
+  // often as the professionals do.
+  const lambda = Number(opt('lambda', '0.2'));
+  // a value changes only if it improves the objective by more than this
+  // (the search otherwise follows noise in weakly identified weights)
+  const minGain = Number(opt('min-gain', '0.002'));
+  const objective = (res) => {
+    const first = res.filter(r => r.isRoot);
+    const later = res.filter(r => !r.isRoot);
+    return mean(res.map(r => Math.log10(r.rank))) + lambda * (moveFrequencies(first).loss + moveFrequencies(later).loss);
+  };
   const score = (cache, p) => summarize(rankCache(cache, p));
-  let best = score(train, params).train.logRank;
+  let best = objective(rankCache(train, params));
   const report = tag => {
     const s = { ...score(train, params), ...score(held, params) };
-    const held2 = Object.keys(s).filter(g => g !== 'train' && !TRAIN.has(g) && !/ (first|later|rotating)$/.test(g));
-    console.log(`${tag}: train ${s.train.logRank.toFixed(4)} (top10 ${(100 * s.train.top10).toFixed(1)}%, pct ${(100 * s.train.pct).toFixed(2)}) | ${held2.map(g => `${g} ${s[g].logRank.toFixed(4)} (top10 ${(100 * s[g].top10).toFixed(1)}%, pct ${(100 * s[g].pct).toFixed(2)})`).join(' | ')}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
+    const held2 = Object.keys(s).filter(g => g !== 'train' && !TRAIN.has(g) && !/ (first|later|rotating)$/.test(g) && !g.startsWith('all '));
+    const gap = (res) => `${moveFrequencies(res.filter(r => r.isRoot)).loss.toFixed(2)}/${moveFrequencies(res.filter(r => !r.isRoot)).loss.toFixed(2)}`;
+    console.log(`${tag}: objective ${best.toFixed(4)} | train ${s.train.logRank.toFixed(4)} (top10 ${(100 * s.train.top10).toFixed(1)}%, first ${(100 * s[[...TRAIN][0] + ' first'].top10).toFixed(1)}%, gap ${gap(rankCache(train, params))}) | ${held2.map(g => `${g} ${s[g].logRank.toFixed(4)} (top10 ${(100 * s[g].top10).toFixed(1)}%, first ${(100 * (s[g + ' first'] || { top10: NaN }).top10).toFixed(1)}%)`).join(' | ')} | held gap ${gap(rankCache(held, params))}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
   };
   report('start');
   const mults = [0, 0.5, 0.7, 0.85, 0.93, 1.07, 1.15, 1.4, 2];
@@ -578,17 +651,19 @@ function fit() {
       const cur = params[k];
       const isMcc = MCC_KEYS.includes(k);
       const isLm = LM_KEYS.includes(k);
+      const isPair = PAIR_KEYS.includes(k);
       const cands = isLm
         ? (k === 'order' ? [2, 3, 4] : k === 'discount' ? [0.5, 0.6, 0.75, 0.85, 0.95] : [1, 3, 10])
-        : [...new Set([...mults.map(m => +(cur * m).toPrecision(3)), ...(cur === 0 ? [0.1, 0.3, 1, 2] : [])])].filter(v => isMcc ? v > 0 : v >= 0);
+        : isPair ? [...new Set([0, ...[-2, -1, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5, 1, 2].map(x => +(cur + x).toPrecision(3))])]
+          : [...new Set([...mults.map(m => +(cur * m).toPrecision(3)), ...(cur === 0 ? [0.1, 0.3, 1, 2] : [])])].filter(v => isMcc ? v > 0 : v >= 0);
       let bestV = cur;
       for (const v of cands) {
         if (v === cur) continue;
         const p = { ...params, [k]: v };
         if (isMcc) fillMcc(train, p);
         if (isLm) fillFeatures(train, buildModels(solves, p), true);
-        const s = score(train, p).train.logRank;
-        if (s < best - 1e-4) { best = s; bestV = v; }
+        const s = objective(rankCache(train, p));
+        if (s < best - (bestV === cur ? minGain : 1e-6)) { best = s; bestV = v; }
       }
       params = { ...params, [k]: bestV };
       if (isMcc) { fillMcc(train, params); if (bestV !== cur) fillMcc(held, params); }

@@ -88,21 +88,29 @@ based on Triangium's **MCC** hand-movement model, with these rules:
   MCC prices each finger movement on its own; humans execute familiar
   sequences as one motion.
 
-**Tuning data: professional solves.** `alg_speed` is fitted so that the step
-a professional actually executed ranks near the top of the alternatives the
-search finds for the same goal. The data is
+**Tuning data: professional solves.** Every ranking weight (`alg_speed`
+and `pair_choice`) is fitted on professional solves: the step a
+professional actually executed should rank near the top of what the app
+lists for the same goal, i.e. the complete search's best 300 for that step
+(every spelling, the same pair-choice term), and the app's top result should
+use each kind of move (wide, `D`, `F`, `B`, `L`, half turns, mid-step and
+leading rotations; turn count) about as often as the professionals do. The
+loss is the mean log rank of the professional's step plus 0.1 x a
+chi-square-like distance between those move-type frequencies (first and
+later steps separately). The data is
 [reco_solves.txt](data/reco_solves.txt): reconstructions of real solves from
 [reco.nz](https://reco.nz) (currently Yiheng Wang and Xuanyi Geng, ~930
 solves, ~3,600 steps; `tools/reco.js` downloads and validates them), plus
 [pro_references.txt](data/pro_references.txt). Fitting and validation use
-`tools/tune-alg-speed.js`; a change is kept only if it also improves solves
-the fit never saw (another solver's solves, the reference solves). The
-language model is never evaluated on a solve it was trained on. Fitted on
-Yiheng Wang, the current function ranks the held-out solver's later steps
-in the top 10 of their alternatives 94% of the time (87% before), and puts
-51 of the 66 reference steps in the app's own top 10 (43 before). A
-professional sometimes executes a slower step than the best available, so
-the target is where pro steps rank overall, not every pro step on top.
+`tools/tune-alg-speed.js` (`cpools` builds the lists, `fit`, `eval`): fitted
+on 300 reco.nz solves of both solvers, kept only if it also improves solves
+the fit never saw (cross-validation by solve; the reference solves). The
+language model is never evaluated on a solve it was trained on. Current
+function: 92% of the professionals' later steps and 27% of their first
+steps rank in the top 10 of the app's list for their goal (91% and 21%
+before), the reference solves 82% (first steps 42%). A professional
+sometimes executes a slower step than the best available, so the target is
+where pro steps rank overall, not every pro step on top.
 
 ### Pair choice
 
@@ -116,20 +124,24 @@ without working out the next one. It is learned, not a hand-written rule:
   still unsolved after the step: corners stuck in a bottom slot, edges stuck
   in a middle slot, lone pieces already home, pairs with both pieces in the
   top layer, and pairs already connected there. Each count has a weight.
-- **What it is trained on**: random-state solves, where at every step the
-  candidates (the best few of each pair choice) are labelled with their
-  2-step look-ahead TPP from a real search of the next step. The weights
-  minimise the expected look-ahead TPP of the candidate the single-step
-  ranking puts first (`tools/pair-choice.js`); the look-ahead's TPPs are
-  only the training signal. It cannot be exact (the next step depends on
-  more than a solver sees at a glance); it learns the heuristics.
+- **What it is trained on**: first on random-state solves, where at every
+  step the candidates (the best few of each pair choice) are labelled with
+  their 2-step look-ahead TPP from a real search of the next step. The
+  weights minimise the expected look-ahead TPP of the candidate the
+  single-step ranking puts first (`tools/pair-choice.js`); the look-ahead's
+  TPPs are only the training signal. It cannot be exact (the next step
+  depends on more than a solver sees at a glance); it learns the
+  heuristics. Then, like `alg_speed`, refined on professional solves (see
+  Tuning data).
 - It is added once, for the cube the path leaves (not per step), and is 0
   once F2L is solved, so the cost of a complete solution is unchanged. Like
   the rest of `alg_speed`, it is the same at every step.
 
-Learned weights (time units, per counted pair or piece): connected pair
-−5.7, both pieces in the top layer −1.4, edge stuck +0.78, corner stuck
-+0.54, lone piece home +0.45. On held-out scrambles the candidate ranked
+Learned weights (time units, per counted pair or piece; pair planning off,
+see below for on): connected pair −5.7, both pieces in the top layer −1.4,
+edge stuck +0.78, corner stuck +0.54, lone piece home +0.45. (Refining these
+on professional solves gained too little to keep: the reference solves
+ranked worse.) On held-out scrambles the candidate ranked
 first is on average 26% closer to the look-ahead's best (first steps 33%,
 later steps 15%). Checked on professional solves it never saw: their
 executed steps rank higher among same-goal alternatives, and at later
@@ -163,9 +175,12 @@ learned, not a rule: its weights are fitted together with them on the same
 best candidate first more often on scrambles the fit never saw.
 
 Learned weights (time units per edge or slot): bad U edge +0.60, good U
-edge −1.59, bad middle edge +0.78, open back slot +0.54 (look weights
-refitted with them: connected −5.58, both in U −1.40, trapped corner +0.40,
-trapped edge +0.20, lone piece home +0.24). Held out, the candidate ranked
+edge −1.59, bad middle edge +0.78, open back slot +2.54 (+0.54 from the
+look-ahead fit; refined on professional solves, who leave the back slots
+solved and the open ones in front much more than the look-ahead asks).
+The look weights with planning on: connected −5.58, both in U −1.40,
+trapped corner +0.40, trapped edge −0.80 (+0.20 before the refinement),
+lone piece home +0.24. Held out (look-ahead fit), the candidate ranked
 first is closer to the look-ahead's best (regret 0.222 → 0.211; first
 steps 0.398 → 0.377, later steps 0.143 → 0.136), and in solves that commit
 the top result at every step, solves rotate less and solve the two front
