@@ -248,9 +248,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // the page's main thread, which used to be the bottleneck of root searches
   // and look-ahead. Same function, same output; any worker failure falls back
   // to running that call's post-processing here.
-  // Sized to the threads the engine pool and the page leave (at least one,
-  // at most 12; big calls are ranked in chunks side by side).
-  const POST_POOL_SIZE = Math.max(1, Math.min(12, HARDWARE_THREADS - 1 - ENGINE_POOL_SIZE));
+  // Sized to the threads the engine pool leaves (at least two, at most 12;
+  // big calls are ranked in chunks side by side). The page's own thread is
+  // idle while they rank, and the engines finish in seconds, so no thread is
+  // kept back for them (on a 2-thread report, one worker ranked a first step
+  // alone: 29 s instead of ~20 s).
+  const POST_POOL_SIZE = Math.max(2, Math.min(12, HARDWARE_THREADS - ENGINE_POOL_SIZE));
   let postPool = null;
   function postProcessor() {
     if (postPool === false) return null;
@@ -282,8 +285,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         // Calls wait here, not in a worker's message queue, so the lowest
         // look-ahead rank (the best candidates' follow-ups; the step's own
         // calls have none) is processed first, like the engine calls
-        // (search-scheduler.js). Two calls in flight per worker, so a worker
-        // has the next one while its last result is on its way back.
+        // (search-scheduler.js), and of equal ranks the biggest first. One
+        // call per worker: with two, both chunks of a big call could queue
+        // behind each other on one worker while another one idles.
         const waiting = [];
         const pump = () => {
           if (!workers.some(w => !w.broken)) {
@@ -291,10 +295,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             return;
           }
           for (;;) {
-            const w = workers.find(x => !x.broken && x.pending.size < 2);
+            const w = workers.find(x => !x.broken && x.pending.size < 1);
             if (!w || !waiting.length) return;
             let best = 0;
-            for (let i = 1; i < waiting.length; i++) if (compareSearchRanks(waiting[i].rank, waiting[best].rank) < 0) best = i;
+            for (let i = 1; i < waiting.length; i++) {
+              const c = compareSearchRanks(waiting[i].rank, waiting[best].rank);
+              if (c < 0 || (c === 0 && waiting[i].cores.length > waiting[best].cores.length)) best = i;
+            }
             const { ctx, job, cores, resolve, reject } = waiting.splice(best, 1)[0];
             const id = nextId++;
             jobs.set(id, { resolve, reject });
@@ -315,6 +322,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         }
         postPool = (ctx, job, cores, rank) => send(ctx, job, cores, rank)
           .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
+        postPool.workers = workers.length; // solver-bridge.js completeChunks
       } catch (err) {
         console.error('Post-processing workers unavailable; using the main thread', err);
         postPool = false;

@@ -1162,7 +1162,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // A big call is ranked in chunks side by side on the worker pool (the
       // best N of each chunk; trimToTypeBest keeps the best N of all).
       // Chunks of solutions that end alike share most of their bound rows.
-      const chunks = completeChunks(cores);
+      const chunks = completeChunks(cores, session.postProcessor.workers);
       const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank)));
       p.candidates = [].concat(...parts);
     } else {
@@ -1234,10 +1234,13 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
 // Complete search: solutions per post-processing job (see processCall).
 const COMPLETE_CHUNK = 12000;
 /** A big call's solutions in chunks of about COMPLETE_CHUNK, each a run of solutions that end alike. */
-function completeChunks(cores) {
+// No more chunks than ranking workers: each chunk finds its own best N, so
+// more chunks than workers only add work (6 chunks of a 64k-solution root
+// cross: +50% CPU over the whole call; 2: none).
+function completeChunks(cores, workers) {
   const keyed = cores.filter(Boolean).map(c => [c.split(' ').reverse().join(' '), c]);
   keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-  const count = Math.ceil(keyed.length / COMPLETE_CHUNK);
+  const count = Math.max(1, Math.min(workers || Infinity, Math.ceil(keyed.length / COMPLETE_CHUNK)));
   const size = Math.ceil(keyed.length / count);
   const out = [];
   for (let k = 0; k < keyed.length; k += size) out.push(keyed.slice(k, k + size).map(x => x[1]));

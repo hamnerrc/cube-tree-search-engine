@@ -33,8 +33,9 @@ if (!isMainThread && workerData && workerData.postProcessPool) {
   });
 }
 
-// Two, so a worker has the next call while its last result is on its way back.
-const IN_FLIGHT = 2;
+// One call per worker (as the page's pool): with two, both chunks of a big
+// call could queue behind each other on one worker while another idles.
+const IN_FLIGHT = 1;
 
 async function createPostProcessPool(size) {
   const workers = Array.from({ length: Math.max(1, size) }, () => {
@@ -44,7 +45,7 @@ async function createPostProcessPool(size) {
   });
   const inFlight = new Map();
   // Calls wait here, at most IN_FLIGHT per worker, lowest look-ahead rank
-  // first (as the page's pool does).
+  // first, of equal ranks the biggest (as the page's pool does).
   const queue = [];
   let nextId = 0;
   const pump = () => {
@@ -52,7 +53,10 @@ async function createPostProcessPool(size) {
       const w = workers.find(x => x.pending < IN_FLIGHT);
       if (!w || !queue.length) return;
       let best = 0;
-      for (let i = 1; i < queue.length; i++) if (compareSearchRanks(queue[i].rank, queue[best].rank) < 0) best = i;
+      for (let i = 1; i < queue.length; i++) {
+        const c = compareSearchRanks(queue[i].rank, queue[best].rank);
+        if (c < 0 || (c === 0 && queue[i].cores.length > queue[best].cores.length)) best = i;
+      }
       const { ctx, job, cores, resolve, reject } = queue.splice(best, 1)[0];
       const id = nextId++;
       inFlight.set(id, { resolve, reject });
@@ -74,6 +78,7 @@ async function createPostProcessPool(size) {
     queue.push({ ctx, job, cores, rank, resolve, reject });
     pump();
   });
+  process.workers = workers.length; // solver-bridge.js completeChunks
   return { process, size: workers.length, terminate: () => Promise.all(workers.map(w => w.terminate())) };
 }
 
