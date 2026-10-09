@@ -120,8 +120,9 @@ Everything in the README is implemented except the visual redesign
 - Complete search, this 2-core machine (4 threads), headless Chrome (1
   engine worker, 2 post-processing workers), white, xcross + xxcross:
   scramble `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2` first
-  step 82 s, second 48 s (old capped search: 21 s, 13 s). Node, same
-  pools: 65 s / 40 s. On it, every engine call of the first step is done
+  step 58 s, second 44 s (old capped search: 21 s, 13 s; before the
+  second round of bound work 82 s / 48 s). Node, same pools: 42 s / 39 s
+  (were 65 s / 40 s); scramble `D R2 U' B2 ...` 63 s / 85 s. On it, every engine call of the first step is done
   after 5.3 s; the rest is ranking spellings of 64,162 crosses (≤9 turns)
   in 24 inspection orientations. Other scrambles: first steps 23-25 s,
   later steps 2-57 s (`complete-search-e2e.js`).
@@ -157,12 +158,25 @@ natural·bits + least MCC of the token) + look. C0 = least start time of the
 committed path's MCC checkpoint. Per-token least MCC from algSpeed's cases
 (`mccMinimum`; R quarter turns may get 0.5 back, the first of a U/D pair
 may add nothing). The remaining moves are bounded by a DP over (moves
-left, frame, context flag) with exact trigram bits for plain runs, bits
-conditioned on a known wide token after it, a looser term for mid-step
-rotations and rotation-split half turns. Rows depend only on the last moves
-+ 2 of context, so solutions sorted by their endings share rows. Measured
-slack (true best spelling − bound) went 43 → 23 cost units per solution on
-real xcross solutions; MCC's regrips are most of what is left.
+left, frame, mid rotation used, context flag): exact trigram bits for plain
+runs, and after any other written token (wide, rotation, split quarter) an
+exact-context continuation `afterKnown(j, frame, r, prev)`, memoised per
+row. Rows depend only on the last moves + 2 of context, so solutions sorted
+by their endings share rows. Per spelling the bound is within 0.2-3 units
+of the real cost (MCC); the DP's minimum over spellings was the loose part:
+without the rotation-used state and exact contexts after a frame change it
+hopped between relabelings (slack 26 units on root crosses), now 11-16.
+
+Order of work (`enumerate`): a cheap estimate of each solution's plain
+spelling picks 256 to walk first (a tight N-th best early); then every other
+solution in suffix order, its bound table shared with the previous one and
+walked at once if the bound fits (the walk reuses the table). Exact either
+way: each solution is walked or its bound exceeded the N-th best when it
+was checked. Root capture (scramble `D R2 U' B2 ...`, 4 big calls): 153 s
+→ 87 s single-threaded, identical top 50 per call.
+
+Known exclusion: spellings whose turns cancel (`L' l r` for `R`) are not
+generated; the old pro-move-set engine produced some.
 
 Verification: `test/spelling-search.test.js` (best N of every view equal
 brute force, first and later steps, shared rows; physical spellings; bound

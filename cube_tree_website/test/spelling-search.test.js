@@ -156,7 +156,7 @@ test('the bound is a lower bound of the real cost', () => {
     const L = SpellingSearch.lmTables();
     const H = SpellingSearch.boundTable(face, null, SpellingSearch.mccMinimum(), SpellingSearch.penalties(), L);
     let least = Infinity;
-    for (const [lt, ld] of t.LEAD_LATER) least = Math.min(least, H[(face.length * t.NR + ld) * SpellingSearch.FLAGS + 0] + (lt >= 0 ? SpellingSearch.mccMinimum()[lt] : 0));
+    for (const [lt, ld] of t.LEAD_LATER) least = Math.min(least, H[((face.length * t.NR + ld) * 2 + 0) * SpellingSearch.FLAGS + 0] + (lt >= 0 ? SpellingSearch.mccMinimum()[lt] : 0));
     SpellingSearch.enumerate([{ face, look: 0 }], {
       root: false,
       budget: () => Infinity,

@@ -40,6 +40,27 @@ function physicallyExact(session, r) {
   return flags.cross && ['BL', 'BR', 'FR', 'FL'].every(sl => flags[sl] === (node.corners || []).includes(sl));
 }
 const faceTurns = alg => alg.split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
+// A spelling with more turns than its face turns (turns that cancel, e.g.
+// "L' l r" for R, "R2 l x" for R'): outside the complete search's grammar
+// on purpose (README "Complete search").
+function cancels(alg) {
+  const moves = canonicalizeForEngine('', alg).moves.split(' ').filter(Boolean);
+  // net quarter turns per face over each run of same-axis moves (they commute)
+  const axis = f => ({ U: 0, D: 0, R: 1, L: 1, F: 2, B: 2 })[f];
+  const q = { '': 1, "'": 3, '2': 2 };
+  let count = 0;
+  for (let i = 0; i < moves.length;) {
+    let k = i;
+    const net = {};
+    while (k < moves.length && axis(moves[k][0]) === axis(moves[i][0])) {
+      net[moves[k][0]] = ((net[moves[k][0]] || 0) + q[moves[k].slice(1)]) % 4;
+      k++;
+    }
+    count += Object.values(net).filter(Boolean).length;
+    i = k;
+  }
+  return count < faceTurns(alg);
+}
 
 (async () => {
   const tree = JSON.parse(fs.readFileSync(path.join(root, 'data', 'f2l_nodes_and_edges.json'), 'utf8'));
@@ -79,7 +100,7 @@ const faceTurns = alg => alg.split(' ').filter(t => t && !/^[xyz]/.test(t)).leng
         let missing = 0;
         let better = 0;
         for (const r of oldList.slice(0, 25)) {
-          if (faceTurns(r.coreAlg) > limitOf(r)) continue;
+          if (faceTurns(r.coreAlg) > limitOf(r) || cancels(r.coreAlg)) continue;
           if (!keys.has(`${r.rotation}|${commuteNormalize(r.coreAlg)}`)) {
             // fine only if N results of its type are better
             const sameType = list.filter(c => c.type === r.type && c.tpp <= r.tpp + 1e-9).length;

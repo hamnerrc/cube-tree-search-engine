@@ -230,7 +230,9 @@ an engine happens to list solutions in; the speed-ups below are exact.
    - a half turn as one plain and one wide quarter turn (`U2` + `y` as
      `d' U'`), or as two quarter turns around the mid-step rotation
      (`U y' U R' U' R`);
-   - the cross always ends on the bottom.
+   - the cross always ends on the bottom;
+   - never more turns than the solution has: spellings whose turns cancel
+     (`L' l r` for `R`) are not generated.
    Every spelling of a solution is physically "that solution, then a
    y-family rotation", so it solves the same pieces; the slots it reaches
    are read off the physical result.
