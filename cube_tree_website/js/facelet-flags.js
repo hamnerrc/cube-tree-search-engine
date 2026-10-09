@@ -257,6 +257,29 @@ function planFeatures(facelets, out = [0, 0, 0, 0]) {
     return out;
 }
 
+/**
+ * planFeatures of the cube held as is and after each y rotation, in the
+ * order '', 'y', 'y2', "y'" (out[4 * r + k]), from one pass: a y turns
+ * every U-layer edge good <-> bad and leaves middle-layer edges alone, and
+ * the slots that end up at the back are, after y, FL and BL; after y2, FL
+ * and FR; after y', FR and BR (tested against planFeatures of the rotated
+ * cube, test/pair-choice.test.js).
+ */
+const PLAN_BACK_BY_Y = [['BL', 'BR'], ['FL', 'BL'], ['FL', 'FR'], ['FR', 'BR']];
+function planFeaturesY(facelets, out = new Array(16).fill(0)) {
+    const f = planFeatures(facelets, PLAN_Y_FLAGS);
+    const flags = solvedFlags(facelets);
+    for (let r = 0; r < 4; r++) {
+        const swap = r === 1 || r === 3;
+        out[4 * r] = swap ? f[1] : f[0];
+        out[4 * r + 1] = swap ? f[0] : f[1];
+        out[4 * r + 2] = f[2];
+        out[4 * r + 3] = (flags[PLAN_BACK_BY_Y[r][0]] ? 0 : 1) + (flags[PLAN_BACK_BY_Y[r][1]] ? 0 : 1);
+    }
+    return out;
+}
+const PLAN_Y_FLAGS = [0, 0, 0, 0];
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS, pairLookFeatures, LOOK_FEATURES, planFeatures, PLAN_FEATURES };
+    module.exports = { solvedFlags, pseudoSolvedFlags, MASKS, CORNER_MASKS, EDGE_MASKS, pairLookFeatures, LOOK_FEATURES, planFeatures, planFeaturesY, PLAN_FEATURES };
 }

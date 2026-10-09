@@ -8,7 +8,7 @@
 'use strict';
 const assert = require('assert');
 const { applyAlgorithm, SOLVED_FACELETS } = require('../js/facelet-cube.js');
-const { pairLookFeatures, solvedFlags, LOOK_FEATURES } = require('../js/facelet-flags.js');
+const { pairLookFeatures, solvedFlags, LOOK_FEATURES, planFeatures, planFeaturesY } = require('../js/facelet-flags.js');
 const { PAIR_CHOICE_LOOK } = require('../js/script.js');
 
 let failures = 0;
@@ -51,6 +51,25 @@ test('PAIR_CHOICE_LOOK: one weight per feature; a connected pair is worth more t
   const cost = alg => features(alg).reduce((t, x, k) => t + x * PAIR_CHOICE_LOOK[k], 0);
   assert.ok(cost("R U R'") < cost("R U' R'"), 'connected pair left < split pair left');
   assert.strictEqual(cost(''), 0, 'F2L solved: no term');
+});
+
+test('planFeaturesY equals planFeatures of the cube after each y rotation', () => {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  // cross-preserving triggers (and y rotations), so every state has the cross
+  const triggers = ["R U R'", "R U' R'", "R U2 R'", "R' U R", "L' U L", "L U L'", "F' U F", "F U F'", "B U B'", "B' U B", 'U', "U'", 'U2', "R' F R F'", "L' U2 L", 'y', "y'"];
+  let checked = 0;
+  for (let k = 0; k < 600; k++) {
+    const alg = Array.from({ length: 3 + (k % 9) }, () => triggers[Math.floor(rnd() * triggers.length)]).join(' ');
+    const f = applyAlgorithm(SOLVED_FACELETS, alg);
+    assert.ok(solvedFlags(f).cross, alg);
+    const got = planFeaturesY(f);
+    ['', 'y', 'y2', "y'"].forEach((r, i) => {
+      assert.deepStrictEqual(got.slice(4 * i, 4 * i + 4), planFeatures(r ? applyAlgorithm(f, r) : f), `${alg} then ${r}`);
+      checked++;
+    });
+  }
+  assert.ok(checked >= 2400);
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

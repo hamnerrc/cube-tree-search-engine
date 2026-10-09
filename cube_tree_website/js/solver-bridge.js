@@ -1299,6 +1299,7 @@ function lookWeightsFor(session) {
 
 /** Pair-planning cost of the cube `facelets` as held (planFeatures; 0 without weights). */
 const planScratch = [0, 0, 0, 0];
+const planYScratch = new Array(16).fill(0);
 function planCost(weights, facelets) {
   if (!weights || !facelets) return 0;
   planFeatures(facelets, planScratch);
@@ -1711,17 +1712,19 @@ function postProcessComplete(ctx, p, cores) {
     const sol = { face: core.split(' '), core, look: lookCost(check.facelets) };
     if (ctx.planWeights) {
       // every spelling ends as this solution then a y-family rotation: its
-      // planning cost by that rotation (enumerate bounds with the least)
-      const tables = SPELLING.tables();
-      const base = sol.look;
-      sol.lookByEnd = new Float64Array(tables.NR).fill(Infinity);
+      // planning cost by that rotation ('', y, y2, y'; enumerate bounds
+      // with the least)
+      const f = planFeaturesY(check.facelets, planYScratch);
+      const w = ctx.planWeights;
+      const by = [0, 0, 0, 0];
       let least = Infinity;
-      for (let d = 0; d < tables.NR; d++) {
-        if (!tables.YF[d]) continue;
-        const v = base + planCost(ctx.planWeights, tables.ROT_NAME[d] ? applyAlgorithm(check.facelets, tables.ROT_NAME[d]) : check.facelets);
-        sol.lookByEnd[d] = v;
+      for (let r = 0; r < 4; r++) {
+        let v = sol.look;
+        for (let k = 0; k < w.length; k++) v += w[k] * f[4 * r + k];
+        by[r] = v;
         if (v < least) least = v;
       }
+      sol.lookByEnd = by;
       sol.look = least;
     }
     sols.push(sol);

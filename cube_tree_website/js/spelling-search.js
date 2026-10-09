@@ -52,7 +52,9 @@ const SpellingSearch = (() => {
     const NR = ROT24.length;
     const RIDX = new Map(ROT24.map((r, k) => [r, k]));
     const YF = new Uint8Array(NR);
-    for (const r of ['', 'y', 'y2', "y'"]) YF[RIDX.get(RI(r))] = 1;
+    // YIDX: a y-family frame's index in '', y, y2, y' (-1 for the others)
+    const YIDX = new Int8Array(NR).fill(-1);
+    ['', 'y', 'y2', "y'"].forEach((r, k) => { YF[RIDX.get(RI(r))] = 1; YIDX[RIDX.get(RI(r))] = k; });
     const ROT_NAME = ROT24.map(r => rotationName(ROT_NAMES_BY_INDEX(r)));
     const MUL = ROT24.map(a => Int32Array.from(ROT24.map(b => RIDX.get(composeRotationIndex(a, b)))));
     const TOK = [];
@@ -89,7 +91,7 @@ const SpellingSearch = (() => {
     const QUARTERS = TOK.map(t => (FACE_T.includes(t) && t.endsWith('2') ? [TID.get(t[0]), TID.get(`${t[0]}'`)] : []));
     const LEAD_LATER = ['', 'y', "y'", 'y2'].map(t => [t ? TID.get(t) : -1, RIDX.get(RI(t))]);
     const LEAD_ROOT = ROT24.map((r, k) => [-1, k]);
-    T = { NR, YF, ROT_NAME, MUL, TOK, TID, NT, IS_ROT, IS_RL, AXIS, CONJ, WIDES, MIDS, QUARTERS, LEAD_LATER, LEAD_ROOT, FACE_T };
+    T = { NR, YF, YIDX, ROT_NAME, MUL, TOK, TID, NT, IS_ROT, IS_RL, AXIS, CONJ, WIDES, MIDS, QUARTERS, LEAD_LATER, LEAD_ROOT, FACE_T };
     return T;
   }
   // facelet-cube.js keeps orientation names internal; rotationName of a
@@ -1098,7 +1100,7 @@ const SpellingSearch = (() => {
    * The best `size` spellings of each view, exactly. o: {
    *   sols: [{ face: [face-turn tokens] or token ids, look, lookByEnd }]
    *   (look: added to the cost; lookByEnd, optional: by end frame instead,
-   *   with look its least over the y-family frames),
+   *   ['','y', 'y2', "y'"], with look its least),
    *   root, pieces, floor (C0 + the committed steps' penalties: cost minus
    *   that is what enumerate bounds), costOf(alg) (path cost, the real one),
    *   views: [{ test(candidate), wide (may contain wide turns) }], size,
@@ -1130,7 +1132,7 @@ const SpellingSearch = (() => {
         let alg = '';
         for (let k = 0; k < ids.length; k++) alg += (k ? ' ' : '') + t.TOK[ids[k]];
         exact++;
-        const tpp = (o.costOf(alg) + (sol.lookByEnd ? sol.lookByEnd[end] : sol.look)) / o.pieces;
+        const tpp = (o.costOf(alg) + (sol.lookByEnd ? sol.lookByEnd[t.YIDX[end]] : sol.look)) / o.pieces;
         if (!(tpp <= limitTpp(false))) return;
         const c = o.make(alg, lead, end, sol, tpp);
         if (c) top.offer(c);
