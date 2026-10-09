@@ -302,16 +302,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
               const c = compareSearchRanks(waiting[i].rank, waiting[best].rank);
               if (c < 0 || (c === 0 && waiting[i].cores.length > waiting[best].cores.length)) best = i;
             }
-            const { ctx, job, cores, resolve, reject } = waiting.splice(best, 1)[0];
+            const { ctx, job: queued, cores, prepare, resolve, reject } = waiting.splice(best, 1)[0];
+            // prepare: the caller's last word on the job when it starts
+            // (solver-bridge.js: its type's current limits)
+            const job = prepare ? prepare(queued) : queued;
             const id = nextId++;
             jobs.set(id, { resolve, reject });
             w.pending.add(id);
             w.postMessage({ id, ctx, job, cores });
           }
         };
-        const send = (ctx, job, cores, rank) => new Promise((resolve, reject) => {
+        const send = (ctx, job, cores, rank, prepare) => new Promise((resolve, reject) => {
           if (!workers.some(w => !w.broken)) { reject(new Error('no post-processing worker')); return; }
-          waiting.push({ ctx, job, cores, rank, resolve, reject });
+          waiting.push({ ctx, job, cores, rank, prepare, resolve, reject });
           pump();
         });
         for (const w of workers) {
@@ -320,7 +323,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           const fail = w.onerror;
           w.onerror = (e) => { fail(e); pump(); };
         }
-        postPool = (ctx, job, cores, rank) => send(ctx, job, cores, rank)
+        postPool = (ctx, job, cores, rank, prepare) => send(ctx, job, cores, rank, prepare)
           .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
         postPool.workers = workers.length; // solver-bridge.js completeChunks
       } catch (err) {

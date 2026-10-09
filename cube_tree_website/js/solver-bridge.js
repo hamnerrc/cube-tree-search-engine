@@ -1158,6 +1158,9 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     }
     const job = postProcessJob(session, p);
     if (p.complete) job.limits = typeLimits(p);
+    // A worker pool may start the job later: by then more calls of its type
+    // may have finished, and their N-th best bounds it too.
+    const refresh = p.complete ? (j => ({ ...j, limits: typeLimits(p).map((l, v) => Math.min(l, j.limits ? j.limits[v] : Infinity)) })) : null;
     if (postStop) { job.stopAt = postStop; job.listedBefore = listedNow(); job.rankMsPerCandidate = RANK_MS_PER_CANDIDATE; }
     if (p.complete && session.postProcessor && cores.length > COMPLETE_CHUNK) {
       // A big call is ranked in chunks side by side on the worker pool (the
@@ -1166,14 +1169,14 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // First a quick seed job over the whole call: its exactly scored plain
       // spellings bound every chunk (each would otherwise find its own best
       // N from scratch: 2 chunks of a first-step xcross did twice the work).
-      const seedList = await session.postProcessor(ctx, { ...job, seedOnly: true, corpus: null }, cores, rank);
+      const seedList = await session.postProcessor(ctx, { ...job, seedOnly: true, corpus: null }, cores, rank, refresh);
       job.limits = completeSeedLimits(seedList, p.topN, job.limits);
       const chunks = completeChunks(cores, session.postProcessor.workers);
-      const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank)));
+      const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank, refresh)));
       p.candidates = [].concat(...parts);
     } else {
       p.candidates = session.postProcessor
-        ? await session.postProcessor(ctx, job, cores, rank)
+        ? await session.postProcessor(ctx, job, cores, rank, refresh)
         : await postProcessCall(ctx, job, cores, yieldState);
     }
     listed += p.candidates.length;

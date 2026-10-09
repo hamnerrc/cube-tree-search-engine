@@ -423,8 +423,11 @@ function stepPenalty(alg) {
 // left-right mirrors) and the pro reference steps (PRO_STEP_ALGS, counted
 // NATURALNESS.proWeight times, mirrored too). algSurprise(alg) = the alg's
 // surprise in bits, -log2 P(move | two previous moves) summed over its moves
-// and an end-of-alg token. Rotations at the start of the alg are dropped
-// (free, like in stepPenalty); later ones are tokens like any move.
+// and an end-of-alg token. Rotations are tokens like any move, a leading
+// one too (twenty-ninth pass: dropping it made a later step's free leading
+// y much cheaper than the mid-step y professionals use as often; a first
+// step's inspection is not part of its alg). stepPenalty still charges no
+// penalty for a leading rotation.
 
 // Standard human F2L algorithms (front-right slot unless noted), one per line;
 // left-right mirrors are added by code. Lines starting with # are headings.
@@ -624,7 +627,6 @@ function naturalTokens(alg) {
     for (const t of raw) {
         if (!t) continue;
         const c = t[0];
-        if (!out.length && (c === 'x' || c === 'y' || c === 'z')) continue; // leading rotations are free
         out.push(t.length === 3 && t[1] === '2' ? t.slice(0, 2) : t === `${c}'2` ? `${c}2` : t);
     }
     return out;

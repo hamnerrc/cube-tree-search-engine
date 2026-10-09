@@ -57,7 +57,8 @@ async function createPostProcessPool(size) {
         const c = compareSearchRanks(queue[i].rank, queue[best].rank);
         if (c < 0 || (c === 0 && queue[i].cores.length > queue[best].cores.length)) best = i;
       }
-      const { ctx, job, cores, resolve, reject } = queue.splice(best, 1)[0];
+      const { ctx, job: queued, cores, prepare, resolve, reject } = queue.splice(best, 1)[0];
+      const job = prepare ? prepare(queued) : queued; // the caller's last word (solver-bridge.js)
       const id = nextId++;
       inFlight.set(id, { resolve, reject });
       w.pending++;
@@ -74,8 +75,8 @@ async function createPostProcessPool(size) {
       pump();
     });
   }
-  const process = (ctx, job, cores, rank = null) => new Promise((resolve, reject) => {
-    queue.push({ ctx, job, cores, rank, resolve, reject });
+  const process = (ctx, job, cores, rank = null, prepare = null) => new Promise((resolve, reject) => {
+    queue.push({ ctx, job, cores, rank, prepare, resolve, reject });
     pump();
   });
   process.workers = workers.length; // solver-bridge.js completeChunks

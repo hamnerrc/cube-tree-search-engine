@@ -219,13 +219,13 @@ test('stepPenalty (PROJECT_STATUS §4.35, §4.47): penalties only, step-aware ro
   const nat = alg => P.natural * algSurprise(alg);
   near(stepPenalty("R U R' U'"), nat("R U R' U'"), 'R/U moves cost only their naturalness');
   near(stepPenalty("L' U L"), nat("L' U L"));
-  near(stepPenalty("y R U R'"), nat("R U R'"), 'a rotation that starts the step is free');
+  near(stepPenalty("y R U R'"), nat("y R U R'"), 'a rotation that starts the step pays no penalty (naturalness scores it)');
   near(stepPenalty("U R' U' R y U' R U R'"), P.rotMidY + nat("U R' U' R y U' R U R'"), 'a mid-step y is penalised');
   near(stepPenalty("F R' F' r U r'"), 2 * P.F + 2 * P.wideRL + nat("F R' F' r U r'"));
   near(stepPenalty("D' B u"), P.D + P.B + P.wideUDFB + nat("D' B u"));
   near(stepPenalty("M' U M"), 2 * P.wideOther + nat("M' U M"), 'slices');
   assert.strictEqual(stepPenalty(''), 0);
-  assert.strictEqual(stepPenalty('y'), 0, 'a lone rotation has no moves to judge');
+  near(stepPenalty('y'), nat('y'), 'a lone rotation (never a step): its naturalness only');
   assert.ok(!('turn' in P), 'the flat per-turn cost (§4.46) is replaced by naturalness');
   for (const v of Object.values(P)) assert.ok(v >= 0, 'no move may cost less than MCC');
 });
@@ -243,8 +243,9 @@ test('algSurprise (PROJECT_STATUS §4.47): human F2L sequences are natural, mach
   const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m || ''} ${a} vs ${b}`);
   near(algSurprise("R U R' U' R U R'"), algSurprise("L' U' L U L' U' L"), 'mirror');
   near(algSurprise("U' F' U F"), algSurprise("U F U' F'"), 'mirror (F turns flip direction)');
-  // Leading rotations are free, notation variants agree, arrays are accepted.
-  near(algSurprise("y' U' L' U L"), algSurprise("U' L' U L"));
+  // A leading rotation is a token too (twenty-ninth pass), notation variants
+  // agree, arrays are accepted.
+  assert.ok(algSurprise("y' U' L' U L") > algSurprise("U' L' U L"));
   near(algSurprise("R2' U R"), algSurprise('R2 U R'));
   near(algSurprise(['R', 'U', "R'"]), algSurprise("R U R'"));
   // A mid-step rotation is a token, not a fresh start.

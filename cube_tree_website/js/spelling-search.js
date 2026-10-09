@@ -239,7 +239,25 @@ const SpellingSearch = (() => {
         }
       }
     }
-    LMT = { model, lm, id, MIN0, MIN1, MIN2, NT1, TRI, AFTER };
+    // TRIL: TRI for later steps, where a step may start with a written y,
+    // y' or y2 (naturalness scores it like any token): a context that
+    // reaches back to the start covers that lead token too (the least over
+    // start and the three), so the bounds hold whichever lead a spelling has.
+    const TRIL = Float64Array.from(TRI);
+    const LEADS = ['y', "y'", 'y2'].map(x => t.TID.get(x));
+    for (let w = 0; w < NT1; w++) {
+      let m = TRI[(t.NT * NT1 + t.NT) * NT1 + w];
+      for (const l of LEADS) m = Math.min(m, TRI[(t.NT * NT1 + l) * NT1 + w]);
+      TRIL[(t.NT * NT1 + t.NT) * NT1 + w] = m;
+    }
+    for (let b = 0; b < t.NT; b++) {
+      for (let w = 0; w < NT1; w++) {
+        let m = TRI[(t.NT * NT1 + b) * NT1 + w];
+        for (const l of LEADS) m = Math.min(m, TRI[(l * NT1 + b) * NT1 + w]);
+        TRIL[(t.NT * NT1 + b) * NT1 + w] = m;
+      }
+    }
+    LMT = { model, lm, id, MIN0, MIN1, MIN2, NT1, TRI, TRIL, AFTER };
     return LMT;
   }
 
@@ -353,13 +371,14 @@ const SpellingSearch = (() => {
     KV[b + c] = v;
     KN[x] = c + 1;
   }
-  function boundTable(face, H, mccMin, pen, L, fromJ = 0, stopAbove = Infinity, minMove = 0, withK = true, lastJ = face.length) {
+  function boundTable(face, H, mccMin, pen, L, fromJ = 0, stopAbove = Infinity, minMove = 0, withK = true, lastJ = face.length, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS, YF, TOK } = t;
     const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions();
     const NM = MID_T.length;
     const lam = STEP_PENALTIES.natural;
-    const { TRI, MIN2, MIN1, NT1, AFTER } = L;
+    const { MIN2, MIN1, NT1, AFTER } = L;
+    const TRI = later ? L.TRIL : L.TRI;
     const n = face.length;
     const RS = NR * 3;
     if (!H || H.length < (n + 1) * RS) {
@@ -564,13 +583,14 @@ const SpellingSearch = (() => {
    * share F (enumerate memoises it by prefix), and only the last rows of
    * the table are needed to rule a solution out.
    */
-  function forwardStep(face, q, Fin, Fout, mccMin, pen, L) {
+  function forwardStep(face, q, Fin, Fout, mccMin, pen, L, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS } = t;
     const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions();
     const NM = MID_T.length;
     const lam = STEP_PENALTIES.natural;
-    const { TRI, MIN2, MIN1, NT1, AFTER } = L;
+    const { MIN2, MIN1, NT1, AFTER } = L;
+    const TRI = later ? L.TRIL : L.TRI;
     const n = face.length;
     const OWNF = OWN_FIRST;
     const START = (NT * NT1 + NT) * NT1;
@@ -718,6 +738,11 @@ const SpellingSearch = (() => {
     const lm = L.lm;
     const AFTER = L.AFTER;
     const leads = opts.root ? t.LEAD_ROOT : t.LEAD_LATER;
+    // later steps: a written lead rotation (y, y', y2) is scored by the
+    // naturalness model like any token (its bits: leadBits), and the bound
+    // tables' start contexts cover it (lmTables TRIL)
+    const later = !opts.root;
+    const leadBits = (lt) => (lt >= 0 ? lam * lm.trigramBits(lm.START, lm.START, L.id[lt]) : 0);
     const maxRL = opts.maxRL === undefined ? SPELLING_MAX_RL : opts.maxRL;
     const maxUDF = opts.maxUDF === undefined ? SPELLING_MAX_UDF : opts.maxUDF;
     let n = 0; // the walked solution's length (H rows are indexed by n - i)
@@ -728,7 +753,7 @@ const SpellingSearch = (() => {
     const rootOfTable = (k, table) => {
       let m = Infinity;
       for (const [lt, ld] of leads) {
-        const v = table[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] : 0);
+        const v = table[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] + leadBits(lt) : 0);
         if (v < m) m = v;
       }
       return m + sols[k].look;
@@ -753,8 +778,8 @@ const SpellingSearch = (() => {
       let m = Infinity;
       for (const [lt, ld] of yLeads) {
         let a = lm.START;
-        let b = lm.START;
-        let v = lt >= 0 ? mccMin[lt] : 0;
+        let b = lt >= 0 ? L.id[lt] : lm.START;
+        let v = lt >= 0 ? mccMin[lt] + leadBits(lt) : 0;
         for (let q = 0; q < face.length; q++) {
           const w = CONJ[ld][face[q]];
           const id = L.id[w];
@@ -904,10 +929,10 @@ const SpellingSearch = (() => {
       };
       for (const [lt, ld] of leads) {
         lead = ld;
-        if (H[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] : 0) + look > Math.max(opts.budget(false), opts.budget(true))) continue;
+        if (H[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] + leadBits(lt) : 0) + look > Math.max(opts.budget(false), opts.budget(true))) continue;
         if (lt >= 0) {
           written[0] = lt;
-          rec(0, ld, 0, 0, 0, 0, lm.START, lm.START, 0, 0, mccMin[lt], 1, false, false);
+          rec(0, ld, 0, 0, 0, 0, lm.START, L.id[lt], leadBits(lt), 0, mccMin[lt], 1, false, false);
         } else {
           rec(0, ld, 0, 0, 0, 0, lm.START, lm.START, 0, 0, 0, 0, false, false);
         }
@@ -915,7 +940,7 @@ const SpellingSearch = (() => {
     };
     for (const k of first) {
       n = sols[k].face.length;
-      H = boundTable(sols[k].face, H, mccMin, pen, L);
+      H = boundTable(sols[k].face, H, mccMin, pen, L, 0, Infinity, 0, true, sols[k].face.length, later);
       tryWalk(k);
     }
     stats.prewalkMs = Math.round(now() - tStart);
@@ -954,7 +979,7 @@ const SpellingSearch = (() => {
     const MITM_ROWS = 5;
     const fwdMemo = new Map();
     const F0 = new Float64Array(NR * 3).fill(Infinity);
-    for (const [lt, ld] of leads) F0[ld * 3] = Math.min(F0[ld * 3], lt >= 0 ? mccMin[lt] : 0);
+    for (const [lt, ld] of leads) F0[ld * 3] = Math.min(F0[ld * 3], lt >= 0 ? mccMin[lt] + leadBits(lt) : 0);
     if (!OWN_FIRST || OWN_FIRST.src !== mccMin) boundTable([], null, mccMin, pen, L); // sets OWN_FIRST
     const forwardAt = (face, q) => {
       // F after moves 0..q-1, keyed by moves 0..q (move q's own terms need it)
@@ -963,7 +988,7 @@ const SpellingSearch = (() => {
       for (let p = 0; p <= q; p++) key = key * 19 + face[p] + 1;
       let F = fwdMemo.get(key);
       if (!F) {
-        F = forwardStep(face, q - 1, forwardAt(face, q - 1), new Float64Array(NR * 3), mccMin, pen, L);
+        F = forwardStep(face, q - 1, forwardAt(face, q - 1), new Float64Array(NR * 3), mccMin, pen, L, later);
         fwdMemo.set(key, F);
         stats.fwdRows++;
       }
@@ -981,7 +1006,7 @@ const SpellingSearch = (() => {
       const fromC = firstRow(prevC, prevCRows, face);
       const cut = Math.max(0, n - MITM_ROWS); // the forward part's length
       // rows up to n - cut first: with the forward part, they bound the solution
-      HC = boundTable(face, HC, mccMin, pen, L, fromC, stop, minMove, false, n - cut);
+      HC = boundTable(face, HC, mccMin, pen, L, fromC, stop, minMove, false, n - cut, later);
       stats.rows += Math.max(0, boundRows + 1 - fromC);
       prevC = face;
       prevCRows = boundRows;
@@ -996,7 +1021,7 @@ const SpellingSearch = (() => {
       if (!twoTier) {
         // the rest of the table, for the walk
         if (prevCRows < n) {
-          HC = boundTable(face, HC, mccMin, pen, L, prevCRows + 1, stop, minMove, false);
+          HC = boundTable(face, HC, mccMin, pen, L, prevCRows + 1, stop, minMove, false, face.length, later);
           stats.rows += Math.max(0, boundRows - prevCRows);
           prevCRows = boundRows;
           if (boundRows < n) continue;
@@ -1010,7 +1035,7 @@ const SpellingSearch = (() => {
         continue;
       }
       const fromJ = firstRow(prev, prevRows, face);
-      H = boundTable(face, H, mccMin, pen, L, fromJ, stop, minMove);
+      H = boundTable(face, H, mccMin, pen, L, fromJ, stop, minMove, true, face.length, later);
       stats.fullRows += Math.max(0, boundRows + 1 - fromJ);
       prev = face;
       prevRows = boundRows;
@@ -1180,8 +1205,8 @@ const SpellingSearch = (() => {
     for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) {
       if (!t.YF[ld]) continue;
       let a = lm.START;
-      let b = lm.START;
-      let v = lt >= 0 ? mccMin[lt] : 0;
+      let b = lt >= 0 ? L.id[lt] : lm.START;
+      let v = lt >= 0 ? mccMin[lt] + lam * lm.trigramBits(lm.START, lm.START, L.id[lt]) : 0;
       for (let q = 0; q < faceTokens.length; q++) {
         const w = t.CONJ[ld][t.TID.get(faceTokens[q])];
         const id = L.id[w];

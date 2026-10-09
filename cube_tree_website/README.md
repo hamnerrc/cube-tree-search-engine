@@ -73,8 +73,12 @@ based on Triangium's **MCC** hand-movement model, with these rules:
 
 - **Every action costs time**: face turns, wide moves, slices and every
   rotation, including `x` (untuned MCC treated `x` as free).
-- A rotation that **starts** a step is free (inspection, or done while
-  looking ahead between steps); `y2` is only allowed there.
+- A rotation that **starts** a step pays no penalty (inspection, or done
+  while looking ahead between steps); `y2` is only allowed there. At a later
+  step the naturalness model still scores it like any move (professionals
+  rotate mid-step, after an AUF, about as often as at the start; with the
+  rotation free, the top results rotated at the start far more often).
+  A first step's inspection is not part of its alg.
 - **One scoring function for every step.** The same alg costs the same
   whether it is a cross, a first-step xcross, a later pair or a multislot.
   This is arguably the most important part of the site: ranking by
@@ -106,9 +110,11 @@ solves, ~3,600 steps; `tools/reco.js` downloads and validates them), plus
 on 300 reco.nz solves of both solvers, kept only if it also improves solves
 the fit never saw (cross-validation by solve; the reference solves). The
 language model is never evaluated on a solve it was trained on. Current
-function: 92% of the professionals' later steps and 27% of their first
+function: 94% of the professionals' later steps and 28% of their first
 steps rank in the top 10 of the app's list for their goal (91% and 21%
-before), the reference solves 82% (first steps 42%). A professional
+before this tuning), the reference solves 86% (first steps 58%). Most of
+the professional steps outside the top 10 (74%) are longer than the app's
+best: what a solver finds while planning, not what is fastest to execute. A professional
 sometimes executes a slower step than the best available, so the target is
 where pro steps rank overall, not every pro step on top.
 

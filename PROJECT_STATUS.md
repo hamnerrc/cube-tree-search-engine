@@ -189,7 +189,9 @@ root search -- plus the brute-force tests):
 - Planning features of the four end rotations in one pass
   (`planFeaturesY`): ~10% per later step.
 - Browser pools: 1 engine worker (2 from 8 threads), the other threads
-  (cap 12) rank.
+  (cap 12) rank; a queued call's type limits are refreshed when a worker
+  takes it (calls of its type finished meanwhile): hardest first step
+  29-32 s -> 25.5-27 s (Node), identical lists.
 
 Order of work (`enumerate`): a cheap estimate of each solution's plain
 spelling picks 256 to walk first and 2N to seed; then every other solution
@@ -276,9 +278,18 @@ else unchanged; turns / mid-step x/z penalties offered, stayed 0).
 
 Move types, first steps (top result vs pros): wide 54% → 45% (pros 46%),
 B 7% → 13% (16%), half turns 60% → 65% (74%). Later steps: the top result
-starts with a free y 32% (pros 18%) and rotates mid-step 9% (pros 17%):
-the naturalness model drops a leading rotation but charges a mid-step one
-(open).
+started with a free y 32% (pros 18%) and rotated mid-step 9% (pros 17%):
+the naturalness model dropped a leading rotation but charged a mid-step
+one. **Fixed** (same pass): the LM scores a leading rotation like any token
+(`naturalTokens`; the inspection is never part of a first step's alg). The
+complete search's bound tables use `TRIL` at later steps (a start context
+also covers a written y / y' / y2: least over the four) and the walk
+scores the lead token. Pools rebuilt: later steps top 10 92.4% → 93.8%
+(log rank 0.289 → 0.259), move-type gap 0.256 → 0.087 (leading rotation
+21.7% vs 18.4%, mid-step y 13.2% vs 16.9%), first steps 26.8% → 28.5%,
+references top 10 81.8% → 86.4% (log rank 0.454 → 0.458). A refit on the
+new pools moved only the open-back-slot weight (2.54 → 3.54, +0.0035):
+kept as is.
 
 Where pro first steps lose (`--explain`, before the fit): naturalness +5.9
 units vs the top result on average, MCC +2.7, the pair-choice bonuses for
@@ -457,13 +468,9 @@ not look-ahead optimal).
    algSpeed as a per-token state machine: the round-based version via
    `stopAt` cost more than it pruned, see "Complete search"); fewer
    spellings to rank at the root (24 orientations); small xxcross calls.
-2. **Ranking:** later steps' rotation placement: the top result starts with
-   a free y 32% of the time (pros 18%) and rotates mid-step 9% (pros 17%),
-   because the naturalness model drops a leading rotation but charges a
-   mid-step one. Scoring a later step's leading rotation as a token (the
-   search's bounds and walk would need the lead's context) is the fix to
-   try. First steps: the remaining misses are mostly longer pro steps
-   (planning), not speed.
+2. **Ranking:** first steps' remaining misses are mostly longer pro steps
+   (planning), not speed; later steps' rotation placement now matches pros
+   closely (21.7% / 13.2% vs 18.4% / 16.9%).
 3. **Search coverage:** 89.7% of pro later steps and 66% of first steps
    are in the complete search exactly as written; the rest are longer than
    the limits (single pair 10, first steps 9-11), use slices, or rotate
