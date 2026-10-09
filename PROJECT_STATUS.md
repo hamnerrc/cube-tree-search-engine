@@ -21,20 +21,27 @@ every fast suite passed at the start.
 1. **Ranking** ("alg_speed tuning" below): pro steps are now ranked in the
    complete search's own list for their goal (`tune-alg-speed.js cpools`),
    the loss adds a move-type frequency gap, pair-choice weights are fitted
-   with alg_speed, λ chosen by CV. New weights: first-step pro steps in the
-   top 10 21% → 27%, later 91% → 92%, references 0.521 → 0.454 mean log10
-   rank; first-step wide moves in the top result 54% → 45% (pros 46%).
-   Ceiling: 74% of the pro steps still outside the top 10 are longer than
-   the app's top result (54-58% by 2+ turns): planning/findability, not
-   execution speed.
+   with alg_speed, λ chosen by CV; the naturalness model now scores a later
+   step's leading rotation. Pro steps in the top 10 of their goal's list:
+   first steps 21% → 28.5%, later 91.4% → 93.8%, references 81.8% → 86.4%;
+   first-step wide moves in the top result 54% → 44% (pros 46%), later
+   steps' leading rotation 32% → 22% (pros 18%). The pro's pair choice
+   (different goals, held-out solves) ranks first as often as before
+   (first steps 22.7% → 28.0%, later 64.2% → 62.8%). Ceiling: 74% of the
+   pro steps still outside the top 10 are longer than the app's top result
+   (54-58% by 2+ turns): planning/findability, not execution speed.
 2. **Speed** ("Complete search" and "Measurements" below; every change
    checked for identical result lists): cheaper bound tables, first-token
    rows at the root, meet-in-the-middle rows, seeding, tighter walks,
    planning features in one pass, and above all the worker pools (the page
    ranked on one worker; one call per worker; chunks ≤ workers with shared
-   seed limits). Browser (headless Chrome, this 2-core machine, warm):
-   scramble `R2 U2 L D' ...` first step 58 s → 14.8 s, second 44 s →
-   7-9 s; the hardest known scramble's first step ~35 s.
+   seed limits, limits refreshed at dispatch); later steps start their
+   single-pair engine calls first (multislots are hidden by default), and
+   the top N is chosen in a strict (TPP, key) order so results do not
+   depend on call finishing order. Browser (headless Chrome, this 2-core
+   machine, warm, quiet): scramble `R2 U2 L D' ...` first step 58 s →
+   13-15 s, second 44 s → 6-9 s (rows shown final ~4 s); the hardest known
+   scramble's first step ~25-30 s (Node 24 s).
 
 ## Layout
 
