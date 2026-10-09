@@ -523,7 +523,11 @@ not look-ahead optimal).
    ~1 min per solve; data in scratch).
 7. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
-8. **Worst case** (every option on): not re-measured with the complete
-   search; the search time limit (`SolveSession.timeBudgetMs`) still exists
-   for tools but is no longer on the configuration page and does not cut
-   the complete search's ranking.
+8. **Worst case** (every option on): measured (twenty-ninth pass) with
+   `worst-case-bench.js --depth 1 --budget 0 --post 2 --workers 1`: all 6
+   colours, xcross / xxcross / xxxcross, pseudo F2L, multislots, first
+   step 57.9 s cold (prune tables built during it) on this 2-core machine,
+   inside the README's minute; look-ahead on top is not. The search time
+   limit (`SolveSession.timeBudgetMs`) still exists for tools but is no
+   longer on the configuration page and does not cut the complete
+   search's ranking.
