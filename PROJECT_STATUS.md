@@ -150,7 +150,7 @@ settings); `SpellingSearch.topSpellings` finds exactly the best N of each
 RESULT_VIEWS filter among all spellings of all of them; calls of one step
 type share the N-th best (`typeLimits`, a big call waits for its type's
 smaller calls), and `trimToTypeBest` keeps exactly the best N per type and
-view at the end. Big calls (> 25,000 solutions) are ranked in chunks on the
+view at the end. Big calls (> 12,000 solutions) are ranked in chunks on the
 worker pool (`completeChunks`, solutions that end alike together).
 
 The bound (spelling-search.js header): cost ≥ C0 + Σ tokens (penalty +

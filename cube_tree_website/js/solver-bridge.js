@@ -1232,7 +1232,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
 }
 
 // Complete search: solutions per post-processing job (see processCall).
-const COMPLETE_CHUNK = 25000;
+const COMPLETE_CHUNK = 12000;
 /** A big call's solutions in chunks of about COMPLETE_CHUNK, each a run of solutions that end alike. */
 function completeChunks(cores) {
   const keyed = cores.filter(Boolean).map(c => [c.split(' ').reverse().join(' '), c]);
