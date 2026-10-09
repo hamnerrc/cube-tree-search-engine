@@ -1062,6 +1062,10 @@ const SpellingSearch = (() => {
    * views: [fn(candidate) -> belongs]. initial: optional per-view TPP limit
    * known from elsewhere (other calls of the same type).
    */
+  // Candidates in a strict total order: TPP, then key -- so which of several
+  // equal-TPP candidates make the best N does not depend on the order calls
+  // finish in (worker pools; an intermittently differing test showed it).
+  const before = (a, b) => a.tpp < b.tpp || (a.tpp === b.tpp && a.key < b.key);
   class TopViews {
     constructor(views, size, initial) {
       this.views = views;
@@ -1096,7 +1100,7 @@ const SpellingSearch = (() => {
           keys.set(c.key, c);
           siftUp(h, h.length - 1);
           kept = true;
-        } else if (c.tpp < h[0].tpp) {
+        } else if (before(c, h[0])) {
           keys.delete(h[0].key);
           h[0] = c;
           keys.set(c.key, c);
@@ -1112,13 +1116,13 @@ const SpellingSearch = (() => {
       const seen = new Set();
       const out = [];
       for (const h of this.heaps) for (const c of h) if (!seen.has(c)) { seen.add(c); out.push(c); }
-      return out.sort((a, b) => a.tpp - b.tpp);
+      return out.sort((a, b) => (before(a, b) ? -1 : before(b, a) ? 1 : 0));
     }
   }
   function siftUp(h, i) {
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (h[p].tpp >= h[i].tpp) break;
+      if (!before(h[p], h[i])) break;
       [h[p], h[i]] = [h[i], h[p]];
       i = p;
     }
@@ -1128,8 +1132,8 @@ const SpellingSearch = (() => {
       const l = 2 * i + 1;
       const r = l + 1;
       let m = i;
-      if (l < h.length && h[l].tpp > h[m].tpp) m = l;
-      if (r < h.length && h[r].tpp > h[m].tpp) m = r;
+      if (l < h.length && before(h[m], h[l])) m = l;
+      if (r < h.length && before(h[m], h[r])) m = r;
       if (m === i) return;
       [h[m], h[i]] = [h[i], h[m]];
       i = m;
