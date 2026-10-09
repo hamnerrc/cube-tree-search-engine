@@ -156,6 +156,109 @@ async function buildPools() {
   await h.terminate?.();
 }
 
+/**
+ * Complete-search pools (`cpools`): for every pro step, what the app itself
+ * lists for that step's goal -- SolveSession at the pro's node (the pro's
+ * earlier steps committed), searchCurrentNode restricted to the edge that
+ * solves the same physical pairs, the complete search's exact best --top
+ * (default 300) by TPP, corpus candidates included. Each alg is stored with
+ * its pair-choice cost (look + planning: TPP x pieces - pathCost), which
+ * alg_speed parameters do not change, so `eval`/`fit` re-rank the list
+ * exactly. Built with the naturalness model the solve is scored with (out of
+ * fold / training solves only), like the metric. Ranks beyond --top are
+ * censored (rank = list size + 1).
+ */
+const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
+const SLOT_CENTRES = { FR: [22, 13], FL: [22, 40], BR: [49, 13], BL: [49, 40] };
+const slotColours = (f, s) => SLOT_CENTRES[s].map(i => f[i]).sort().join('');
+async function buildCompletePools() {
+  for (const f of ['spelling-search.js']) Object.assign(global, require(path.join(js, f)));
+  const B = require(path.join(js, 'solver-bridge.js'));
+  const { completeSpaceStatus } = require('./complete-coverage.js');
+  const keepTop = Number(opt('top', '300'));
+  const done = new Set();
+  for (const f of cacheFiles) if (fs.existsSync(f)) for (const l of fs.readFileSync(f, 'utf8').split('\n')) if (l) done.add(JSON.parse(l).key);
+  const CrossSolverHelperNode = require(path.join(root, 'crossSolver', 'solver-helper-node.js'));
+  const h = new CrossSolverHelperNode(); await h.init();
+  const tree = JSON.parse(fs.readFileSync(path.join(root, 'data', 'f2l_nodes_and_edges.json'), 'utf8'));
+  const advanced = ['xcross', 'xxcross', 'xxxcross', 'multislotting'];
+  const [shard, shards] = (opt('shard', '0/1')).split('/').map(Number);
+  // --solves N: every solver's first N solves (in file order) only.
+  const perSolver = Number(opt('solves', 'Infinity'));
+  const count = new Map();
+  const all = loadSolves().filter((s) => { const n = (count.get(s.solver) || 0) + 1; count.set(s.solver, n); return n <= perSolver; });
+  const models = buildModels(loadSolves(), currentParams());
+  const solves = all.filter((s, i) => i % shards === shard && !done.has(s.key));
+  console.error(`${done.size} solves cached, ${solves.length} to go -> ${cacheFile}`);
+  const look = (f) => {
+    const w = S.PAIR_PLANNING.look;
+    const x = pairLookFeatures(f);
+    let v = 0;
+    for (let k = 0; k < w.length; k++) v += w[k] * x[k];
+    const pf = planFeatures(f);
+    for (let k = 0; k < S.PAIR_PLANNING.plan.length; k++) v += S.PAIR_PLANNING.plan[k] * pf[k];
+    return v;
+  };
+  const t0 = Date.now();
+  for (let i = 0; i < solves.length; i++) {
+    const solve = solves[i];
+    S.useNaturalnessModel(models(solve));
+    const segs = segmentProSolve(solve);
+    const color = segs[segs.length - 1].after.crossColor;
+    const pruned = S.pruneGraph(tree, { advanced, colors: [color] });
+    const session = new B.SolveSession(solve.scramble, pruned, [color], advanced);
+    session.topN = keepTop;
+    session.resultViews = [{ test: () => true, wide: true }];
+    const allEdges = session.outgoingEdges.bind(session);
+    const out = [];
+    let prior = [];
+    for (const seg of segs) {
+      const ts = Date.now();
+      const proEnd = F.applyAlgorithm(SOLVED_FACELETS, [solve.scramble, solve.inspection, ...prior, seg.alg].filter(Boolean).join(' '));
+      const endFlags = solvedFlags(proEnd);
+      const proPairs = new Set(F2L_SLOTS.filter(s => endFlags[s]).map(s => slotColours(proEnd, s)));
+      const before = F.applyAlgorithm(SOLVED_FACELETS, [solve.scramble, session.isAtRoot ? B.COLOR_ROTATIONS[color] : session.rotation, session.scoredPath].filter(Boolean).join(' '));
+      const labels = F2L_SLOTS.filter(s => proPairs.has(slotColours(before, s))).sort();
+      const want = JSON.stringify(labels);
+      const record = { labels: seg.labels.join('+'), isRoot: seg.isRoot, priorSteps: prior.slice(), pro: seg.alg, top: [], topLook: [], rest: [], restSize: 0, size: 0, complete: true };
+      const targetNode = pruned.nodes.find(n => n.state.cross_solved && JSON.stringify((n.state.corners || []).slice().sort()) === want && JSON.stringify((n.state.edges || []).slice().sort()) === want);
+      session.outgoingEdges = () => allEdges().filter(e => e.target === (targetNode && targetNode.id) || (targetNode && JSON.stringify(session.nodeMap.get(e.target).state) === JSON.stringify(targetNode.state)));
+      const proBase = session.pathCost(seg.alg);
+      record.proLook = look(proEnd);
+      record.proInSpace = completeSpaceStatus(seg);
+      if (!targetNode || !session.outgoingEdges().length) {
+        record.skipped = 'no such edge';
+      } else {
+        const results = await B.searchCurrentNode(session, h, null);
+        const pieces = calculateSolvedPieces(session.rootNode, targetNode);
+        const proKey = F.commuteNormalize(seg.alg);
+        for (const r of results) {
+          const lk = r.tpp * pieces - session.pathCost(r.coreAlg);
+          if (F.commuteNormalize(r.coreAlg) === proKey) {
+            record.proInList = true;
+            if (Math.abs(lk - record.proLook) > 1e-6) record.lookMismatch = lk - record.proLook;
+            continue;
+          }
+          record.top.push(r.coreAlg);
+          record.topLook.push(+lk.toFixed(6));
+        }
+        record.size = record.top.length;
+        record.proCost = +(proBase + record.proLook).toFixed(6);
+      }
+      record.ms = Date.now() - ts;
+      out.push(record);
+      session.outgoingEdges = allEdges;
+      const target = B.nodeByLabels(session, seg.after.pairs, seg.after.pairs);
+      session.commit({ rotation: solve.inspection, coreAlg: seg.alg, targetNodeId: target, color });
+      prior.push(seg.alg);
+    }
+    S.useNaturalnessModel(null);
+    fs.appendFileSync(cacheFile, JSON.stringify({ key: solve.key, solver: solve.solver, segs: out }) + '\n');
+    console.error(`${i + 1}/${solves.length} ${solve.key} ${out.map(r => `${r.labels}:${r.ms}ms`).join(' ')} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+  }
+  await h.terminate?.();
+}
+
 function loadPools() {
   const out = [];
   for (const f of cacheFiles) {
@@ -227,7 +330,15 @@ function buildCache(pools, solvesByKey, sample, filter) {
       if (seg.pro.split(' ').filter(t => !/^[xyz]/.test(t)).length > 16) continue;
       const rest = seg.rest.length > sample ? seg.rest.slice(0, sample) : seg.rest;
       const algs = [seg.pro, ...seg.top, ...rest];
-      cache.push({ solve, group: solve.solver, isRoot: seg.isRoot, size: seg.size, nTop: seg.top.length, restWeight: rest.length ? seg.restSize / rest.length : 0, proInPool: seg.proInPool, prior: seg.priorSteps.join(' ').split(' ').filter(Boolean), algs, mcc: new Float64Array(algs.length), feat: new Float64Array(algs.length * NF) });
+      // Complete pools: each alg's pair-choice cost (look + planning), fixed.
+      const look = new Float64Array(algs.length);
+      if (seg.complete) { look[0] = seg.proLook; seg.topLook.forEach((v, k) => { look[k + 1] = v; }); }
+      cache.push({
+        solve, group: solve.solver, isRoot: seg.isRoot, size: seg.size, nTop: seg.top.length, restWeight: rest.length ? seg.restSize / rest.length : 0,
+        // the pro's step can be the app's top result: in its pool, or (complete pools) in the search's space
+        proInPool: seg.complete ? seg.proInSpace === 'in the search' : seg.proInPool,
+        complete: !!seg.complete, prior: seg.priorSteps.join(' ').split(' ').filter(Boolean), algs, look, mcc: new Float64Array(algs.length), feat: new Float64Array(algs.length * NF),
+      });
     }
   }
   return cache;
@@ -244,7 +355,7 @@ function fillMcc(cache, params) {
     }
     for (let i = 0; i < c.algs.length; i++) {
       const toks = c.algs[i].split(' ');
-      c.mcc[i] = state ? S.algSpeed(tail.concat(toks), false, false, ...vals, state) : S.algSpeed(toks, false, false, ...vals);
+      c.mcc[i] = (state ? S.algSpeed(tail.concat(toks), false, false, ...vals, state) : S.algSpeed(toks, false, false, ...vals)) + c.look[i];
     }
   }
 }
@@ -270,15 +381,89 @@ function rankCache(cache, params) {
     let betterRest = 0;
     for (let i = c.nTop + 1; i < c.algs.length; i++) if (cost(i) < pro) betterRest++;
     better += betterRest * c.restWeight;
-    return { group: c.group, train: isTrain(c.solve), isRoot: c.isRoot, rotates: / [xyz]/.test(` ${c.algs[0]}`), frac: better / c.size, rank: 1 + Math.round(better), proInPool: c.proInPool };
+    // the app's top result for this goal: the best of the pool (and the pro's
+    // own step when the search can produce it)
+    let top1 = c.proInPool ? 0 : -1;
+    let top1Cost = c.proInPool ? pro : Infinity;
+    for (let i = 1; i <= c.nTop; i++) { const v = cost(i); if (v < top1Cost) { top1Cost = v; top1 = i; } }
+    return { group: c.group, train: isTrain(c.solve), isRoot: c.isRoot, rotates: / [xyz]/.test(` ${c.algs[0]}`), frac: better / c.size, rank: 1 + Math.round(better), proInPool: c.proInPool, top1: top1 >= 0 ? classesOf(c, top1) : null, pro: classesOf(c, 0) };
   });
+}
+
+/**
+ * Move types whose frequency in the app's top result is compared with the
+ * pro's step (does the step contain one?): the top result should use each
+ * about as often as professionals do. Turns: the mean count.
+ */
+const MOVE_CLASSES = [
+  ['wide', t => /^[rludfb]/.test(t)],
+  ['wide r/l', t => /^[rl]/.test(t)],
+  ['wide u/d/f', t => /^[udf]/.test(t)],
+  ['slice', t => /^[MES]/.test(t)],
+  ['D', t => t[0] === 'D'],
+  ['F', t => t[0] === 'F'],
+  ['B', t => t[0] === 'B'],
+  ['L', t => t[0] === 'L'],
+  ['half turn', t => /^[RLUDFBrludfb]2/.test(t)],
+];
+const NCLS = MOVE_CLASSES.length + 3; // + mid-step y, mid-step x/z, leading rotation
+const CLASS_NAMES = [...MOVE_CLASSES.map(c => c[0]), 'mid-step y', 'mid-step x/z', 'leading rotation'];
+function classesOf(c, i) {
+  if (!c.cls) c.cls = new Map();
+  let v = c.cls.get(i);
+  if (v) return v;
+  const toks = c.algs[i].split(' ').filter(Boolean);
+  v = { has: new Uint8Array(NCLS), turns: 0 };
+  let first = true;
+  for (const t of toks) {
+    if (/^[xyz]/.test(t)) {
+      if (first) v.has[NCLS - 1] = 1;
+      else v.has[t[0] === 'y' ? NCLS - 3 : NCLS - 2] = 1;
+      continue;
+    }
+    first = false;
+    v.turns++;
+    MOVE_CLASSES.forEach(([, f], k) => { if (f(t)) v.has[k] = 1; });
+  }
+  c.cls.set(i, v);
+  return v;
+}
+/**
+ * Move-type frequency gap: per group of steps, for every class, the share
+ * of top results containing it vs the share of pro steps; the loss is
+ * sum of (gap^2 / (p (1 - p) + 0.01)) with p the mean of the two shares
+ * (a chi-square-like distance), plus (turns gap / 2)^2.
+ */
+function moveFrequencies(results) {
+  const rs = results.filter(r => r.top1);
+  const top = new Float64Array(NCLS);
+  const pro = new Float64Array(NCLS);
+  let tTop = 0;
+  let tPro = 0;
+  for (const r of rs) {
+    for (let k = 0; k < NCLS; k++) { top[k] += r.top1.has[k]; pro[k] += r.pro.has[k]; }
+    tTop += r.top1.turns;
+    tPro += r.pro.turns;
+  }
+  const n = rs.length || 1;
+  let loss = ((tTop - tPro) / n / 2) ** 2;
+  const rows = [];
+  for (let k = 0; k < NCLS; k++) {
+    const a = top[k] / n;
+    const b = pro[k] / n;
+    const p = (a + b) / 2;
+    loss += (a - b) ** 2 / (p * (1 - p) + 0.01);
+    rows.push([CLASS_NAMES[k], a, b]);
+  }
+  rows.push(['turns (mean)', tTop / n, tPro / n]);
+  return { n: rs.length, loss, rows };
 }
 
 const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 function summarize(results) {
   const groups = new Map();
   for (const r of results) {
-    for (const g of [r.group, `${r.group} ${r.isRoot ? 'first' : 'later'}`, ...(r.rotates && !r.isRoot ? [`${r.group} later, rotating`] : []), ...(r.train ? ['train'] : [])]) {
+    for (const g of [r.group, `${r.group} ${r.isRoot ? 'first' : 'later'}`, `all ${r.isRoot ? 'first' : 'later'}`, ...(r.rotates && !r.isRoot ? [`${r.group} later, rotating`] : []), ...(r.train ? ['train'] : [])]) {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(r);
     }
@@ -287,6 +472,7 @@ function summarize(results) {
   for (const [g, rs] of groups) {
     out[g] = {
       n: rs.length,
+      freq: moveFrequencies(rs),
       logRank: mean(rs.map(r => Math.log10(r.rank))),
       top1: rs.filter(r => r.rank <= 1).length / rs.length,
       top10: rs.filter(r => r.rank <= 10).length / rs.length,
@@ -298,7 +484,17 @@ function summarize(results) {
 function printSummary(sum, label = '') {
   for (const g of Object.keys(sum).sort()) {
     const s = sum[g];
-    console.log(`${label}${g.padEnd(30)} n ${String(s.n).padStart(5)}  mean log10 rank ${s.logRank.toFixed(3)}  top1 ${(100 * s.top1).toFixed(1)}%  top10 ${(100 * s.top10).toFixed(1)}%  mean pct ${(100 * s.pct).toFixed(2)}%`);
+    console.log(`${label}${g.padEnd(30)} n ${String(s.n).padStart(5)}  mean log10 rank ${s.logRank.toFixed(3)}  top1 ${(100 * s.top1).toFixed(1)}%  top10 ${(100 * s.top10).toFixed(1)}%  mean pct ${(100 * s.pct).toFixed(2)}%  move-type gap ${s.freq.loss.toFixed(3)}`);
+  }
+}
+/** The move-type frequencies of the top results vs the pro steps (README "Tuning data"). */
+function printFrequencies(sum, groups) {
+  for (const g of groups) {
+    if (!sum[g]) continue;
+    const f = sum[g].freq;
+    console.log(`\n${g} (${f.n} steps): share of steps containing each move type, app's top result vs professional`);
+    for (const [name, a, b] of f.rows) console.log(`  ${name.padEnd(18)} top ${name.startsWith('turns') ? a.toFixed(2).padStart(6) : (100 * a).toFixed(1).padStart(5) + '%'}   pro ${name.startsWith('turns') ? b.toFixed(2).padStart(6) : (100 * b).toFixed(1).padStart(5) + '%'}`);
+    console.log(`  gap ${f.loss.toFixed(3)}`);
   }
 }
 
@@ -354,7 +550,9 @@ function evaluate() {
   const look = opt('look', '');
   if (look) addLook([...train, ...held], look === 'app' ? S.PAIR_CHOICE_LOOK : look.split(',').map(Number));
   const res = rankCache([...train, ...held], params);
-  printSummary(summarize(res));
+  const sum = summarize(res);
+  printSummary(sum);
+  printFrequencies(sum, ['all first', 'all later']);
   console.log(`\npro step found by the search: ${res.filter(r => r.proInPool).length}/${res.length}; ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
@@ -425,6 +623,7 @@ function writeCorpus() {
 }
 
 if (cmd === 'corpus') writeCorpus();
+else if (cmd === 'cpools') buildCompletePools().then(() => process.exit(0), e => { console.error(e); process.exit(2); });
 else if (cmd === 'pools') buildPools().then(() => process.exit(0), e => { console.error(e); process.exit(2); });
 else if (cmd === 'eval') evaluate();
 else if (cmd === 'fit') fit();

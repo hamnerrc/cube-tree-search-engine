@@ -144,31 +144,33 @@ test('known spellings are generated: wide u/f, rotations, side-cross inspections
 test('the bound is a lower bound of the real cost', () => {
   // enumerate with an infinite budget and compare each leaf's real cost
   // with the bound the search pruned against (H at the root of its walk).
-  const stepAlgs = ["F' U F", "U2 R U' R'"];
-  const holder = {};
-  const costOf = alg => stepsPathCost(holder, stepAlgs, alg);
-  costOf('R');
-  const floor = SpellingSearch.mccFloor(holder._costBase.mcc) + holder._costBase.penalty;
   const t = SpellingSearch.tables();
   let checked = 0;
-  for (let k = 0; k < 20; k++) {
-    const face = randomFace(5).map(x => t.TID.get(x));
-    const L = SpellingSearch.lmTables();
-    const H = SpellingSearch.boundTable(face, null, SpellingSearch.mccMinimum(), SpellingSearch.penalties(), L);
-    let least = Infinity;
-    for (const [lt, ld] of t.LEAD_LATER) least = Math.min(least, H[((face.length * t.NR + ld) * 2 + 0) * SpellingSearch.FLAGS + 0] + (lt >= 0 ? SpellingSearch.mccMinimum()[lt] : 0));
-    SpellingSearch.enumerate([{ face, look: 0 }], {
-      root: false,
-      budget: () => Infinity,
-      leaf: (ids) => {
-        const alg = Array.from(ids, i => t.TOK[i]).join(' ');
-        const cost = costOf(alg);
-        assert.ok(cost - floor >= least - 1e-9, `${alg}: ${cost - floor} < bound ${least}`);
-        checked++;
-      },
-    });
+  for (const [stepAlgs, root] of [[["F' U F", "U2 R U' R'"], false], [[], true]]) {
+    const holder = {};
+    const costOf = alg => stepsPathCost(holder, stepAlgs, alg);
+    costOf('R');
+    const floor = SpellingSearch.mccFloor(holder._costBase.mcc) + holder._costBase.penalty;
+    for (let k = 0; k < (root ? 6 : 25); k++) {
+      const face = randomFace(root ? 4 : 5 + (k % 3)).map(x => t.TID.get(x));
+      const L = SpellingSearch.lmTables();
+      const H = SpellingSearch.boundTable(face, null, SpellingSearch.mccMinimum(), SpellingSearch.penalties(), L);
+      const leastFrom = new Map();
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) leastFrom.set(ld, H[(face.length * t.NR + ld) * SpellingSearch.FLAGS] + (lt >= 0 ? SpellingSearch.mccMinimum()[lt] : 0));
+      SpellingSearch.enumerate([{ face, look: 0 }], {
+        root,
+        budget: () => Infinity,
+        leaf: (ids, lead) => {
+          const alg = Array.from(ids, i => t.TOK[i]).join(' ');
+          const cost = costOf(alg);
+          const least = leastFrom.get(lead);
+          assert.ok(cost - floor >= least - 1e-9, `${alg}: ${cost - floor} < bound ${least}`);
+          checked++;
+        },
+      });
+    }
   }
-  assert.ok(checked > 1000, `${checked} spellings checked`);
+  assert.ok(checked > 5000, `${checked} spellings checked`);
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

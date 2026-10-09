@@ -1325,6 +1325,8 @@ function postProcessJob(session, p) {
     topN: p.topN,
     corpus: p.corpus || null,
     wideMoves: session.wideMoves !== false,
+    // Tools only (functions do not reach a worker): other result views.
+    ...(session.resultViews ? { views: session.resultViews } : {}),
   };
 }
 
@@ -1814,7 +1816,7 @@ function postProcessComplete(ctx, p, cores) {
     pieces: p.pieces,
     floor,
     costOf: alg => pathCostFor(ctx, alg),
-    views: RESULT_VIEWS,
+    views: p.views || RESULT_VIEWS,
     size: p.topN,
     initial: p.limits,
     make,

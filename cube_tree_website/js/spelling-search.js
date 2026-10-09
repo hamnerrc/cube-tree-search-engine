@@ -24,10 +24,12 @@
  *   case's smallest increment (minMCC) and the path's MCC is at least the
  *   checkpoint's least start time (C0; SpellingSearch.mccFloor);
  * - the moves still to write are bounded by a DP over (move, frame,
- *   rotation used, previous token known) with the least bits of each token
- *   in any context compatible with the state (boundTable);
- * - solutions are visited in order of their own bound, and the search stops
- *   at the first one whose bound exceeds the current N-th best.
+ *   previous tokens known) with the least bits of each token in any context
+ *   compatible with the state (boundTable);
+ * - a cheap estimate picks solutions likely to be best to walk first (a
+ *   tight N-th best early); every other solution's bound table is computed
+ *   (rows shared by solutions that end alike) and it is walked only if its
+ *   bound fits under the N-th best so far.
  * Every spelling that could be in the top N is scored with the real
  * function (the caller's leaf), so the result is exact; tests compare it
  * with brute force (test/spelling-search.test.js).
@@ -200,7 +202,38 @@ const SpellingSearch = (() => {
       const ib = b === t.NT ? lm.START : id[b];
       for (let w = 0; w < NT1; w++) TRI[(a * NT1 + b) * NT1 + w] = lm.trigramBits(ia, ib, ids[w]);
     }
-    LMT = { model, lm, id, MIN0, MIN1, MIN2, NT1, TRI };
+    // AFTER[((prev * NR + d) * 19 + move) * 2 + r]: the least extra bits
+    // (over MIN1) of the first token written for face move `move` (face
+    // token id < 18) in frame d right after token `prev`, over every way to
+    // start writing it (plain, wide, a split's first token, a mid rotation
+    // when r = 0); move 18 = the end. boundTable adds it after a
+    // written non-plain token instead of the exact context.
+    const NR = t.NR;
+    const AFTER = new Float64Array(NT1 * NR * 19 * 2);
+    for (let prev = 0; prev < t.NT; prev++) {
+      for (let d = 0; d < NR; d++) {
+        for (let mv = 0; mv <= 18; mv++) {
+          for (let r = 0; r < 2; r++) {
+            let m = Infinity;
+            const consider = (k) => { const v = MIN2[prev * NT1 + k] - MIN1[k]; if (v < m) m = v; };
+            if (mv === 18) consider(t.NT);
+            else {
+              const w = t.CONJ[d][mv];
+              consider(w);
+              for (const [W] of t.WIDES[w]) consider(W);
+              for (const qf of t.QUARTERS[mv]) {
+                const q = t.CONJ[d][qf];
+                consider(q);
+                for (const [W] of t.WIDES[q]) consider(W);
+              }
+              if (!r) for (const [M] of t.MIDS) consider(M);
+            }
+            AFTER[((prev * NR + d) * 19 + mv) * 2 + r] = Math.max(0, m);
+          }
+        }
+      }
+    }
+    LMT = { model, lm, id, MIN0, MIN1, MIN2, NT1, TRI, AFTER };
     return LMT;
   }
 
@@ -212,229 +245,238 @@ const SpellingSearch = (() => {
    * before are known: f = 2 when the last two are the plain spellings of
    * moves i-2 and i-1 in frame d (their trigram is then exact), f = 1 when
    * only the last one is (bits conditioned on it), f = 0 otherwise. Infinity
-   * when the cross can no longer end on D. A mid-step rotation is allowed
-   * anywhere (more than the one a spelling may have: the bound only gets
-   * lower). Row j depends only on the last j moves and the two before them,
-   * so rows below `fromJ` are kept from the previous solution when it ends
-   * the same way (enumerate sorts for that).
+   * when the cross can no longer end on D. Relaxations that keep it cheap
+   * (each only lowers it): a rotation may be written before any move, as
+   * often as the bound likes; after a written non-plain token (wide,
+   * rotation, a split's second token) the next token's bits are its least
+   * after anything (MIN1) plus AFTER, the least extra any first token of the
+   * next move has after that token. (An exact-context version, memoised per
+   * written token, was ~4x tighter in rows ruled out but ~8x the cost per row;
+   * walking with this one is faster overall.) Row j depends only on the last
+   * j moves and the two before them, so rows below `fromJ` are kept from the
+   * previous solution when it ends the same way (enumerate sorts for that).
+   * Stops early (boundRows < n) once the last moves alone cost more than
+   * stopAbove. Tested <= the real cost (test/spelling-search.test.js).
    */
   const FLAGS = 3;
-  let rowMin = new Float64Array(64);
-  let AWc = null; // memo of afterKnown, see boundTable
   let OWN_FIRST = null;
-  let pairFirst = new Uint8Array(64);
   // boundTable's last complete row (n when the whole table was computed).
   let boundRows = 0;
+  let RO = null;
+  function rowOptions() {
+    if (RO) return RO;
+    const t = tables();
+    const { NR, CONJ, WIDES, MIDS, MUL, QUARTERS } = t;
+    const W0 = new Int32Array(18 * NR + 1);
+    const Q0 = new Int32Array(18 * NR + 1);
+    const M0 = new Int32Array(18 * NR + 1);
+    const wides = [];
+    const qs = [];
+    const ms = [];
+    for (let mv = 0; mv < 18; mv++) {
+      for (let d = 0; d < NR; d++) {
+        const x = mv * NR + d;
+        const w = CONJ[d][mv];
+        W0[x] = wides.length / 2;
+        for (const [W, rho] of WIDES[w]) wides.push(W, MUL[d][rho]);
+        Q0[x] = qs.length / 3;
+        M0[x] = ms.length / 4;
+        for (const qf of QUARTERS[mv]) {
+          const q = CONJ[d][qf];
+          for (const [W, rho] of WIDES[q]) {
+            const d2 = MUL[d][rho];
+            qs.push(q, W, d2, W, CONJ[d2][qf], d2);
+          }
+          for (const [m, mr] of MIDS) {
+            const dm = MUL[d][mr];
+            ms.push(q, m, CONJ[dm][qf], dm);
+          }
+        }
+      }
+    }
+    W0[18 * NR] = wides.length / 2;
+    Q0[18 * NR] = qs.length / 3;
+    M0[18 * NR] = ms.length / 4;
+    const MID_T = Int32Array.from(MIDS, m => m[0]);
+    const MID_D = new Int32Array(NR * MIDS.length);
+    for (let d = 0; d < NR; d++) for (let k = 0; k < MIDS.length; k++) MID_D[d * MIDS.length + k] = MUL[d][MIDS[k][1]];
+    RO = { W0, Q0, M0, WI: Int32Array.from(wides), QI: Int32Array.from(qs), MI: Int32Array.from(ms), MID_T, MID_D };
+    return RO;
+  }
+  let rowBase = new Float64Array(24 * 3);
   function boundTable(face, H, mccMin, pen, L, fromJ = 0, stopAbove = Infinity, minMove = 0) {
     const t = tables();
-    const n = face.length;
-    const { NR, NT, CONJ, WIDES, MIDS, MUL, YF, AXIS, TOK, QUARTERS } = t;
+    const { NR, NT, CONJ, AXIS, YF, TOK } = t;
+    const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions();
+    const NM = MID_T.length;
     const lam = STEP_PENALTIES.natural;
-    const NT1 = L.NT1;
-    const { TRI, MIN2 } = L;
-    const RS = NR * 2 * FLAGS;
-    const size = (n + 1) * RS;
-    if (!H || H.length < size) {
-      const grown = new Float64Array(Math.max(size, 40 * RS));
+    const { TRI, MIN2, MIN1, AFTER, NT1 } = L;
+    const n = face.length;
+    const RS = NR * 3;
+    if (!H || H.length < (n + 1) * RS) {
+      const grown = new Float64Array(Math.max((n + 1) * RS, 40 * RS));
       if (H) grown.set(H);
       H = grown;
     }
-    const AS = NR * 2 * NT; // memo row size
-    if (!AWc || AWc.length < (n + 1) * AS) {
-      const grown = new Float64Array(Math.max((n + 1) * AS, 40 * AS)).fill(NaN);
-      if (AWc) grown.set(AWc);
-      AWc = grown;
-    }
-    if (rowMin.length < n + 1) rowMin = new Float64Array(2 * (n + 1));
-    const at = (j, d, r, f) => ((j * NR + d) * 2 + r) * FLAGS + f;
     // A token's least MCC as the bound counts it: an R quarter turn may get
     // MCC's 0.5 back, and the first of two same-axis moves (U then D) may add
-    // nothing (pairFirst).
+    // nothing (pf).
     if (!OWN_FIRST || OWN_FIRST.src !== mccMin) {
       OWN_FIRST = Float64Array.from(TOK, (tok, k) => ((tok[0] === 'R' || tok[0] === 'r') && !tok.endsWith('2') ? Math.max(0, mccMin[k] - 0.5) : mccMin[k]));
       OWN_FIRST.src = mccMin;
     }
     const OWNF = OWN_FIRST;
-    if (pairFirst.length < n) pairFirst = new Uint8Array(2 * n);
-    for (let q = 0; q < n; q++) pairFirst[q] = q + 1 < n && AXIS[face[q]] === AXIS[face[q + 1]] ? 1 : 0;
-    const ownFirst = k => OWNF[k];
-    const ownAt = (i, k) => (pairFirst[i] ? 0 : OWNF[k]);
-    // bits of token k (NT = the end) at move i, frame d, flag f
-    const bitsAt = (i, d, f, k) => {
-      if (i === 0) return TRI[(NT * NT1 + NT) * NT1 + k];
-      const b = CONJ[d][face[i - 1]];
-      if (f === 2 || (f === 1 && i === 1)) {
-        const a = i >= 2 ? CONJ[d][face[i - 2]] : NT;
-        return TRI[(a * NT1 + b) * NT1 + k];
-      }
-      return f === 1 ? MIN2[b * NT1 + k] : MIN1L[k];
-    };
-    const MIN1L = L.MIN1;
-    // The two tokens' bits after context (a, b): exact when a is known.
-    const tri = (a, b, k) => (a >= 0 ? TRI[(a * NT1 + b) * NT1 + k] : MIN2[b * NT1 + k]);
-    /**
-     * Least that moves i.. (j = n - i left) add right after the written
-     * token `prev`, which is not the plain spelling of move i-1 (a wide
-     * turn, a rotation, a split's second quarter): frame d, rotation used
-     * r; bits conditioned on prev (the token before it unknown). Memoised:
-     * it depends on the last j moves only, like H's rows.
-     */
-    const afterKnown = (j, d, r, prev) => {
-      const key = ((j * NR + d) * 2 + r) * NT + prev;
-      const c = AWc[key];
-      if (c === c) return c; // not NaN
-      let best;
-      if (j === 0) best = YF[d] ? lam * MIN2[prev * NT1 + NT] : Infinity;
-      else best = options(j, d, r, -1, prev, 0);
-      AWc[key] = best;
-      return best;
-    };
-    /**
-     * Least that moves i.. add from frame d, rotation used r, when the two
-     * tokens before are (a, b) (a = -1: unknown) -- or, with b = -1, the
-     * flag f of H says what is known. Every way to write move i.
-     */
-    // bits of token k as options() sees it (no closure per call: hot path)
-    const bitsOpt = (i, d, f, a, b, k) => (b >= 0 ? (a >= 0 ? TRI[(a * NT1 + b) * NT1 + k] : MIN2[b * NT1 + k]) : bitsAt(i, d, f, k));
-    const secondOf = (i, prev1, t1, t2) => (i === 0 ? TRI[(NT * NT1 + t1) * NT1 + t2]
-      : prev1 >= 0 ? TRI[(prev1 * NT1 + t1) * NT1 + t2] : MIN2[t1 * NT1 + t2]);
-    const options = (j, d, r, a, b, f) => {
-      const i = n - j;
-      const w = CONJ[d][face[i]];
-      // plain: the next move then has this plain token before it
-      const nextF = b >= 0 ? 1 : (f === 2 ? 2 : f + 1);
-      let best = pen[w] + lam * bitsOpt(i, d, f, a, b, w) + ownAt(i, w) + H[at(j - 1, d, r, nextF)];
-      // wide
-      const ws = WIDES[w];
-      for (let k = 0; k < ws.length; k++) {
-        const W = ws[k][0];
-        const v = pen[W] + lam * bitsOpt(i, d, f, a, b, W) + ownAt(i, W) + afterKnown(j - 1, MUL[d][ws[k][1]], r, W);
-        if (v < best) best = v;
-      }
-      // the token written before, for a two-token spelling's second token
-      const prev1 = b >= 0 ? b : (i > 0 && f >= 1 ? CONJ[d][face[i - 1]] : -1);
-      const quarters = QUARTERS[face[i]];
-      for (let qk = 0; qk < quarters.length; qk++) {
-        const qf = quarters[qk];
-        const q = CONJ[d][qf];
-        const wq = WIDES[q];
-        // a half turn as a plain and a wide quarter, either order
-        for (let k = 0; k < wq.length; k++) {
-          const W = wq[k][0];
-          const d2 = MUL[d][wq[k][1]];
-          let v = pen[q] + lam * (bitsOpt(i, d, f, a, b, q) + secondOf(i, prev1, q, W)) + ownFirst(q) + pen[W] + ownAt(i, W) + afterKnown(j - 1, d2, r, W);
-          if (v < best) best = v;
-          const q2 = CONJ[d2][qf];
-          v = pen[W] + lam * (bitsOpt(i, d, f, a, b, W) + secondOf(i, prev1, W, q2)) + ownFirst(W) + pen[q2] + ownAt(i, q2) + afterKnown(j - 1, d2, r, q2);
-          if (v < best) best = v;
-        }
-        // a half turn around the mid-step rotation ("U y' U")
-        if (!r) {
-          for (let k = 0; k < MIDS.length; k++) {
-            const m = MIDS[k][0];
-            const dm = MUL[d][MIDS[k][1]];
-            const q2 = CONJ[dm][qf];
-            const v = pen[q] + lam * (bitsOpt(i, d, f, a, b, q) + secondOf(i, prev1, q, m) + TRI[(q * NT1 + m) * NT1 + q2]) + ownFirst(q)
-              + pen[m] + mccMin[m] + pen[q2] + ownAt(i, q2) + afterKnown(j - 1, dm, 1, q2);
-            if (v < best) best = v;
-          }
-        }
-      }
-      // a mid-step rotation before move i (not before the first turn)
-      if (!r && (i > 0 || b >= 0)) {
-        for (let k = 0; k < MIDS.length; k++) {
-          const m = MIDS[k][0];
-          const v = pen[m] + lam * bitsOpt(i, d, f, a, b, m) + mccMin[m] + afterKnown(j, MUL[d][MIDS[k][1]], 1, m);
-          if (v < best) best = v;
-        }
-      }
-      return best;
-    };
+    const START = (NT * NT1 + NT) * NT1;
     if (fromJ <= 0) {
-      let m = Infinity;
+      const i = n;
       for (let d = 0; d < NR; d++) {
-        for (let f = 0; f < FLAGS; f++) {
-          const v = YF[d] ? lam * bitsAt(n, d, f, NT) : Infinity;
-          H[at(0, d, 0, f)] = v;
-          H[at(0, d, 1, f)] = v;
-          if (v < m) m = v;
+        for (let f = 0; f < 3; f++) {
+          let b;
+          if (!YF[d]) b = Infinity;
+          else if (i === 0) b = TRI[START + NT];
+          else {
+            const pb = CONJ[d][face[i - 1]];
+            if (f === 2 || (f === 1 && i === 1)) b = TRI[((i >= 2 ? CONJ[d][face[i - 2]] : NT) * NT1 + pb) * NT1 + NT];
+            else b = f === 1 ? MIN2[pb * NT1 + NT] : MIN1[NT];
+          }
+          H[d * 3 + f] = lam * b;
         }
       }
-      rowMin[0] = m;
       fromJ = 1;
     }
-    AWc.fill(NaN, fromJ * AS, (n + 1) * AS);
-    // A row of H: options() for each flag, with what does not depend on the
-    // flag (everything but the first token's bits, the plain move's next
-    // flag and whether the token before is known) computed once.
-    const firstTok = new Int32Array(64);
-    const constCost = new Float64Array(64);
-    const secondTok = new Int32Array(64); // -1: one token; else the second token, after firstTok
-    const secondCost = new Float64Array(64); // bits of a third token after (first, second): split around a rotation
-    const thirdTok = new Int32Array(64);
+    const base = rowBase;
     for (let j = fromJ; j <= n; j++) {
       const i = n - j;
+      const fc = face[i];
+      const pf = i + 1 < n && AXIS[fc] === AXIS[face[i + 1]];
+      const next = j > 1 ? face[i + 1] : 18; // AFTER's move index for the continuation
+      const prevRow = (j - 1) * RS;
+      const row = j * RS;
       let least = Infinity;
-      for (let r = 1; r >= 0; r--) {
-        for (let d = 0; d < NR; d++) {
-          const w = CONJ[d][face[i]];
-          let no = 0;
-          const ws = WIDES[w];
-          for (let k = 0; k < ws.length; k++) {
-            const W = ws[k][0];
-            firstTok[no] = W; secondTok[no] = -1;
-            constCost[no++] = pen[W] + ownAt(i, W) + afterKnown(j - 1, MUL[d][ws[k][1]], r, W);
-          }
-          const quarters = QUARTERS[face[i]];
-          for (let qk = 0; qk < quarters.length; qk++) {
-            const qf = quarters[qk];
-            const q = CONJ[d][qf];
-            const wq = WIDES[q];
-            for (let k = 0; k < wq.length; k++) {
-              const W = wq[k][0];
-              const d2 = MUL[d][wq[k][1]];
-              firstTok[no] = q; secondTok[no] = W; thirdTok[no] = -1;
-              constCost[no++] = pen[q] + ownFirst(q) + pen[W] + ownAt(i, W) + afterKnown(j - 1, d2, r, W);
-              const q2 = CONJ[d2][qf];
-              firstTok[no] = W; secondTok[no] = q2; thirdTok[no] = -1;
-              constCost[no++] = pen[W] + ownFirst(W) + pen[q2] + ownAt(i, q2) + afterKnown(j - 1, d2, r, q2);
-            }
-            if (!r) {
-              for (let k = 0; k < MIDS.length; k++) {
-                const m = MIDS[k][0];
-                const dm = MUL[d][MIDS[k][1]];
-                const q2 = CONJ[dm][qf];
-                firstTok[no] = q; secondTok[no] = m; thirdTok[no] = q2;
-                constCost[no++] = pen[q] + ownFirst(q) + pen[m] + mccMin[m] + lam * TRI[(q * NT1 + m) * NT1 + q2]
-                  + pen[q2] + ownAt(i, q2) + afterKnown(j - 1, dm, 1, q2);
-              }
-            }
-          }
-          if (!r && i > 0) {
-            for (let k = 0; k < MIDS.length; k++) {
-              const m = MIDS[k][0];
-              firstTok[no] = m; secondTok[no] = -1;
-              constCost[no++] = pen[m] + mccMin[m] + afterKnown(j, MUL[d][MIDS[k][1]], 1, m);
-            }
-          }
-          const plain = pen[w] + ownAt(i, w);
-          const prevPlain = i > 0 ? CONJ[d][face[i - 1]] : -1;
-          for (let f = 0; f < FLAGS; f++) {
-            let best = plain + lam * bitsAt(i, d, f, w) + H[at(j - 1, d, r, f === 2 ? 2 : f + 1)];
-            const prev1 = f >= 1 ? prevPlain : -1;
-            for (let k = 0; k < no; k++) {
-              const t1 = firstTok[k];
-              let v = constCost[k] + lam * bitsAt(i, d, f, t1);
-              if (secondTok[k] >= 0) v += lam * secondOf(i, prev1, t1, secondTok[k]);
-              if (v < best) best = v;
-            }
-            H[at(j, d, r, f)] = best;
-            if (!r && best < least) least = best;
+      for (let d = 0; d < NR; d++) {
+        const x = fc * NR + d;
+        const cd = CONJ[d];
+        const pp = i > 0 ? cd[face[i - 1]] : -1;
+        // bits of token k with flag f: i = 0 the start; else see bitsAt
+        const ctx2 = i > 0 ? ((i >= 2 ? cd[face[i - 2]] : NT) * NT1 + pp) * NT1 : 0;
+        const ctx1 = pp * NT1;
+        const w = cd[fc];
+        const ownW = pf ? 0 : OWNF[w];
+        let v0;
+        let v1;
+        let v2;
+        {
+          const c = pen[w] + ownW;
+          if (i === 0) {
+            const b = lam * TRI[START + w];
+            v0 = c + b + H[prevRow + d * 3 + 1];
+            v1 = c + b + H[prevRow + d * 3 + 2];
+            v2 = c + b + H[prevRow + d * 3 + 2];
+          } else {
+            v0 = c + lam * MIN1[w] + H[prevRow + d * 3 + 1];
+            v1 = c + lam * (i === 1 ? TRI[ctx2 + w] : MIN2[ctx1 + w]) + H[prevRow + d * 3 + 2];
+            v2 = c + lam * TRI[ctx2 + w] + H[prevRow + d * 3 + 2];
           }
         }
+        // one-token alternatives (wide): first-token bits only depend on f
+        for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
+          const W = WI[2 * k];
+          const d2 = WI[2 * k + 1];
+          const c = pen[W] + (pf ? 0 : OWNF[W]) + H[prevRow + d2 * 3] + lam * AFTER[((W * NR + d2) * 19 + next) * 2];
+          if (i === 0) {
+            const v = c + lam * TRI[START + W];
+            if (v < v0) v0 = v;
+            if (v < v1) v1 = v;
+            if (v < v2) v2 = v;
+          } else {
+            let v = c + lam * MIN1[W];
+            if (v < v0) v0 = v;
+            v = c + lam * (i === 1 ? TRI[ctx2 + W] : MIN2[ctx1 + W]);
+            if (v < v1) v1 = v;
+            v = c + lam * TRI[ctx2 + W];
+            if (v < v2) v2 = v;
+          }
+        }
+        // two-token splits of a half turn (plain + wide quarter, either order)
+        for (let k = Q0[x], e = Q0[x + 1]; k < e; k++) {
+          const t1 = QI[3 * k];
+          const t2 = QI[3 * k + 1];
+          const d2 = QI[3 * k + 2];
+          const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + H[prevRow + d2 * 3] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2];
+          if (i === 0) {
+            const v = c + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2]);
+            if (v < v0) v0 = v;
+            if (v < v1) v1 = v;
+            if (v < v2) v2 = v;
+          } else {
+            const s0 = MIN2[t1 * NT1 + t2];
+            const s1 = TRI[(pp * NT1 + t1) * NT1 + t2];
+            let v = c + lam * (MIN1[t1] + s0);
+            if (v < v0) v0 = v;
+            v = c + lam * ((i === 1 ? TRI[ctx2 + t1] : MIN2[ctx1 + t1]) + s1);
+            if (v < v1) v1 = v;
+            v = c + lam * (TRI[ctx2 + t1] + s1);
+            if (v < v2) v2 = v;
+          }
+        }
+        // a half turn split around a rotation (q, rotation, q)
+        for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
+          const q = MI[4 * k];
+          const m = MI[4 * k + 1];
+          const q2 = MI[4 * k + 2];
+          const dm = MI[4 * k + 3];
+          const c = pen[q] + OWNF[q] + pen[m] + mccMin[m] + lam * TRI[(q * NT1 + m) * NT1 + q2] + pen[q2] + (pf ? 0 : OWNF[q2])
+            + H[prevRow + dm * 3] + lam * AFTER[((q2 * NR + dm) * 19 + next) * 2];
+          if (i === 0) {
+            const v = c + lam * (TRI[START + q] + TRI[(NT * NT1 + q) * NT1 + m]);
+            if (v < v0) v0 = v;
+            if (v < v1) v1 = v;
+            if (v < v2) v2 = v;
+          } else {
+            const s0 = MIN2[q * NT1 + m];
+            const s1 = TRI[(pp * NT1 + q) * NT1 + m];
+            let v = c + lam * (MIN1[q] + s0);
+            if (v < v0) v0 = v;
+            v = c + lam * ((i === 1 ? TRI[ctx2 + q] : MIN2[ctx1 + q]) + s1);
+            if (v < v1) v1 = v;
+            v = c + lam * (TRI[ctx2 + q] + s1);
+            if (v < v2) v2 = v;
+          }
+        }
+        base[d * 3] = v0;
+        base[d * 3 + 1] = v1;
+        base[d * 3 + 2] = v2;
       }
-      rowMin[j] = least;
-      // The last j moves alone already cost too much: stop (enumerate skips it).
+      // a rotation before move i (not before the first turn), then move i
+      // from the rotated frame: its first token's bits after the rotation
+      // are flag 0 plus AFTER (no further rotation: r = 1)
+      for (let d = 0; d < NR; d++) {
+        let v0 = base[d * 3];
+        let v1 = base[d * 3 + 1];
+        let v2 = base[d * 3 + 2];
+        if (i > 0) {
+          const cd = CONJ[d];
+          const pp = cd[face[i - 1]];
+          const ctx2 = ((i >= 2 ? cd[face[i - 2]] : NT) * NT1 + pp) * NT1;
+          for (let k = 0; k < NM; k++) {
+            const m = MID_T[k];
+            const dm = MID_D[d * NM + k];
+            const c = pen[m] + mccMin[m] + base[dm * 3] + lam * AFTER[((m * NR + dm) * 19 + fc) * 2 + 1];
+            let v = c + lam * MIN1[m];
+            if (v < v0) v0 = v;
+            v = c + lam * (i === 1 ? TRI[ctx2 + m] : MIN2[pp * NT1 + m]);
+            if (v < v1) v1 = v;
+            v = c + lam * TRI[ctx2 + m];
+            if (v < v2) v2 = v;
+          }
+        }
+        H[row + d * 3] = v0;
+        H[row + d * 3 + 1] = v1;
+        H[row + d * 3 + 2] = v2;
+        if (v0 < least) least = v0;
+        if (v1 < least) least = v1;
+        if (v2 < least) least = v2;
+      }
       if (least + (n - j) * minMove > stopAbove) {
         boundRows = j;
         return H;
@@ -467,14 +509,14 @@ const SpellingSearch = (() => {
     const maxRL = opts.maxRL === undefined ? SPELLING_MAX_RL : opts.maxRL;
     const maxUDF = opts.maxUDF === undefined ? SPELLING_MAX_UDF : opts.maxUDF;
     let n = 0; // the walked solution's length (H rows are indexed by n - i)
-    const at = (i, d, r, f) => (((n - i) * NR + d) * 2 + r) * FLAGS + f;
-    const stats = { solutions: sols.length, walked: 0, nodes: 0, rows: 0 };
+    const at = (i, d, f) => ((n - i) * NR + d) * FLAGS + f;
+    const stats = { solutions: sols.length, walked: 0, nodes: 0, rows: 0, seeded: 0 };
     let H = null;
     const budgetNow = () => Math.max(opts.budget(false), opts.budget(true));
     const rootOf = (k) => {
       let m = Infinity;
       for (const [lt, ld] of leads) {
-        const v = H[at(0, ld, 0, 0)] + (lt >= 0 ? mccMin[lt] : 0);
+        const v = H[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] : 0);
         if (v < m) m = v;
       }
       return m + sols[k].look;
@@ -511,7 +553,24 @@ const SpellingSearch = (() => {
       }
       est[k] = m + sols[k].look;
     }
-    const first = Array.from(sols.keys()).sort((x, y) => est[x] - est[y]).slice(0, opts.prewalk || 256);
+    const order = Array.from(sols.keys()).sort((x, y) => est[x] - est[y]);
+    const first = order.slice(0, opts.prewalk || 256);
+    // Phase 1b: the plain spellings (every y-family lead) of the best
+    // estimated solutions are scored first: real candidates, so the N-th
+    // best -- and every walk's budget -- is tight from the start, instead of
+    // infinite until N spellings of whatever the first walks meet are found.
+    const seedCount = Math.min(order.length, opts.seed || 0);
+    for (let s = 0; s < seedCount; s++) {
+      const k = order[s];
+      const face = sols[k].face;
+      for (const [lt, ld] of yLeads) {
+        let len = 0;
+        if (lt >= 0) written[len++] = lt;
+        for (let q = 0; q < face.length; q++) written[len++] = CONJ[ld][face[q]];
+        stats.seeded++;
+        opts.leaf(written.subarray(0, len), ld, ld, sols[k]);
+      }
+    }
     const tryWalk = (k) => {
       done[k] = 1;
       if (rootOf(k) > budgetNow()) return;
@@ -530,7 +589,7 @@ const SpellingSearch = (() => {
       const rec = (i, d, r, f, nRL, nUDF, a, b, ps, mcc, pend, len, anyTurn, wide) => {
         stats.nodes++;
         const budget = opts.budget(wide);
-        if (ps + mcc + look + H[at(i, d, r, f)] > budget) return;
+        if (ps + mcc + look + H[at(i, d, f)] > budget) return;
         if (i === n) {
           if (!YF[d]) return;
           if (ps + lam * lm.trigramBits(a, b, lm.END) + mcc + pend + look > budget) return;
@@ -615,7 +674,7 @@ const SpellingSearch = (() => {
       };
       for (const [lt, ld] of leads) {
         lead = ld;
-        if (H[at(0, ld, 0, 0)] + (lt >= 0 ? mccMin[lt] : 0) + look > Math.max(opts.budget(false), opts.budget(true))) continue;
+        if (H[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] : 0) + look > Math.max(opts.budget(false), opts.budget(true))) continue;
         if (lt >= 0) {
           written[0] = lt;
           rec(0, ld, 0, 0, 0, 0, lm.START, lm.START, 0, 0, mccMin[lt], 1, false, false);
@@ -781,6 +840,7 @@ const SpellingSearch = (() => {
     let exact = 0;
     const stats = enumerate(sols, {
       root: o.root,
+      seed: o.seed === undefined ? 2 * o.size : o.seed,
       maxRL: o.maxRL,
       maxUDF: o.maxUDF,
       budget: wide => limitTpp(wide) * o.pieces - o.floor,
