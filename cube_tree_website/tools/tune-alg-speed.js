@@ -4,6 +4,22 @@
  * ranks the step a professional actually executed near the top of the
  * alternatives the engine finds for the same goal.
  *
+ * Current method (twenty-ninth pass, PROJECT_STATUS "alg_speed tuning"):
+ *   node tools/tune-alg-speed.js cpools --solves 150 --shard k/2 --cache a.jsonl
+ *       For every pro step, the app's own complete-search list for the same
+ *       goal (best --top 300, corpus candidates included), each alg with its
+ *       pair-choice feature vector (checked against the app's TPP).
+ *   node tools/tune-alg-speed.js fit --cache a.jsonl,b.jsonl --train "Yiheng Wang,Xuanyi Geng"
+ *       [--fit keys] [--lambda 0.1] [--min-gain 0.002] [--fold k/K]
+ *       Loss = mean log10 rank of the pro steps + lambda x the move-type gap
+ *       (how often each kind of move is in the top result vs the pro's
+ *       step); pair-choice weights are keys too (look_*, plan_*). --fold
+ *       holds out the training solvers' solves by hash (cross-validation).
+ *   node tools/tune-alg-speed.js eval --cache ... [--explain]
+ *       Ranks, top-10 rates and the move-type tables; --explain splits the
+ *       pro-vs-top cost difference by component.
+ * The older capped-pool commands follow.
+ *
  *   node tools/tune-alg-speed.js pools [--max 5000] [--extra 2] [--top 300] [--keep 700] [--shard k/n]
  *       For every DAG step of every solve in data/reco_solves.txt and
  *       data/pro_references.txt: the engine's solutions of that step's goal

@@ -479,6 +479,10 @@ not look-ahead optimal).
    algSpeed as a per-token state machine: the round-based version via
    `stopAt` cost more than it pruned, see "Complete search"); fewer
    spellings to rank at the root (24 orientations); small xxcross calls.
+   Side-cross inspections (20 of the 24) take 85% of a root call's walk
+   nodes (~3,900 per exactly scored spelling vs ~1,750 for y-family ones)
+   and give 50-70% of its results: their bound (wide/rotation counts and
+   the rotation-used state are not in the tables) is the place to start.
 2. **Ranking:** first steps' remaining misses are mostly longer pro steps
    (planning), not speed; later steps' rotation placement now matches pros
    closely (21.7% / 13.2% vs 18.4% / 16.9%).
