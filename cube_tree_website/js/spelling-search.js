@@ -784,6 +784,10 @@ const SpellingSearch = (() => {
         opts.leaf(written.subarray(0, len), ld, ld, sols[k]);
       }
     }
+    if (opts.seedOnly) {
+      stats.totalMs = Math.round(now() - tStart);
+      return stats;
+    }
     // whether the walk's table has first-token rows (afterBound)
     let walkK = true;
     const tryWalk = (k) => {
@@ -1137,6 +1141,7 @@ const SpellingSearch = (() => {
     const stats = enumerate(sols, {
       root: o.root,
       seed: o.seed === undefined ? 2 * o.size : o.seed,
+      seedOnly: !!o.seedOnly,
       maxRL: o.maxRL,
       maxUDF: o.maxUDF,
       // the budgets only change when a candidate is kept
@@ -1159,12 +1164,42 @@ const SpellingSearch = (() => {
     return { list: top.list(), stats };
   }
 
+  /**
+   * enumerate's cheap estimate of a solution's plain spelling (face-turn
+   * tokens), without its pair-choice cost: for choosing which solutions a
+   * seed-only search (topSpellings seedOnly) scores.
+   */
+  function plainEstimate(faceTokens, root) {
+    const t = tables();
+    const L = lmTables();
+    const mccMin = mccMinimum();
+    const pen = penalties();
+    const lam = STEP_PENALTIES.natural;
+    const lm = L.lm;
+    let m = Infinity;
+    for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) {
+      if (!t.YF[ld]) continue;
+      let a = lm.START;
+      let b = lm.START;
+      let v = lt >= 0 ? mccMin[lt] : 0;
+      for (let q = 0; q < faceTokens.length; q++) {
+        const w = t.CONJ[ld][t.TID.get(faceTokens[q])];
+        const id = L.id[w];
+        v += pen[w] + mccMin[w] + lam * lm.trigramBits(a, b, id);
+        a = b;
+        b = id;
+      }
+      if (v < m) m = v;
+    }
+    return m;
+  }
+
   /** The name of orientation `index` (a leadIndex or endFrame of enumerate). */
   function orientationName(index) {
     return tables().ROT_NAME[index];
   }
 
-  return { FLAGS, tables, enumerate, topSpellings, orientationName, boundTable, forwardStep, mccMinimum, mccFloor, lmTables, penalties, TopViews, SPELLING_MAX_RL, SPELLING_MAX_UDF };
+  return { FLAGS, tables, enumerate, topSpellings, plainEstimate, orientationName, boundTable, forwardStep, mccMinimum, mccFloor, lmTables, penalties, TopViews, SPELLING_MAX_RL, SPELLING_MAX_UDF };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

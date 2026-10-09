@@ -1147,10 +1147,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // The per-candidate work is a pure function of (ctx, job, solutions), so
     // a page can run it off the main thread (session.postProcessor, a worker
     // pool; PROJECT_STATUS.md §4.40) -- same function, same output.
-    // A big call is ranked after the smaller calls of its type, so their
-    // results already bound it (typeLimits): most of its solutions then stop
-    // early (spelling-search.js boundTable's stopAbove).
-    if (p.complete && cores.length > COMPLETE_CHUNK) {
+    // A big call no longer waits for the smaller calls of its type (their
+    // results would bound it, typeLimits): on a worker pool the wait left
+    // workers idle and made it the tail of the search (hardest root
+    // measured: 30.6 s -> see PROJECT_STATUS). Without a pool it still does.
+    if (p.complete && cores.length > COMPLETE_CHUNK && !session.postProcessor) {
       const others = plan.filter(q => q !== p && q.complete && q.category === p.category && q.processing && !q.big);
       p.big = true;
       await Promise.all(others.map(q => q.processing.catch(() => {})));
@@ -1162,6 +1163,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // A big call is ranked in chunks side by side on the worker pool (the
       // best N of each chunk; trimToTypeBest keeps the best N of all).
       // Chunks of solutions that end alike share most of their bound rows.
+      // First a quick seed job over the whole call: its exactly scored plain
+      // spellings bound every chunk (each would otherwise find its own best
+      // N from scratch: 2 chunks of a first-step xcross did twice the work).
+      const seedList = await session.postProcessor(ctx, { ...job, seedOnly: true, corpus: null }, cores, rank);
+      job.limits = completeSeedLimits(seedList, p.topN, job.limits);
       const chunks = completeChunks(cores, session.postProcessor.workers);
       const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank)));
       p.candidates = [].concat(...parts);
@@ -1229,6 +1235,20 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   if (truncatedCalls) out.truncatedCalls = truncatedCalls;
   if (failedCalls) out.failedCalls = failedCalls;
   return out;
+}
+
+/**
+ * Per RESULT_VIEWS view, the N-th best TPP among `candidates` (real ones:
+ * a seed-only search's plain spellings), or the given limit if lower. The
+ * true N-th best can only be better, so it is a valid limit for any part
+ * of the same call.
+ */
+function completeSeedLimits(candidates, topN, limits) {
+  return RESULT_VIEWS.map((view, v) => {
+    const tpps = (candidates || []).filter(view.test).map(c => c.tpp).sort((a, b) => a - b);
+    const seeded = tpps.length >= topN ? tpps[topN - 1] : Infinity;
+    return Math.min(seeded, limits ? limits[v] : Infinity);
+  });
 }
 
 // Complete search: solutions per post-processing job (see processCall).
@@ -1702,6 +1722,15 @@ function postProcessComplete(ctx, p, cores) {
   };
   const sols = [];
   const seen = new Set();
+  // seedOnly (completeSeedLimits): only the plain spellings of the
+  // solutions that look best, scored exactly, as real candidates
+  if (p.seedOnly) {
+    const keyed = [];
+    for (const core of cores || []) if (core && !seen.has(core)) { seen.add(core); keyed.push([SPELLING.plainEstimate(core.split(' '), isRoot), core]); }
+    keyed.sort((x, y) => x[0] - y[0]);
+    cores = keyed.slice(0, 4 * p.topN).map(x => x[1]);
+    seen.clear();
+  }
   for (const core of cores || []) {
     if (!core || seen.has(core)) continue;
     seen.add(core);
@@ -1829,6 +1858,7 @@ function postProcessComplete(ctx, p, cores) {
     extra,
     maxRL: wide ? undefined : 0,
     maxUDF: wide ? undefined : 0,
+    seedOnly: !!p.seedOnly,
   });
   for (const c of list) delete c.key;
   return list;
