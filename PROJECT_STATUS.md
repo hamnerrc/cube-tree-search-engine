@@ -191,7 +191,18 @@ root search -- plus the brute-force tests):
 - Browser pools: 1 engine worker (2 from 8 threads), the other threads
   (cap 12) rank; a queued call's type limits are refreshed when a worker
   takes it (calls of its type finished meanwhile): hardest first step
-  29-32 s -> 25.5-27 s (Node), identical lists.
+  29-32 s -> 25.5-27 s (Node), identical lists. A big call's seed results
+  count toward its type's N-th best for the other calls until it is done
+  (never for itself or twice): -> 24 s.
+- Order matters a lot: ranking a type's calls one after another, biggest
+  first, each starting with the N-th best of the ones before, costs a
+  third (xxcross) to 60% (xcross) of ranking them independently
+  (single-threaded replay, identical tops). On the pool this was tried as
+  "prefer a call whose type has nothing running" (no gain: idle workers
+  take the blocked calls) and strictly (idle workers: +15-25%); rejected.
+  Also rejected: one chain job per type with several calls (one worker,
+  biggest first, limits carried over): hardest first step -11%, the
+  typical one +13% (the chain loads one worker while the other idles).
 
 Order of work (`enumerate`): a cheap estimate of each solution's plain
 spelling picks 256 to walk first and 2N to seed; then every other solution
