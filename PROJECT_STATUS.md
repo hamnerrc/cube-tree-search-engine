@@ -194,6 +194,13 @@ root search -- plus the brute-force tests):
   29-32 s -> 25.5-27 s (Node), identical lists. A big call's seed results
   count toward its type's N-th best for the other calls until it is done
   (never for itself or twice): -> 24 s.
+- Later steps: with three pairs committed the engine is most of a step
+  (its calls run one after another on the one engine worker; a 4-pair
+  multislot goal took 3 s of a 7.7 s step). Single-pair calls now start
+  before multislot ones (hidden by default, always searched): the rows a
+  solver sees are final at 3.9 s instead of 7.7 s; the step still ends at
+  ~8 s. A second engine worker: 6.7 -> 5.7 s on one scramble, no change on
+  another (its tables were cold in the Node harness); not changed.
 - Order matters a lot: ranking a type's calls one after another, biggest
   first, each starting with the N-th best of the ones before, costs a
   third (xxcross) to 60% (xcross) of ranking them independently

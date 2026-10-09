@@ -1052,9 +1052,13 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   const ranked = (h) => (rank && h && typeof h.withRank === 'function' ? h.withRank(rank) : h);
   const engine = ranked(serialEngine(helper));
   const pseudoEngine = ranked(serialEngine(pseudoHelper));
+  // Without a budget: later steps start their single-pair calls before the
+  // multislot ones, whose results the results page hides by default (they
+  // are always searched, README "Multislot"), so the rows a solver sees are
+  // final sooner; the order calls are consumed in is unchanged.
   const startOrder = deadline
     ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
-    : plan;
+    : (isRoot ? plan : plan.slice().sort((a, b) => (a.pairCount > 1) - (b.pairCount > 1)));
   for (const p of startOrder) {
     // Complete search: face turns only (every rotation and wide spelling is
     // derived from them afterwards, spelling-search.js), every solution.
