@@ -1153,7 +1153,8 @@ const SpellingSearch = (() => {
    */
   function topSpellings(o) {
     const t = tables();
-    const sols = o.sols.map(s => ({ ...s, face: s.face.map(x => (typeof x === 'number' ? x : t.TID.get(x))) }));
+    // faces as token ids (callers may pass them so already)
+    const sols = o.sols.map(s => (typeof s.face[0] === 'number' || !s.face.length ? s : { ...s, face: s.face.map(x => t.TID.get(x)) }));
     const top = new TopViews(o.views.map(v => v.test), o.size, o.initial);
     const limitTpp = (wide) => {
       let m = -Infinity;

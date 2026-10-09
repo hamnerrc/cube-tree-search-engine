@@ -495,8 +495,12 @@ not look-ahead optimal).
    The naturalness model is strongly solver-specific (an LM trained on
    another solver: mean log10 rank 0.62 → 0.77).
 5. **Visual redesign** (README): waiting on the developer's design.
-6. **Pair planning:** pro check of the planning weights' pair choices
-   (different goals; the twenty-ninth pass fitted them on same-goal lists).
+6. **Pair planning:** checked (twenty-ninth pass) on 80 reco.nz solves the
+   tuning pools did not use, the app's full search at every pro node (best
+   5 per pair choice, re-scored offline): the pro's pair choice ranks first
+   at 28.0% of first steps (22.7% with the weights from before the pass)
+   and 62.8% of later steps (64.2%; MRR 0.788 vs 0.792). Still open: a
+   slot-order (visibility) preference fitted on pro pair choices.
 7. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
 8. **Worst case** (every option on): not re-measured with the complete

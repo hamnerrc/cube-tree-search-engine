@@ -358,11 +358,12 @@ function replayFacelets(scramble, rotation, priorPath, coreAlg) {
  * with no partner is tolerated either way (README: it "may appear
  * transiently as a side effect"); only an extra COMPLETE pair is luck.
  */
-function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners, claimedEdges) {
+function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners, claimedEdges, claimSets = null) {
   const facelets = replayFacelets(scramble, rotation, priorPath, coreAlg);
   const actual = solvedFlags(facelets);
-  const corners = new Set(claimedCorners || []);
-  const edges = new Set(claimedEdges === undefined ? (claimedCorners || []) : claimedEdges);
+  // (claimSets: the same claim as Sets, for a caller checking many algs)
+  const corners = claimSets ? claimSets.corners : new Set(claimedCorners || []);
+  const edges = claimSets ? claimSets.edges : new Set(claimedEdges === undefined ? (claimedCorners || []) : claimedEdges);
 
   if (!actual.cross) {
     return { ok: false, reason: 'cross claimed solved but is not actually solved' };
@@ -1746,17 +1747,19 @@ function postProcessComplete(ctx, p, cores) {
     cores = keyed.slice(0, 4 * p.topN).map(x => x[1]);
     seen.clear();
   }
+  const claimSets = { corners: new Set(p.allCorners || []), edges: new Set(p.allEdges || p.allCorners || []) };
+  const TID = SPELLING.tables().TID;
   for (const core of cores || []) {
     if (!core || seen.has(core)) continue;
     seen.add(core);
-    const check = checkCandidateAgainstRealCubeState(ctx.scramble, base, ctx.scoredPath, core, p.allCorners, p.allEdges);
+    const check = checkCandidateAgainstRealCubeState(ctx.scramble, base, ctx.scoredPath, core, p.allCorners, p.allEdges, claimSets);
     if (!check.ok) {
       if (check.reason.includes('claimed solved but is not actually solved')) {
         console.warn(`Discarding solution: ${check.reason}`, { coreAlg: core, rotation: base });
       }
       continue;
     }
-    const sol = { face: core.split(' '), core, look: lookCost(check.facelets) };
+    const sol = { face: core.split(' ').map(x => TID.get(x)), core, look: lookCost(check.facelets) };
     if (ctx.planWeights) {
       // every spelling ends as this solution then a y-family rotation: its
       // planning cost by that rotation ('', y, y2, y'; enumerate bounds
