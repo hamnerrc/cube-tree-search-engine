@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-08 (twenty-eighth pass).*
+*Last updated 2026-10-09 (twenty-ninth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -11,29 +11,30 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
 
-**Twenty-eighth pass (2026-10-08).** User tasks: (1) UI: "hide unorthodox"
-renamed "hide awkward f2l solutions" and never hides a first step; the
-configuration page's "search" box (solutions per search, time limit)
-removed; (2) solution continuity: EO-aware pair planning, learned, no rigid
-rules, toggleable for beginners; (3) a complete search: the best N
-solutions under the move limit, every rotation and wide-move insertion
-checked, optimisation after. The tree was clean and every fast suite
-passed at the start.
+**Twenty-ninth pass (2026-10-09).** User tasks: (1) rankings had got much
+worse with the complete search: retune on the professional solves only,
+including how often each move type (wide moves etc.) is in the top result
+vs the pro's step, and keep raising the top-10 rate; (2) make the searcher
+significantly faster; (3) no UI/UX redesign yet. The tree was clean and
+every fast suite passed at the start.
 
-1. **UI.** Done as asked. Saved criteria from before (CRITERIA_VERSION 4)
-   lose `maxSolutions` / `timeLimit`; first steps are never flagged
-   `unorthodox` (`postProcessCall`, `postProcessComplete`).
-2. **Complete search** (README "Complete search", `js/spelling-search.js`,
-   `postProcessComplete` in solver-bridge.js). Details and numbers under
-   "Complete search" below. Correct and verified (exact against brute
-   force; zero of the old capped search's top-25 rows missing within the
-   limits; every result physically replayed), but **slower than before**:
-   on this 2-core machine a first step takes ~25-90 s and a later step
-   ~10-50 s (old: ~20 s and ~5-13 s). The performance goal (one step < 1
-   min with every option on) is **not met** yet: see Open 1.
-3. **Pair planning** (README "Pair planning", `planFeatures` in
-   facelet-flags.js, `PAIR_PLANNING` in script.js, results-page "ranking"
-   group). Details under "Pair choice tuning" below.
+1. **Ranking** ("alg_speed tuning" below): pro steps are now ranked in the
+   complete search's own list for their goal (`tune-alg-speed.js cpools`),
+   the loss adds a move-type frequency gap, pair-choice weights are fitted
+   with alg_speed, λ chosen by CV. New weights: first-step pro steps in the
+   top 10 21% → 27%, later 91% → 92%, references 0.521 → 0.454 mean log10
+   rank; first-step wide moves in the top result 54% → 45% (pros 46%).
+   Ceiling: 74% of the pro steps still outside the top 10 are longer than
+   the app's top result (54-58% by 2+ turns): planning/findability, not
+   execution speed.
+2. **Speed** ("Complete search" and "Measurements" below; every change
+   checked for identical result lists): cheaper bound tables, first-token
+   rows at the root, meet-in-the-middle rows, seeding, tighter walks,
+   planning features in one pass, and above all the worker pools (the page
+   ranked on one worker; one call per worker; chunks ≤ workers with shared
+   seed limits). Browser (headless Chrome, this 2-core machine, warm):
+   scramble `R2 U2 L D' ...` first step 58 s → 14.8 s, second 44 s →
+   7-9 s; the hardest known scramble's first step ~35 s.
 
 ## Layout
 
@@ -117,30 +118,29 @@ Everything in the README is implemented except the visual redesign
 
 ### Measurements
 
-- Complete search, this 2-core machine (4 threads), headless Chrome (1
-  engine worker, 2 post-processing workers), white, xcross + xxcross:
-  scramble `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2` first
-  step 58 s, second 44 s (old capped search: 21 s, 13 s; before the
-  second round of bound work 82 s / 48 s). Node, same pools: 42 s / 39 s
-  (were 65 s / 40 s); scramble `D R2 U' B2 ...` 63 s / 85 s. On it, every engine call of the first step is done
-  after 5.3 s; the rest is ranking spellings of 64,162 crosses (≤9 turns)
-  in 24 inspection orientations. Other scrambles: first steps 23-25 s,
-  later steps 2-57 s (`complete-search-e2e.js`).
-- `complete-search-e2e.js --scrambles 2 --seed 5` (2-core box, old search
-  run on the same cubes): 0 of the old top-25 rows within the limits
-  missing over 7 steps, 5,364 results replayed exact. Scramble `D R2 U' B2
-  U' R2 D2 R2 U B2 U' R2 B2 U' R' B2 F L D' F R' B2`: the complete search's
-  best first step `z' y' | D L' U L U' L' r' D2 L` has TPP 5.79, the old
-  search's best 7.21 (a side-cross spelling it never generated) -- but that
-  step took 179 s (old 55 s); later steps 0.5-93 s (old 2-5 s).
+- Browser, headless Chrome on this 2-core machine (it reports 2 threads:
+  1 engine worker, 2 ranking workers), white, xcross + xxcross, warm
+  (prune tables in IndexedDB; a cold first load adds ~5 s): scramble
+  `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2` first step
+  14.1-14.8 s, second 6.9-8.9 s, third 0.3-0.5 s (start of the pass: 58 s
+  and 44 s; 29.9 s / 8.2 s after the search changes, before the pool
+  fixes). Scramble `D R2 U' B2 U' R2 D2 R2 U B2 U' R2 B2 U' R' B2 F L D'
+  F R' B2`: first step 35 s (57 s before the pool fixes), second 5 s.
+- Node, the same pools: the two first steps 16-17 s and 30-33 s
+  (`complete-search-e2e.js`, `toplist`-style runs); single-threaded CPU of
+  their ranking 19.5 s and 36.9 s (start of the pass 24.7 s / 55 s for
+  the same captured calls, old weights).
+- Where a first step's time goes now: walks of the root xcross calls (24
+  inspection orientations; ~15M walk nodes for ~6k exactly scored
+  spellings), the cross call's bound rows, small xxcross calls that must
+  fill 300 results per view from a few solutions. Two ranking workers give
+  ~1.45x one on this machine (clock scaling).
 - Solutions per goal (face turns, uncapped): cross ≤9 24k-65k; xcross ≤10
-  0.5k-4.5k per slot; 2nd pair ≤10 3k-54k (≤11: 35k-300k, ≤12: 0.2M-1.8M);
-  two pairs at once ≤12 1k-31k.
+  0.5k-18k per slot; 2nd pair ≤10 3k-170k; two pairs at once ≤12 1k-31k.
 - Coverage (`complete-coverage.js`): reco.nz later steps in the complete
   search exactly as written 89.7% (limit 11: 92.8%), first steps 66.0%;
   pro_references 45/47 later, 11/19 first (the rest are longer than the
-  limits). The old engine search had 44/66 of the reference steps in its
-  tree, and its 10,000-solution cap lost more in practice.
+  limits).
 
 ## Complete search
 
@@ -210,9 +210,13 @@ Things that did not help (do not retry as is): stopping a solution's bound
 early once its ending alone is too costly (an ending is almost never too
 costly alone; with a per-move lower bound for the moves not reached yet,
 3% fewer rows); a prefix-shared walk without the per-solution DP (5x more
-nodes); the first-token tier at later steps (+5%). Not tried yet: an
-incremental exact MCC lower bound inside walks (MCC is a round-based grip
-simulation; walks of few-solution root calls are its main target).
+nodes); the first-token tier at later steps (+5%); an MCC bound inside
+walks via algSpeed's `stopAt` pause (round start time + least increments:
+leaf slack 5.5 -> 2.2 units, but at walk nodes it pruned 3%; with each
+running grip test's time at the end of the written tokens it pruned half
+the nodes it was tried on, yet walk nodes only fell 12.4M -> 10.8M and the
+algSpeed calls made the call 25-50% slower); FIFO instead of
+biggest-first ranking-job order (+5-10%).
 
 ## alg_speed tuning
 
@@ -445,33 +449,35 @@ not look-ahead optimal).
 
 ## Open
 
-1. **Complete search speed** (user task 3, twenty-eighth pass): exact but
-   slow; first steps ~25-90 s, later steps ~2-57 s on this 2-core machine
-   (old: ~20 s / ~5-13 s). Where the time goes: ranking spellings (the
-   engine is done in ~5 s); the bound pass over every solution (~6-15 µs
-   per bound row) and walks of solutions the bound cannot rule out. Levers,
-   in order: (a) a tighter MCC bound -- MCC's regrips are most of the ~23
-   units of slack; a DP over wrist states (MCC's own state machine,
-   minimising over grips is still a lower bound of its greedy result) would
-   let most solutions be skipped; (b) the first step's 24 inspection
-   orientations (most of a root walk's nodes): a per-orientation bound
-   table; (c) typed-array, closure-free boundTable (~2-3x per row); (d)
-   sharing work between the cross and xcross calls of a colour.
-2. **Search coverage:** 89.7% of pro later steps and 66% of first steps
+1. **Speed** (user task, twenty-ninth pass: "significantly faster before we
+   can call it finished"): a first step is 15-35 s on this 2-core machine
+   (more workers help on bigger machines). Next levers: first-step walks
+   (most nodes are children pruned on entry; MCC's regrips are most of the
+   remaining slack -- an exact incremental MCC lower bound would need
+   algSpeed as a per-token state machine: the round-based version via
+   `stopAt` cost more than it pruned, see "Complete search"); fewer
+   spellings to rank at the root (24 orientations); small xxcross calls.
+2. **Ranking:** later steps' rotation placement: the top result starts with
+   a free y 32% of the time (pros 18%) and rotates mid-step 9% (pros 17%),
+   because the naturalness model drops a leading rotation but charges a
+   mid-step one. Scoring a later step's leading rotation as a token (the
+   search's bounds and walk would need the lead's context) is the fix to
+   try. First steps: the remaining misses are mostly longer pro steps
+   (planning), not speed.
+3. **Search coverage:** 89.7% of pro later steps and 66% of first steps
    are in the complete search exactly as written; the rest are longer than
    the limits (single pair 10, first steps 9-11), use slices, or rotate
-   twice mid-step. First steps rank worst (no inspection model).
-3. **More tuning data:** more solvers from reco.nz (`node tools/reco.js
-   fetch <raw.json> "Name"`, then `convert`, `corpus`, `pools`, `fit`).
-   Yiheng Wang's style (many mid-step rotations) dominates the fit; another
-   CFOP solver would make it less personal. Also: refit `alg_speed` on the
-   complete search's pools (the fit used capped pools).
-4. **Visual redesign** (README): waiting on the developer's design.
-5. **Pair planning:** pro check of the planning weights; slot-order
-   (visibility) preference fitted on pro choices; more look-ahead data.
-6. A later step searched as the first call of a fresh browser worker once
+   twice mid-step.
+4. **More tuning data:** more solvers from reco.nz (`node tools/reco.js
+   fetch <raw.json> "Name"`, then `convert`, `corpus`, `cpools`, `fit`).
+   The naturalness model is strongly solver-specific (an LM trained on
+   another solver: mean log10 rank 0.62 → 0.77).
+5. **Visual redesign** (README): waiting on the developer's design.
+6. **Pair planning:** pro check of the planning weights' pair choices
+   (different goals; the twenty-ninth pass fitted them on same-goal lists).
+7. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
-7. **Worst case** (every option on): not re-measured with the complete
+8. **Worst case** (every option on): not re-measured with the complete
    search; the search time limit (`SolveSession.timeBudgetMs`) still exists
    for tools but is no longer on the configuration page and does not cut
    the complete search's ranking.
