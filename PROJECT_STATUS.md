@@ -44,7 +44,29 @@ tree clean, every suite passing, one commit not yet pushed).
    unchanged (2.6-6.7 s, one 9.9 s). Node pools, first pair after a cross:
    26.2 -> 17.7, 26.7 -> 20.3, 12.0 -> 9.5 s; third steps 8.6 -> 4.9 s.
    Tried and dropped: two jobs per worker (interleaved at pauses: slower),
-   no in-chunk seeding when limits are known (noise).
+   no in-chunk seeding when limits are known (noise), full seed jobs (every
+   spelling of the 4N best-estimated solutions: their N-th best is exactly
+   the final one, 22.556 vs 22.853, yet no faster -- live limits already
+   converge), two engine workers (rows final unchanged; only the hidden
+   multislot tail is shorter), three ranking workers on this 2-core/4-thread
+   machine (no gain).
+6. **Where the first pair after a cross still goes** (~24 s in Node pools,
+   10-30 s in the browser; the type's limit is now the final one almost from
+   the start, so this is the algorithm's own cost): per solution ~13 us of
+   preparation (luck replay, look and plan features), ~1.5 cheap MITM rows,
+   and for the ~45% whose bound fits, the rest of the table + a walk.
+   Measured (`exp-slack`-style, 300 sampled walked solutions of the 187k
+   call): the cheap bound is 43-79 units (median 63) below the solution's
+   true best spelling, and none of them has a spelling inside the limit --
+   almost all of it naturalness context the cheap table forgets after a
+   wide/split token (real MCC minus least MCC only ~5). Exact-context tables
+   at later steps (ideal limits, same call): walks 83k -> 3.4k, but 209k
+   exact rows at ~50 us (mid-step rotation contexts and options are ~80% of
+   a later-step row; root rows ~8 us): 8.4 -> 15.1 s. A relaxation that
+   bounds the rotation token and the token after it by min-over-context
+   would cut a row to ~20 us by count, about break-even; it needs < 16 us
+   to pay. Rows cannot be shared across the step's calls (row 5: 362k
+   distinct suffixes per call, 349k across all four).
 
 **Thirtieth pass (2026-10-09).** User tasks: (1) search speed with the
 optimality guarantee kept, ~10 s per step as the goal; (2) a first step
@@ -203,6 +225,14 @@ Everything in the README is implemented except the visual redesign
 
 ### Measurements
 
+- Thirty-first pass, browser, 8 random-state scrambles (seed 12345,
+  `random-state-scramble.js`), 4 steps each, the top row clicked as soon as
+  the rows are final: default settings later steps mean 20.4 -> 10.1 s (max
+  103 -> 30.3 s); xcross + xxcross first mean 6.5 s (max 10.3), later mean
+  2.1 s (max 7.3). This machine runs a background process at 4-50% CPU at
+  times: repeat runs of one scramble vary by up to 2x; decide on alternating
+  Node A/B runs (md5 of the lists must match), and park the headless page on
+  about:blank after a run (its hidden multislot search keeps a core busy).
 - Thirtieth pass, later steps (browser, clicking as soon as the rows are
   final): scramble `F2 U2 B2 D F2 U F2 L2 R2 F2 U' F2 R B D U B' L2 U'
   R U' R'` second step rows final 6.5-9.3 s (the step itself ends at
@@ -262,6 +292,17 @@ runs; after any other written token (wide, rotation, split quarter) the
 next token's bits are MIN1 plus `AFTER` (the least extra any first token of
 the next move has after that token). Rows depend only on the last moves +
 2 of context, so solutions sorted by their endings share rows.
+
+Thirty-first pass: the jobs of a step type share their limits while they
+run (worker pools): `enumerate` is a generator that pauses about every
+100 ms (`opts.pauseMs`); `topSpellingsLive` posts `TopViews.snapshot()`
+(key, TPP, view mask of every kept candidate) and tightens with what comes
+back (`TopViews.tighten`). The page (`liveHooks` in searchCurrentNode, the
+pools' `{ id, report }` / `{ id, limits }` messages) answers with, per view,
+the N-th best among finished calls, every running job of the type (each key
+once) and the seeds. A big call's chunks start once every big call of its
+type has its seeds (`seedReady`). Tested: two live jobs together equal brute
+force (spelling-search.test.js).
 
 Thirtieth pass (every change verified by identical result lists on the
 captured root calls and later-step calls, plus the brute-force tests):
@@ -610,9 +651,13 @@ not look-ahead optimal).
 
 ## Open
 
-1. **Speed** (user goal, thirtieth pass: ~10 s per step, optimality
-   kept). Now 6-11 s first steps, 5-8 s later steps in the browser on this
-   2-core machine. Next levers: exact rows are still ~7 per root pair
+1. **Speed** (user goal, thirtieth/thirty-first pass: ~10 s per step,
+   optimality kept). Browser, this 2-core machine: xcross + xxcross first
+   steps 4.8-10.3 s, later 0.5-7.3 s; default settings (cross only) first
+   steps 2.7-4.5 s, the first pair after the cross 10-30 s (the slow case
+   left), later pairs 5-13 s. The first pair is CPU-bound with ideal limits
+   (thirty-first pass, item 6): a cheaper exact-context row at later steps
+   (< 16 us) is the lever with the most room. Older levers: exact rows are still ~7 per root pair
    solution (an exact meet in the middle would share prefixes, but its
    forward memo is ~3 KB per prefix); per-solution work before ranking
    (luck check, pair-choice features: ~23 us x 65k crosses; engine order
