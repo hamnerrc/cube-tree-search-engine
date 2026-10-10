@@ -297,10 +297,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           for (;;) {
             const w = workers.find(x => !x.broken && x.pending.size < 1);
             if (!w || !waiting.length) return;
+            // a replaced search's jobs (owner.stale) after everyone else's
             let best = 0;
+            const stale = x => !!(x.owner && x.owner.stale);
             for (let i = 1; i < waiting.length; i++) {
-              const c = compareSearchRanks(waiting[i].rank, waiting[best].rank);
-              if (c < 0 || (c === 0 && waiting[i].cores.length > waiting[best].cores.length)) best = i;
+              const w = waiting[i];
+              const b = waiting[best];
+              if (stale(w) !== stale(b)) { if (!stale(w)) best = i; continue; }
+              const c = compareSearchRanks(w.rank, b.rank);
+              if (c < 0 || (c === 0 && w.cores.length > b.cores.length)) best = i;
             }
             const { ctx, job: queued, cores, prepare, resolve, reject } = waiting.splice(best, 1)[0];
             // prepare: the caller's last word on the job when it starts
@@ -315,9 +320,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             w.postMessage({ id, ctx, job, cores });
           }
         };
-        const send = (ctx, job, cores, rank, prepare) => new Promise((resolve, reject) => {
+        const send = (ctx, job, cores, rank, prepare, owner) => new Promise((resolve, reject) => {
           if (!workers.some(w => !w.broken)) { reject(new Error('no post-processing worker')); return; }
-          waiting.push({ ctx, job, cores, rank, prepare, resolve, reject });
+          waiting.push({ ctx, job, cores, rank, prepare, resolve, reject, owner });
           pump();
         });
         for (const w of workers) {
@@ -326,9 +331,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           const fail = w.onerror;
           w.onerror = (e) => { fail(e); pump(); };
         }
-        postPool = (ctx, job, cores, rank, prepare) => send(ctx, job, cores, rank, prepare)
-          .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
-        postPool.workers = workers.length; // solver-bridge.js completeChunks
+        const make = (owner) => {
+          const f = (ctx, job, cores, rank, prepare) => send(ctx, job, cores, rank, prepare, owner)
+            .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
+          f.workers = workers.length; // solver-bridge.js completeChunks
+          // the same pool, its jobs tagged with a search job (stale: yields)
+          f.forJob = make;
+          return f;
+        };
+        postPool = make(null);
       } catch (err) {
         console.error('Post-processing workers unavailable; using the main thread', err);
         postPool = false;
@@ -624,10 +635,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const failed = results.failedCalls ? ` · ${results.failedCalls} solver call${results.failedCalls > 1 ? 's' : ''} failed, results incomplete (undo and redo to retry)` : '';
     let msg;
     if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
+    // only hidden multislot calls are left: the rows shown are final
+    else if (partial && results.onlyMultislotPending && !view.multislot) msg = `${count(results.length)} results · final (hidden multislots still searching)`;
     else if (partial) msg = `${count(results.length)} results so far · searching…`;
     else msg = results.length ? `${count(results.length)} results` : 'no results for the current filters at this step';
     const hidden = results.hiddenCount ? ` · ${count(results.hiddenCount)} hidden by filters` : '';
-    setStatus(msg + hidden + cut + failed, partial ? 'busy' : results.failedCalls ? 'error' : 'done');
+    const final = !partial || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
+    setStatus(msg + hidden + cut + failed, !final ? 'busy' : results.failedCalls ? 'error' : 'done');
   }
 
   // One search per (session, committed path, view settings): navigating away
@@ -682,6 +696,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const opts = searchOptions(priority);
     const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey, opts.planning ? '' : 'noplan'].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
+      // the search it replaces (the step before a click, another setting)
+      // lets this one's engine calls go first (search-scheduler.js)
+      if (session.resultsCache && session.resultsCache.job) scheduler.setStale(session.resultsCache.job);
       session._status = 'searching';
       renderScrambleStatusIfActive(session);
       // Set before the job starts: a search the memo already has running
@@ -703,10 +720,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       // Replaced (another setting, a commit or an undo): its look-ahead stops
       // starting new searches, so it does not compete with the new one.
       const isCancelled = () => session.resultsCache !== cache;
-      const job = scheduler.submit(
-        (wrap) => searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled }),
-        priority,
-      );
+      const job = scheduler.submit((wrap) => {
+        // its ranking jobs carry it, so they yield once it is replaced (the
+        // search forks the session at once, keeping this post-processor)
+        if (session.postProcessor && session.postProcessor.forJob) session.postProcessor = session.postProcessor.forJob(job);
+        return searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled });
+      }, priority);
       const promise = job.promise;
       cache.job = job;
       cache.promise = promise;

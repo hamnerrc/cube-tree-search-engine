@@ -300,7 +300,9 @@ The configuration page's per-type limits override both columns
 Single pair or Multislot override applies to every later step of that kind.
 
 **Performance** comes after completeness. The engine calls are face turns
-only and mostly quick; ranking the spellings runs on a worker pool, big
+only and mostly quick (a later step's multislot call, the slow one, is
+split by its first move, so engine workers share it and other searches can
+run between its parts); ranking the spellings runs on a worker pool, big
 edges split across workers. Measured times are in PROJECT_STATUS.md; the
 goal stays one step in **under 1 minute** with every option on, and about
 **10 seconds per step** with the default settings, so a solver hardly
@@ -311,7 +313,11 @@ multislot, wide-move and awkward results, so changing a filter either way
 is instant and never searches again; the look-ahead follows them.
 
 - **Multislot** (default off): ticked, later steps that solve several pairs
-  at once are shown.
+  at once are shown. Their engine search (two pairs, up to 12 turns) is a
+  later step's slowest part, so while they are hidden the status line says
+  as soon as the rows shown are final, and the multislot search goes on
+  behind them; clicking a row then stops it (a step left behind is searched
+  again in full if it is ever shown again).
 - **Wide moves** (default on): unticked, no result uses a wide or slice
   move.
 - **Hide awkward F2L solutions** (default off): hides later steps that

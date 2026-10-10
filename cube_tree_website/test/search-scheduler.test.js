@@ -184,6 +184,29 @@ test('look-ahead ranks: lowest rank first among waiting calls, unranked before r
   assert.deepStrictEqual(log, ['busy', 'own', 'r0a', 'r0b', 'r005', 'r01', 'r1', 'r2']);
 });
 
+test('a stale job yields: its queued calls run after another active job\'s, then still run', async () => {
+  const log = [];
+  const h = fakeHelper(log, 10);
+  const s = createSearchScheduler();
+  // the old step queues all its calls at once (a split engine call)
+  const old = s.submit(async (wrap) => {
+    const g = wrap(h);
+    return (await Promise.all([0, 1, 2, 3, 4].map(i => g.solveCross(`old${i}`)))).length;
+  }, ACTIVE);
+  await sleep(5); // old0 is running, old1..4 wait
+  s.setStale(old);
+  // the new step also starts its calls at once (searchCurrentNode)
+  const next = s.submit(async (wrap) => {
+    const g = wrap(h);
+    await Promise.all([0, 1].map(i => g.solveCross(`new${i}`)));
+    return 'new';
+  }, ACTIVE);
+  assert.strictEqual(await next.promise, 'new');
+  assert.strictEqual(await old.promise, 5);
+  assert.deepStrictEqual(log.slice(0, 3), ['old0', 'new0', 'new1'], log.join(' '));
+  assert.deepStrictEqual(log.slice(3).sort(), ['old1', 'old2', 'old3', 'old4']);
+});
+
 test('compareSearchRanks orders look-ahead paths depth-first by candidate index', () => {
   const { compareSearchRanks } = require(path.join(__dirname, '..', 'js', 'search-scheduler.js'));
   const ranks = [[1], null, [0, 1], [0], [0, 0, 3], [], [2, 0]];

@@ -20,6 +20,10 @@
  *    A pool runs up to one call per worker at once (PROJECT_STATUS.md §4.34).
  *  - A job's priority can change while it is queued or running (setPriority):
  *    switching scrambles promotes the newly active one and demotes the old.
+ *  - A stale job (replaced on screen: the next step after a click, another
+ *    setting) keeps its priority but its calls run after every other call
+ *    of that priority; they still run whenever nothing else is waiting, so
+ *    a job waiting on one of them (a shared engine call) is never stuck.
  *  - Within one priority, calls made through engine.withRank(rank) (the
  *    look-ahead's path of candidate indices, solver-bridge.js lookaheadFork)
  *    run lowest rank first -- the step's own calls (no rank) before any
@@ -56,7 +60,8 @@ function createSearchScheduler() {
         const w = g.waiters[i];
         const b = g.waiters[best];
         if (w.job.priority > b.job.priority
-          || (w.job.priority === b.job.priority && compareSearchRanks(w.rank, b.rank) < 0)) best = i;
+          || (w.job.priority === b.job.priority && !w.job.stale && b.job.stale)
+          || (w.job.priority === b.job.priority && !w.job.stale === !b.job.stale && compareSearchRanks(w.rank, b.rank) < 0)) best = i;
       }
       const waiter = g.waiters[best];
       if (waiter.job.priority === SEARCH_PRIORITY.BACKGROUND && activeRunning()) return;
@@ -86,6 +91,7 @@ function createSearchScheduler() {
       const view = rank => new Proxy(members[0], {
         get(target, prop) {
           if (prop === '__gated') return true;
+          if (prop === 'size') return members.length; // engine workers (solver-bridge.js splitByFirstMove)
           if (prop === 'withRank') return r => view(r);
           const value = target[prop];
           if (typeof value !== 'function') return value;
@@ -131,6 +137,12 @@ function createSearchScheduler() {
       queued.push(job);
       pump();
       return job;
+    },
+    /** Marks a job stale (its calls yield to other jobs' of its priority) or not. */
+    setStale(job, stale = true) {
+      if (!job || job.state === 'done') return;
+      job.stale = !!stale;
+      pumpGates();
     },
     setPriority(job, priority) {
       if (!job || job.state === 'done' || job.priority === priority) return;

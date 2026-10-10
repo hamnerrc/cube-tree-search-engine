@@ -860,11 +860,23 @@ function engineStateKey(p) {
 // Engine calls already made (or running) for a session and its forks, by
 // their input (see searchCurrentNode); failed calls are not kept.
 const ENGINE_MEMO_LIMIT = 600;
-function engineCallMemo(session, key, run) {
-  if (!key) return run();
+// run(stopped): stopped() is true once every search that asked for the call
+// no longer wants it (their shouldStop; a call without one is always
+// wanted); a call stopped that way is never handed out again.
+function engineCallMemo(session, key, run, shouldStop = null) {
+  const wants = [shouldStop];
+  const state = { stopped: false };
+  const stopped = () => (state.stopped = state.stopped || wants.every(f => f && f()));
+  if (!key) return run(stopped);
   const memo = session.engineMemo || (session.engineMemo = new Map());
-  if (memo.has(key)) return memo.get(key);
-  const promise = run();
+  const hit = memo.get(key);
+  if (hit && !hit.state.stopped) {
+    hit.wants.push(shouldStop);
+    return hit;
+  }
+  const promise = run(stopped);
+  promise.wants = wants;
+  promise.state = state;
   memo.set(key, promise);
   const forget = () => { if (memo.get(key) === promise) memo.delete(key); };
   promise.then((v) => { if (v == null) forget(); }, forget);
@@ -898,6 +910,50 @@ function serialEngine(helper) {
   return serialChains.get(helper);
 }
 
+// A later step's multislot goal is its slowest engine call by far (two
+// pairs at once, up to 12 turns: seconds where a single pair takes tenths).
+// It is split by its first move: each part is the same goal after that move
+// (appended to postAlg behind the y2 y2 boundary, so the engine's move-order
+// rules between it and the next move are those inside one search), one turn
+// shorter. The union is exactly the one call's solutions
+// (tools/split-check.js), in first-move order, at no extra cost on one
+// engine worker; several workers share the parts, and the scheduler can run
+// another search's calls between them (a search replaced by a click yields,
+// search-scheduler.js). The
+// engine lists nothing for a goal already solved, so one-move solutions
+// come from a separate depth-1 call.
+const FIRST_MOVES = ['U', "U'", 'U2', 'D', "D'", 'D2', 'R', "R'", 'R2', 'L', "L'", 'L2', 'F', "F'", 'F2', 'B', "B'", 'B2'];
+async function splitByFirstMove(engine, p, extra, stopped = null) {
+  const prefix = [p.callRotation, p.postAlgForCall].filter(Boolean).join(' ');
+  const jobs = [
+    ...FIRST_MOVES.map(m => () => {
+      const post = [p.postAlgForCall, m].filter(Boolean).join(' ');
+      return solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength - 1, post, p.effectiveMaxSolutions, extra)
+        .then(raw => (raw === null ? null : stripEnginePrefix(raw, [p.callRotation, post].filter(Boolean).join(' ')).map(x => (x ? `${m} ${x}` : m))));
+    }),
+    () => solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, 1, p.postAlgForCall, p.effectiveMaxSolutions, extra)
+      .then(raw => (raw === null ? null : stripEnginePrefix(raw, prefix))),
+  ];
+  // Started a few at a time (one more than the engine workers, so none
+  // idles): once nobody wants the call (a click moved on), the rest are not
+  // started and the call ends without a result (it is then never reused).
+  const parts = new Array(jobs.length);
+  let next = 0;
+  let halted = false;
+  const lane = async () => {
+    while (next < jobs.length) {
+      if (stopped && stopped()) { halted = true; return; }
+      const k = next++;
+      parts[k] = await jobs[k]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(jobs.length, ((engine && engine.size) || 1) + 1) }, lane));
+  if (halted) return null;
+  if (parts.some(x => x === null)) return null;
+  // in the engine's own form (its prefix echoed), as the caller expects
+  return [...new Set([].concat(...parts).filter(Boolean))].map(x => (prefix ? `${prefix} ${x}` : x));
+}
+
 /**
  * Search every outgoing edge of session's current node, dispatch to the
  * appropriate solver, and return a TPP-ranked array of candidate results.
@@ -905,7 +961,7 @@ function serialEngine(helper) {
  * `pseudoHelper` (optional) is a pseudoCrossSolver helper; without one,
  * pseudo (mismatched) targets are skipped.
  */
-async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
+async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, onPartial, stop = null) {
   const isRoot = session.isAtRoot;
   // Absolute deadline (epoch ms) for this search's engine calls; 0 = none.
   if (deadline === undefined) deadline = budgetDeadline(session, SEARCH_ENGINE_SHARE);
@@ -1083,17 +1139,23 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // derived from them afterwards, spelling-search.js), every solution.
     const extra = { ...(session.proMoves && !p.complete ? proEngineOptions(p.callRotation, isRoot) : {}), ...(deadline ? { deadline } : {}) };
     if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
-    const deepen = async () => {
-      let raw = await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra);
+    const deepen = async (stopped) => {
+      let raw = !isRoot && p.pairCount > 1
+        ? await splitByFirstMove(engine, p, extra, stopped)
+        : await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra);
       // A later goal with no solution within the limit: its shortest ones.
+      if (raw === null && stopped && stopped()) {
+        if (stop && stop.onStopped) stop.onStopped();
+        return null;
+      }
       for (let more = 1; !isRoot && raw && !raw.length && more <= LATER_DEEPEN; more++) {
         raw = await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength + more, p.postAlgForCall, DEFAULT_MAX_SOLUTIONS, extra);
       }
       return raw;
     };
-    const run = () => (p.isPseudo
+    const run = stopped => (p.isPseudo
       ? pseudoCallFor(pseudoEngine, p.allEdges, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, deadline)
-      : p.complete ? deepen()
+      : p.complete ? deepen(stopped)
         : solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra));
     // The same engine input can come up again: another look-ahead path to the
     // same cube state (a multislot and its two single-pair halves; different
@@ -1110,7 +1172,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // Solutions with this call's own "rotation postAlg" prefix stripped (the
     // engine echoes it), so a call shared by state yields the same steps.
     const knownPrefix = [p.callRotation, p.postAlgForCall].filter(Boolean).join(' ');
-    p.cores = engineCallMemo(session, callKey, () => Promise.resolve().then(run).then(raw => stripEnginePrefix(raw, knownPrefix)))
+    p.cores = engineCallMemo(session, callKey, stopped => Promise.resolve().then(() => run(stopped)).then(raw => stripEnginePrefix(raw, knownPrefix)), stop && stop.shouldStop)
       .then((r) => { p.doneAt = Date.now(); return r; })
       .catch((err) => { console.error('Solver error', err); return null; });
   }
@@ -1175,6 +1237,12 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     if (onStatus) onStatus(`searching ${edgeLabel(pairCount, isRoot, isPseudo).toLowerCase()}${color ? ' (' + color + ')' : ''}…`);
     const cores = await p.cores;
     if (cores === null) { failedCalls++; return; }
+    // nobody wants this search any more (memoSearch): rank nothing more
+    if (stop && stop.shouldStop && stop.shouldStop()) {
+      failedCalls++;
+      if (stop.onStopped) stop.onStopped();
+      return;
+    }
     if (postStop && Date.now() + listedNow() * RANK_MS_PER_CANDIDATE >= postStop) { truncatedCalls++; return; }
     // Finished at or after the deadline without reaching its cap: cut short
     // (or skipped) by the time budget, so its list may be incomplete.
@@ -1226,14 +1294,25 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // candidates does not crowd out the post-processing itself.
   let lastPartial = 0;
   let partialCost = 0;
+  // Once only multislot calls are left (later steps; the results page hides
+  // multislots by default), the list says so (onlyMultislotPending): every
+  // other row is final. That list is always emitted, throttle or not.
+  let multislotTail = false;
   const maybeEmitPartial = () => {
     if (typeof onPartial !== 'function') return;
     // memoSearch's emitter says whether anyone is listening; the look-ahead's
     // own searches usually have no listener, and ranking is not free.
     if (typeof onPartial.wanted === 'function' && !onPartial.wanted()) return;
+    const pending = plan.filter(p => !p.processed);
+    const tail = !isRoot && pending.length > 0 && pending.every(p => p.complete && p.pairCount > 1);
     const t = now();
-    if (lastPartial && t - lastPartial < Math.max(PARTIAL_INTERVAL_MS, 4 * partialCost)) return;
+    if (!(tail && !multislotTail) && lastPartial && t - lastPartial < Math.max(PARTIAL_INTERVAL_MS, 4 * partialCost)) return;
+    multislotTail = multislotTail || tail;
+    // the finished types' exact best N, as at the end (trimming a subset of
+    // a type's calls never drops a row the whole type keeps)
+    if (tail) trimToTypeBest(plan.filter(p => p.processed));
     const list = rankCandidates(plan.filter(p => p.processed));
+    if (tail) list.onlyMultislotPending = true;
     partialCost = now() - t;
     lastPartial = now();
     onPartial(list);
@@ -1973,7 +2052,7 @@ function mergeRanked(a, b) {
   if (!b || !b.length) return a;
   const out = dedupeSolutions(a.concat(b).sort((x, y) => x.tpp - y.tpp));
   const merged = out === a ? a.slice() : out;
-  for (const k of ['truncatedCalls', 'failedCalls']) if (a[k]) merged[k] = a[k];
+  for (const k of ['truncatedCalls', 'failedCalls', 'onlyMultislotPending']) if (a[k]) merged[k] = a[k];
   return merged;
 }
 
@@ -2030,7 +2109,9 @@ function wideTwin(session) {
   return hit ? { promise: hit, value: hit.value } : null;
 }
 
-function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial) {
+// Who still wants a search: each caller's isCancelled (none = always).
+const ALWAYS_WANTED = null;
+function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial, isCancelled = ALWAYS_WANTED) {
   const memo = session.searchMemo || (session.searchMemo = new Map());
   // The committed steps, not just their joined text: TPP depends on where the
   // steps start (stepPenalty: a y that starts a step is free), and e.g. a
@@ -2039,8 +2120,11 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   // was shown the other's TPPs).
   // The results-page search options are part of it (searchSettingsKey).
   const key = searchMemoKey(session);
+  // a search stopped for want of callers is never reused
+  if (memo.has(key) && memo.get(key).stopped) memo.delete(key);
   if (memo.has(key)) {
     const hit = memo.get(key);
+    if (hit.interest) hit.interest.add(isCancelled);
     memo.delete(key); // refresh its place in the eviction order
     memo.set(key, hit);
     if (onPartial && hit.listeners) {
@@ -2050,6 +2134,15 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
     return hit;
   }
   const listeners = new Set(onPartial ? [onPartial] : []);
+  // Stopped once every caller is cancelled (a click or another setting
+  // replaced them all): its multislot calls start no more parts and its
+  // calls not yet ranked are skipped; it then ends incomplete and is
+  // forgotten (searched again if ever needed).
+  const interest = new Set([isCancelled]);
+  const stop = {
+    shouldStop: () => [...interest].every(f => f && f()),
+    onStopped: () => { if (promise) promise.stopped = true; },
+  };
   let promise;
   // Results-page "wide moves" (README): switched off on a step already
   // searched with them, the step's list is that search's without its wide
@@ -2072,17 +2165,18 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
     if (twin.promise.latest) Promise.resolve().then(() => { if (promise.listeners) emit(hide(twin.promise.latest)); });
   } else {
     if (twin && twin.value && !twin.value.truncatedCalls && !twin.value.failedCalls) base = twin.value;
-    promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit);
+    promise = searchCurrentNode(session, helper, onStatus, pseudoHelper, deadline, emit, stop);
     if (base) {
       promise = promise.then(list => mergeRanked(list, base));
       emit([]);
     }
   }
   promise.listeners = listeners;
+  promise.interest = interest;
   memo.set(key, promise);
   // A search the time budget cut short is not reused (committing that step
   // later searches it again in full); neither is a failed one.
-  const settle = () => { promise.listeners = null; promise.latest = null; };
+  const settle = () => { promise.listeners = null; promise.latest = null; promise.interest = null; };
   promise.then((r) => {
     settle();
     if ((r.truncatedCalls || r.failedCalls) && memo.get(key) === promise) memo.delete(key);
@@ -2116,8 +2210,7 @@ function lookaheadFork(session, candidate, i) {
 function filterResults(results, filter, countHidden = false) {
   if (!filter) return results;
   const out = results.filter(filter);
-  if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
-  if (results.failedCalls) out.failedCalls = results.failedCalls;
+  for (const k of ['truncatedCalls', 'failedCalls', 'onlyMultislotPending']) if (results[k]) out[k] = results[k];
   if (countHidden && out.length < results.length) out.hiddenCount = results.length - out.length;
   return out;
 }
@@ -2135,7 +2228,7 @@ async function bestContinuation(session, levels, helper, onStatus, pseudoHelper,
   // further searches. Searches already running finish (they are memoised and
   // may be what the replacing search needs).
   if (isCancelled && isCancelled()) return { tpp: Infinity, algs: [], cancelled: true };
-  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, deadline), filter);
+  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, deadline, undefined, isCancelled || ALWAYS_WANTED), filter);
   const cut = !!results.truncatedCalls;
   if (!results.length) return { tpp: Infinity, algs: [], truncated: cut };
   if (levels <= 1) return { tpp: results[0].tpp, algs: [results[0].coreAlg], truncated: cut };
@@ -2189,8 +2282,16 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   const start = Date.now();
   const firstDeadline = budgetDeadline(session, depth > 1 ? LOOKAHEAD_FIRST_SHARE : SEARCH_ENGINE_SHARE, start);
   const lookDeadline = budgetDeadline(session, SEARCH_ENGINE_SHARE, start);
-  const onPartial = onUpdate && ((list) => onUpdate(filterResults(list, filter, true)));
-  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial), filter, true);
+  const onPartial = onUpdate && ((list) => {
+    const shown = filterResults(list, filter, true);
+    // the look-ahead still has to run on a step's own final list
+    if (depth > 1 && shown.onlyMultislotPending) {
+      const copy = shown.slice();
+      for (const k of ['truncatedCalls', 'failedCalls', 'hiddenCount']) if (shown[k]) copy[k] = shown[k];
+      onUpdate(copy);
+    } else onUpdate(shown);
+  });
+  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial, options.isCancelled || ALWAYS_WANTED), filter, true);
   if (depth === 1 || !results.length) return results;
 
   const top = results.slice(0, breadth);
@@ -2314,7 +2415,7 @@ if (typeof module !== 'undefined' && module.exports) {
     proEngineOptions, nodeByLabels, NOOP_MOVES,
     memoSearch, searchWithLookahead, filterResults, SEARCH_MEMO_LIMIT, SEARCH_MEMO_CANDIDATES, rankCandidates, LOOKAHEAD_MAX_DEPTH, DEFAULT_LOOKAHEAD_BREADTH, LOOKAHEAD_INNER_BREADTH,
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
-    isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey,
+    isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey, splitByFirstMove,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, cubedbUrl, corpusSolutions,
   };
