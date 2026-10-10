@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-09 (twenty-ninth pass).*
+*Last updated 2026-10-09 (thirtieth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,34 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirtieth pass (2026-10-09).** User tasks: (1) search speed with the
+optimality guarantee kept, ~10 s per step as the goal; (2) a first step
+never rotates inside its alg (professionals' habit; wide moves and
+side-cross inspections stay); (3) look-ahead depths 4 and 5 removed. The
+tree was clean and every fast suite passed at the start.
+
+1. **No mid-step rotation at the first step** (README "Ranking",
+   "Complete search"): the grammar, both bound tables and the walks leave
+   them out at the root; the old capped root engine calls get no y/x and
+   post-processing drops a first-step candidate that rotates. Pro first
+   steps in the complete search's space: reco.nz 66.0% -> 59.9% (12% of
+   them rotate inside the alg; `complete-coverage.js` counts them),
+   pro_references unchanged (11/19). Root ranking CPU on the hardest
+   scramble 32 s -> 14 s from this alone.
+2. **Look-ahead** depth 1-3 only (`LOOKAHEAD_MAX_DEPTH` 3; a stored 4/5
+   is clamped).
+3. **Exact-context bound** ("Complete search" below): measured, the old
+   bound lost ~25 units per solution to the trigram context it forgot
+   after a wide or split token (MCC only ~4). `exactTable` keeps the last
+   two written tokens; first-step calls that solve a pair use it (walk
+   nodes ~10x fewer). The first-token tier is gone (in Chrome its call
+   ran 3-4x slower than in Node: one cross chunk took 10-16 s).
+4. Browser (headless Chrome, this 2-core machine, warm), scramble
+   `R2 U2 L D' ...`: first step 14.1-14.8 s -> 6.2-6.6 s, second
+   6.9-8.9 s -> 6.9-7.9 s; hardest known scramble `D R2 U' B2 ...` first
+   step 25-35 s -> 10.2-10.9 s, second 5 -> 5.4 s. Node (pools, quiet):
+   hardest first step 24 s -> 10.0 s.
 
 **Twenty-ninth pass (2026-10-09).** User tasks: (1) rankings had got much
 worse with the complete search: retune on the professional solves only,
@@ -126,7 +154,13 @@ Everything in the README is implemented except the visual redesign
 
 ### Measurements
 
-- Browser, headless Chrome on this 2-core machine (it reports 2 threads:
+- Thirtieth pass, browser (warm, quiet): scramble `R2 U2 L D' ...` first
+  step 6.2-6.6 s, second 6.9-7.9 s (the hidden multislot engine call sets
+  its end; single-pair rows are final ~2 s earlier), third 0.3-0.5 s;
+  hardest scramble first 10.2-10.9 s, second 5.4 s. Node pools: hardest
+  first 10.0 s (seed jobs 2.5 s, xcross 9.7 s, cross 5.7 s, xxcross 1.6 s
+  of worker time on 2 workers), second 6.0 s (engine: multislot call 3.6 s).
+- Before (twenty-ninth pass): browser, headless Chrome on this 2-core machine (it reports 2 threads:
   1 engine worker, 2 ranking workers), white, xcross + xxcross, warm
   (prune tables in IndexedDB; a cold first load adds ~5 s): scramble
   `R2 U2 L D' R' F' B' R F' R F2 D2 R F2 D2 B2 D2 L F2 D2` first step
@@ -172,6 +206,38 @@ next token's bits are MIN1 plus `AFTER` (the least extra any first token of
 the next move has after that token). Rows depend only on the last moves +
 2 of context, so solutions sorted by their endings share rows.
 
+Thirtieth pass (every change verified by identical result lists on the
+captured root calls and later-step calls, plus the brute-force tests):
+- First steps have no mid-step rotation (user rule): `rowOptions(noMid)`,
+  AFTER's rotation-used half, walks start with r = 1.
+- Slack, measured (`slack.js`-style: every spelling of 12-40 sampled
+  solutions, brute force): best real cost minus the bound ~31 units at a
+  root xcross, ~27 at a later single pair; MCC's share only 4.1 / 2.5.
+  The rest is the DP's relaxation: after a wide/split token the next
+  token's bits are its least after anything (+AFTER), and the bound picks
+  spellings that use that everywhere. The plain spelling itself is
+  often the true best.
+- `exactTable`: DP over (move, frame, last two written tokens); states are
+  enumerated locally from the last two moves (rows still shared by
+  suffix), grouped by (frame, last token) so each option's context-free
+  part is computed once; written flat (closures cost 1.5x). No
+  rotation-used state; later steps' rotations before a move are U states.
+  ~8 us per root row (cheap table 2.7), ~43 later. Root xcross: walk
+  nodes 2.8M -> 0.27M, solutions walked 17k -> 3.5k.
+- Where it pays: first-step calls that solve a pair (cheap MITM first,
+  exact for the rest, walks exact). Not for plain crosses (64k solutions
+  whose walks end early: exact 4.2 s vs cheap 3.0-3.5 s) nor later steps
+  (rows dominate: +27%); both keep the cheap table and AFTER walks.
+- The exact table stops early when, frame by frame, the cheap forward
+  rows of the first moves (memoised for the MITM) plus the exact row
+  exceed the budget: exact rows -33%.
+- Removed: the first-token tier (`afterBound`, K rows, GRP). In Chrome
+  its call site ran 3-4x slower than in Node (profile: 3.2 s of self time
+  on the call line in one worker); the browser's hardest first step went
+  17.6-23 s -> 10.2-10.9 s when it was replaced.
+- With the final type-wide limits given up front, the xcross calls take
+  only 16% less: the cost is per solution, not late limits.
+
 Twenty-ninth pass (speed; every change verified by identical result lists
 on captured real calls -- 6 later-step/cross captures and the 11 calls of a
 root search -- plus the brute-force tests):
@@ -179,7 +245,8 @@ root search -- plus the brute-force tests):
   rotation-used state): ~8x cheaper per row, looser (passes 8.6% vs 3.6% of
   a later step's solutions, 12.5% vs 2.5% of root crosses), but walking
   with it is faster: a 166k-solution later call 70 s -> 11 s.
-- First steps (`opts.root`) add a second tier: rows that keep, per frame,
+- (Replaced in the thirtieth pass by the exact table.) First steps
+  (`opts.root`) add a second tier: rows that keep, per frame,
   the least rest-of-step cost by the move's first token (`afterBound`:
   the exact first-token choice after a known token). Nearly as tight as the
   old exact table (2.6% vs 2.5%), ~2x the plain row; only for solutions the
@@ -486,18 +553,16 @@ not look-ahead optimal).
 
 ## Open
 
-1. **Speed** (user task, twenty-ninth pass: "significantly faster before we
-   can call it finished"): a first step is 15-35 s on this 2-core machine
-   (more workers help on bigger machines). Next levers: first-step walks
-   (most nodes are children pruned on entry; MCC's regrips are most of the
-   remaining slack -- an exact incremental MCC lower bound would need
-   algSpeed as a per-token state machine: the round-based version via
-   `stopAt` cost more than it pruned, see "Complete search"); fewer
-   spellings to rank at the root (24 orientations); small xxcross calls.
-   Side-cross inspections (20 of the 24) take 85% of a root call's walk
-   nodes (~3,900 per exactly scored spelling vs ~1,750 for y-family ones)
-   and give 50-70% of its results: their bound (wide/rotation counts and
-   the rotation-used state are not in the tables) is the place to start.
+1. **Speed** (user goal, thirtieth pass: ~10 s per step, optimality
+   kept). Now 6-11 s first steps, 5-8 s later steps in the browser on this
+   2-core machine. Next levers: exact rows are still ~7 per root pair
+   solution (an exact meet in the middle would share prefixes, but its
+   forward memo is ~3 KB per prefix); per-solution work before ranking
+   (luck check, pair-choice features: ~23 us x 65k crosses; engine order
+   is DFS, so an incremental replay could share prefixes); the hidden
+   multislot engine call (3.6-5.6 s, one engine worker) ends most later
+   steps; small calls that must fill 300 results per view from a few
+   solutions (~1 s each at the root).
 2. **Ranking:** first steps' remaining misses are mostly longer pro steps
    (planning), not speed; later steps' rotation placement now matches pros
    closely (21.7% / 13.2% vs 18.4% / 16.9%).

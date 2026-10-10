@@ -302,7 +302,9 @@ Single pair or Multislot override applies to every later step of that kind.
 **Performance** comes after completeness. The engine calls are face turns
 only and mostly quick; ranking the spellings runs on a worker pool, big
 edges split across workers. Measured times are in PROJECT_STATUS.md; the
-goal stays one step in **under 1 minute** with every option on.
+goal stays one step in **under 1 minute** with every option on, and about
+**10 seconds per step** with the default settings, so a solver hardly
+waits.
 
 Results-page filters, set per step. They only hide: every search includes
 multislot, wide-move and awkward results, so changing a filter either way
