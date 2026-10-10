@@ -362,7 +362,11 @@ function replayFacelets(scramble, rotation, priorPath, coreAlg) {
  * transiently as a side effect"); only an extra COMPLETE pair is luck.
  */
 function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners, claimedEdges, claimSets = null) {
-  const facelets = replayFacelets(scramble, rotation, priorPath, coreAlg);
+  return checkFacelets(replayFacelets(scramble, rotation, priorPath, coreAlg), claimedCorners, claimedEdges, claimSets);
+}
+
+/** checkCandidateAgainstRealCubeState of the cube the candidate leaves (facelets). */
+function checkFacelets(facelets, claimedCorners, claimedEdges, claimSets = null) {
   const actual = solvedFlags(facelets);
   // (claimSets: the same claim as Sets, for a caller checking many algs)
   const corners = claimSets ? claimSets.corners : new Set(claimedCorners || []);
@@ -395,6 +399,25 @@ function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreA
     }
   }
   return { ok: true, facelets, flags: actual };
+}
+
+// The cube after face-turn token ids (spelling-search.js tables().TOK) from
+// a start state given as char codes: applyAlgorithm without parsing the
+// text again (the complete search replays every engine solution).
+let PERM_BY_TID = null;
+const REPLAY_A = new Uint16Array(54);
+const REPLAY_B = new Uint16Array(54);
+function replayTokenIds(startCodes, ids) {
+  if (!PERM_BY_TID) PERM_BY_TID = SPELLING.tables().TOK.map(t => (MOVE_TABLE[t] ? Int32Array.from(MOVE_TABLE[t]) : null));
+  let cur = REPLAY_A;
+  let next = REPLAY_B;
+  cur.set(startCodes);
+  for (let k = 0; k < ids.length; k++) {
+    const perm = PERM_BY_TID[ids[k]];
+    for (let i = 0; i < 54; i++) next[i] = cur[perm[i]];
+    const t = cur; cur = next; next = t;
+  }
+  return String.fromCharCode.apply(null, cur);
 }
 
 /**
@@ -1967,17 +1990,19 @@ async function postProcessComplete(ctx, p, cores, live = null) {
   }
   const claimSets = { corners: new Set(p.allCorners || []), edges: new Set(p.allEdges || p.allCorners || []) };
   const TID = SPELLING.tables().TID;
+  const startCodes = Uint16Array.from(replayFacelets(ctx.scramble, base, ctx.scoredPath, ''), ch => ch.charCodeAt(0));
   for (const core of cores || []) {
     if (!core || seen.has(core)) continue;
     seen.add(core);
-    const check = checkCandidateAgainstRealCubeState(ctx.scramble, base, ctx.scoredPath, core, p.allCorners, p.allEdges, claimSets);
+    const face = core.split(' ').map(x => TID.get(x));
+    const check = checkFacelets(replayTokenIds(startCodes, face), p.allCorners, p.allEdges, claimSets);
     if (!check.ok) {
       if (check.reason.includes('claimed solved but is not actually solved')) {
         console.warn(`Discarding solution: ${check.reason}`, { coreAlg: core, rotation: base });
       }
       continue;
     }
-    const sol = { face: core.split(' ').map(x => TID.get(x)), core, look: lookCost(check.facelets, check.flags) };
+    const sol = { face, core, look: lookCost(check.facelets, check.flags) };
     if (ctx.planWeights) {
       // every spelling ends as this solution then a y-family rotation: its
       // planning cost by that rotation ('', y, y2, y'; enumerate bounds
