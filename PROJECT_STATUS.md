@@ -50,7 +50,20 @@ tree clean, every suite passing, one commit not yet pushed).
    converge), two engine workers (rows final unchanged; only the hidden
    multislot tail is shorter), three ranking workers on this 2-core/4-thread
    machine (no gain).
-6. **Where the first pair after a cross still goes** (~24 s in Node pools,
+6. **Per-solution preparation** (every engine solution: luck replay and
+   pair-choice / planning features, ~20% of a call): solved flags computed
+   once per solution (were four times), no per-piece masks for claimed
+   pairs (a pair's mask is its corner mask plus its edge mask), features
+   with char-code tables (identical on 760k real cube states, ~2x faster),
+   replay from the token ids (no second parse). A search abandoned while its
+   chunks wait for seeds no longer dispatches them. Rejected: incremental
+   replay along shared prefixes (engine order shares 7% of moves; sorting
+   first saves ~2%), skipping rotation options in `boundTable` rows when a
+   frame is already below any rotation's least cost (rarely true; no gain),
+   Float32 LM tables (no gain: rows are instruction-bound, ~4.3 us each).
+   Browser, default settings, same 8 scrambles: later steps mean 9.3 s
+   (first pairs 8.8-33.9 s, the rest 1.9-11.4 s), first steps 2.6-5.1 s.
+7. **Where the first pair after a cross still goes** (~24 s in Node pools,
    10-30 s in the browser; the type's limit is now the final one almost from
    the start, so this is the algorithm's own cost): per solution ~13 us of
    preparation (luck replay, look and plan features), ~1.5 cheap MITM rows,

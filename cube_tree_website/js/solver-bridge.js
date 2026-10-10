@@ -1400,6 +1400,12 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // only knows its own (a first pair after a plain cross: the first of
       // four calls walked 73% of its solutions instead of ~45%).
       await Promise.all(plan.filter(q => q !== p && q.complete && q.category === p.category).map(q => q.seedReady));
+      // nobody wants this search any more (a click while it waited)
+      if (stop && stop.shouldStop && stop.shouldStop()) {
+        failedCalls++;
+        if (stop.onStopped) stop.onStopped();
+        return;
+      }
       const chunks = completeChunks(cores, session.postProcessor.workers);
       const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank, refresh, liveHooks(p))));
       p.candidates = [].concat(...parts);
