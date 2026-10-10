@@ -268,17 +268,24 @@ const SpellingSearch = (() => {
   /**
    * Bound table of one face-turn solution (token ids), into H. Rows are
    * indexed by the moves still to write, j = n - i:
-   * H[(j * NR + d) * 3 + f] = least (penalty + natural * bits + minMCC) that
-   * moves i.. can still add when the cube is in frame d and the tokens
+   * H[(j * NR + d) * FLAGS + f] = least (penalty + natural * bits + minMCC)
+   * that moves i.. can still add when the cube is in frame d and the tokens
    * before are known: f = 2 when the last two are the plain spellings of
    * moves i-2 and i-1 in frame d (their trigram is then exact), f = 1 when
-   * only the last one is (bits conditioned on it), f = 0 otherwise. Infinity
+   * only the last one is (bits conditioned on it), f = 4 when the last is
+   * the wide turn that writes move i-1 and lands in frame d (wideLanding:
+   * one per move and frame), f = 3 when the last is the plain spelling of
+   * move i-1 and the one before that wide turn of move i-2 (exact trigram),
+   * f = 0 otherwise (a split or a rotation: the writer adds AFTER). Infinity
    * when the cross can no longer end on D. Relaxations that keep it cheap
    * (each only lowers it): a rotation may be written before any move, as
    * often as the bound likes; after a written non-plain token (wide,
-   * rotation, a split's second token) the next token's bits are its least
-   * after anything (MIN1) plus AFTER, the least extra any first token of the
-   * next move has after that token. (An exact-context version, memoised per
+   * rotation, a split's second token; a wide turn is followed exactly for
+   * two tokens by flags 4 and 3) the next token's bits are its least after
+   * anything (MIN1) plus AFTER, the least extra any first token of the next
+   * move has after that token. (Flags 3 and 4, thirty-first pass: the bound
+   * had used wide turns to forget the context; a later step's solutions
+   * under the limit fell from 42% to 7%.) (An exact-context version, memoised per
    * written token, was ~4x tighter in rows ruled out but ~8x the cost per row;
    * walking with this one is faster overall.) Row j depends only on the last
    * j moves and the two before them, so rows below `fromJ` are kept from the
@@ -286,7 +293,7 @@ const SpellingSearch = (() => {
    * Stops early (boundRows < n) once the last moves alone cost more than
    * stopAbove. Tested <= the real cost (test/spelling-search.test.js).
    */
-  const FLAGS = 3;
+  const FLAGS = 5;
   let OWN_FIRST = null;
   // boundTable's last complete row (n when the whole table was computed).
   let boundRows = 0;
@@ -334,20 +341,44 @@ const SpellingSearch = (() => {
     RO[noMid ? 1 : 0] = { W0, Q0, M0, WI: Int32Array.from(wides), QI: Int32Array.from(qs), MI: Int32Array.from(ms), MID_T, MID_D };
     return RO[noMid ? 1 : 0];
   }
-  const rowBase = new Float64Array(24 * 3);
+  // WIDE_LANDING[mv * NR + d]: the one wide token that writes face move mv
+  // and leaves the cube in frame d (from whichever frame it starts in), or
+  // -1 (never more than one: checked when built). Flags 3 and 4 use it.
+  let WIDE_LANDING = null;
+  function wideLanding() {
+    if (WIDE_LANDING) return WIDE_LANDING;
+    const t = tables();
+    const { NR, CONJ, WIDES, MUL } = t;
+    const out = new Int32Array(18 * NR).fill(-1);
+    for (let mv = 0; mv < 18; mv++) {
+      for (let dp = 0; dp < NR; dp++) {
+        for (const [W, rho] of WIDES[CONJ[dp][mv]]) {
+          const x = mv * NR + MUL[dp][rho];
+          if (out[x] >= 0 && out[x] !== W) throw new Error('spelling-search: two wides land in one frame');
+          out[x] = W;
+        }
+      }
+    }
+    WIDE_LANDING = out;
+    return out;
+  }
+  const rowBase = new Float64Array(24 * FLAGS);
+  // the flag after writing the plain spelling of a move, by the flag before
+  const NEXT_PLAIN = Int8Array.from([1, 2, 2, 2, 3]);
   function boundTable(face, H, mccMin, pen, L, fromJ = 0, stopAbove = Infinity, minMove = 0, lastJ = face.length, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS, YF, TOK } = t;
     // first steps (!later) never rotate inside the alg: no rotation options,
     // and AFTER's rotation-used half (no rotation as the next first token)
     const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions(!later);
+    const WL = wideLanding();
     const NM = MID_T.length;
     const ru = later ? 0 : 1;
     const lam = STEP_PENALTIES.natural;
     const { MIN2, MIN1, NT1, AFTER } = L;
     const TRI = later ? L.TRIL : L.TRI;
     const n = face.length;
-    const RS = NR * 3;
+    const RS = NR * FLAGS;
     if (!H || H.length < (n + 1) * RS) {
       const grown = new Float64Array(Math.max((n + 1) * RS, 40 * RS));
       if (H) grown.set(H);
@@ -366,17 +397,24 @@ const SpellingSearch = (() => {
     if (fromJ <= 0) {
       const i = n;
       for (let d = 0; d < NR; d++) {
-        for (let f = 0; f < 3; f++) {
-          let b;
-          if (!YF[d]) b = Infinity;
-          else if (i === 0) b = TRI[START + NT];
-          else {
-            const pb = CONJ[d][face[i - 1]];
-            if (f === 2 || (f === 1 && i === 1)) b = TRI[((i >= 2 ? CONJ[d][face[i - 2]] : NT) * NT1 + pb) * NT1 + NT];
-            else b = f === 1 ? MIN2[pb * NT1 + NT] : MIN1[NT];
-          }
-          H[d * 3 + f] = lam * b;
+        const o = d * FLAGS;
+        if (!YF[d]) {
+          for (let f = 0; f < FLAGS; f++) H[o + f] = Infinity;
+          continue;
         }
+        if (i === 0) {
+          for (let f = 0; f < FLAGS; f++) H[o + f] = lam * TRI[START + NT];
+          continue;
+        }
+        const pb = CONJ[d][face[i - 1]];
+        const exact = TRI[((i >= 2 ? CONJ[d][face[i - 2]] : NT) * NT1 + pb) * NT1 + NT];
+        const w3 = i >= 2 ? WL[face[i - 2] * NR + d] : -1;
+        const w4 = WL[face[i - 1] * NR + d];
+        H[o] = lam * MIN1[NT];
+        H[o + 1] = lam * (i === 1 ? exact : MIN2[pb * NT1 + NT]);
+        H[o + 2] = lam * exact;
+        H[o + 3] = w3 >= 0 ? lam * TRI[(w3 * NT1 + pb) * NT1 + NT] : Infinity;
+        H[o + 4] = w4 >= 0 ? lam * MIN2[w4 * NT1 + NT] : Infinity;
       }
       fromJ = 1;
     }
@@ -387,36 +425,50 @@ const SpellingSearch = (() => {
       const next = j > 1 ? face[i + 1] : 18; // AFTER's move index for the continuation
       const prevRow = (j - 1) * RS;
       const row = j * RS;
+      const x3 = i >= 2 ? face[i - 2] * NR : -1;
+      const x4 = i >= 1 ? face[i - 1] * NR : -1;
       let least = Infinity;
       for (let d = 0; d < NR; d++) {
         const x = fc * NR + d;
         const cd = CONJ[d];
         const pp = i > 0 ? cd[face[i - 1]] : -1;
-        // bits of token k with flag f: i = 0 the start; else see bitsAt
+        // bits of token k by flag: 0 MIN1 (the caller adds AFTER), 1 after
+        // the plain token before (exact at move 1), 2 the exact trigram,
+        // 3 after the wide w3 and the plain one, 4 after the wide w4
         const ctx2 = i > 0 ? ((i >= 2 ? cd[face[i - 2]] : NT) * NT1 + pp) * NT1 : 0;
         const ctx1 = pp * NT1;
+        const w3 = x3 >= 0 ? WL[x3 + d] : -1;
+        const w4 = x4 >= 0 ? WL[x4 + d] : -1;
+        const ctx3 = w3 >= 0 ? (w3 * NT1 + pp) * NT1 : -1;
+        const ctx4 = w4 >= 0 ? w4 * NT1 : -1;
+        const s4 = w4 >= 0 ? (w4 * NT1) * NT1 : -1; // second token after w4, t1: TRI[s4 + t1 * NT1 + t2]
         const w = cd[fc];
+        const po = prevRow + d * FLAGS;
         let v0;
         let v1;
         let v2;
+        let v3 = Infinity;
+        let v4 = Infinity;
         {
           const c = pen[w] + (pf ? 0 : OWNF[w]);
           if (i === 0) {
             const b = lam * TRI[START + w];
-            v0 = c + b + H[prevRow + d * 3 + 1];
-            v1 = c + b + H[prevRow + d * 3 + 2];
+            v0 = c + b + H[po + 1];
+            v1 = c + b + H[po + 2];
             v2 = v1;
           } else {
-            v0 = c + lam * MIN1[w] + H[prevRow + d * 3 + 1];
-            v1 = c + lam * (i === 1 ? TRI[ctx2 + w] : MIN2[ctx1 + w]) + H[prevRow + d * 3 + 2];
-            v2 = c + lam * TRI[ctx2 + w] + H[prevRow + d * 3 + 2];
+            v0 = c + lam * MIN1[w] + H[po + 1];
+            v1 = c + lam * (i === 1 ? TRI[ctx2 + w] : MIN2[ctx1 + w]) + H[po + 2];
+            v2 = c + lam * TRI[ctx2 + w] + H[po + 2];
+            if (ctx3 >= 0) v3 = c + lam * TRI[ctx3 + w] + H[po + 2];
+            if (ctx4 >= 0) v4 = c + lam * MIN2[ctx4 + w] + H[po + 3];
           }
         }
-        // one-token alternatives (wide): first-token bits only depend on f
+        // one-token alternatives (wide): the next row's flag 4 knows them
         for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
           const W = WI[2 * k];
           const d2 = WI[2 * k + 1];
-          const c = pen[W] + (pf ? 0 : OWNF[W]) + H[prevRow + d2 * 3] + lam * AFTER[((W * NR + d2) * 19 + next) * 2 + ru];
+          const c = pen[W] + (pf ? 0 : OWNF[W]) + H[prevRow + d2 * FLAGS + 4];
           if (i === 0) {
             const v = c + lam * TRI[START + W];
             if (v < v0) v0 = v;
@@ -429,6 +481,8 @@ const SpellingSearch = (() => {
             if (v < v1) v1 = v;
             v = c + lam * TRI[ctx2 + W];
             if (v < v2) v2 = v;
+            if (ctx3 >= 0) { v = c + lam * TRI[ctx3 + W]; if (v < v3) v3 = v; }
+            if (ctx4 >= 0) { v = c + lam * MIN2[ctx4 + W]; if (v < v4) v4 = v; }
           }
         }
         // two-token splits of a half turn (plain + wide quarter, either order)
@@ -436,7 +490,7 @@ const SpellingSearch = (() => {
           const t1 = QI[3 * k];
           const t2 = QI[3 * k + 1];
           const d2 = QI[3 * k + 2];
-          const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + H[prevRow + d2 * 3] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru];
+          const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + H[prevRow + d2 * FLAGS] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru];
           const s0 = MIN2[t1 * NT1 + t2];
           if (i === 0) {
             const v = c + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2]);
@@ -451,6 +505,8 @@ const SpellingSearch = (() => {
             if (v < v1) v1 = v;
             v = c + lam * (TRI[ctx2 + t1] + s1);
             if (v < v2) v2 = v;
+            if (ctx3 >= 0) { v = c + lam * (TRI[ctx3 + t1] + s1); if (v < v3) v3 = v; }
+            if (ctx4 >= 0) { v = c + lam * (MIN2[ctx4 + t1] + TRI[s4 + t1 * NT1 + t2]); if (v < v4) v4 = v; }
           }
         }
         // a half turn split around a rotation (q, rotation, q): no other
@@ -463,7 +519,7 @@ const SpellingSearch = (() => {
           const q2 = MI[4 * k + 2];
           const dm = MI[4 * k + 3];
           const c = pen[q] + OWNF[q] + pen[m] + mccMin[m] + lam * TRI[(q * NT1 + m) * NT1 + q2] + pen[q2] + (pf ? 0 : OWNF[q2])
-            + H[prevRow + dm * 3] + lam * AFTER[((q2 * NR + dm) * 19 + next) * 2 + 1];
+            + H[prevRow + dm * FLAGS] + lam * AFTER[((q2 * NR + dm) * 19 + next) * 2 + 1];
           const s0 = MIN2[q * NT1 + m];
           if (i === 0) {
             const v = c + lam * (TRI[START + q] + TRI[(NT * NT1 + q) * NT1 + m]);
@@ -478,40 +534,57 @@ const SpellingSearch = (() => {
             if (v < v1) v1 = v;
             v = c + lam * (TRI[ctx2 + q] + s1);
             if (v < v2) v2 = v;
+            if (ctx3 >= 0) { v = c + lam * (TRI[ctx3 + q] + s1); if (v < v3) v3 = v; }
+            if (ctx4 >= 0) { v = c + lam * (MIN2[ctx4 + q] + TRI[s4 + q * NT1 + m]); if (v < v4) v4 = v; }
           }
         }
-        base[d * 3] = v0;
-        base[d * 3 + 1] = v1;
-        base[d * 3 + 2] = v2;
+        const bo = d * FLAGS;
+        base[bo] = v0;
+        base[bo + 1] = v1;
+        base[bo + 2] = v2;
+        base[bo + 3] = v3;
+        base[bo + 4] = v4;
       }
       // a rotation before move i (not before the first turn), then move i
       // from the rotated frame (no other rotation)
       for (let d = 0; d < NR; d++) {
-        let v0 = base[d * 3];
-        let v1 = base[d * 3 + 1];
-        let v2 = base[d * 3 + 2];
-        if (i > 0) {
+        const bo = d * FLAGS;
+        let v0 = base[bo];
+        let v1 = base[bo + 1];
+        let v2 = base[bo + 2];
+        let v3 = base[bo + 3];
+        let v4 = base[bo + 4];
+        if (i > 0 && NM) {
           const cd = CONJ[d];
           const pp = cd[face[i - 1]];
           const ctx2 = ((i >= 2 ? cd[face[i - 2]] : NT) * NT1 + pp) * NT1;
+          const w3 = x3 >= 0 ? WL[x3 + d] : -1;
+          const w4 = WL[x4 + d];
           for (let k = 0; k < NM; k++) {
             const m = MID_T[k];
             const dm = MID_D[d * NM + k];
-            const c = pen[m] + mccMin[m] + base[dm * 3] + lam * AFTER[((m * NR + dm) * 19 + fc) * 2 + 1];
+            const c = pen[m] + mccMin[m] + base[dm * FLAGS] + lam * AFTER[((m * NR + dm) * 19 + fc) * 2 + 1];
             let v = c + lam * MIN1[m];
             if (v < v0) v0 = v;
             v = c + lam * (i === 1 ? TRI[ctx2 + m] : MIN2[pp * NT1 + m]);
             if (v < v1) v1 = v;
             v = c + lam * TRI[ctx2 + m];
             if (v < v2) v2 = v;
+            if (w3 >= 0) { v = c + lam * TRI[(w3 * NT1 + pp) * NT1 + m]; if (v < v3) v3 = v; }
+            if (w4 >= 0) { v = c + lam * MIN2[w4 * NT1 + m]; if (v < v4) v4 = v; }
           }
         }
-        H[row + d * 3] = v0;
-        H[row + d * 3 + 1] = v1;
-        H[row + d * 3 + 2] = v2;
+        const ro = row + bo;
+        H[ro] = v0;
+        H[ro + 1] = v1;
+        H[ro + 2] = v2;
+        H[ro + 3] = v3;
+        H[ro + 4] = v4;
         if (v0 < least) least = v0;
         if (v1 < least) least = v1;
         if (v2 < least) least = v2;
+        if (v3 < least) least = v3;
+        if (v4 < least) least = v4;
       }
       if (least + (n - j) * minMove > stopAbove) {
         boundRows = j;
@@ -524,19 +597,20 @@ const SpellingSearch = (() => {
 
   /**
    * The same DP forwards (boundTable without first-token rows, mirrored):
-   * F[d * 3 + f] = the least that writing moves 0..q-1 adds (lead included)
-   * ending in frame d with boundTable's flag f; Fout = after move q too. The
-   * terms boundTable charges a move for its successor (own MCC 0 before a
-   * same-axis move, AFTER after a non-plain token) use face[q + 1], as there.
-   * So for any cut m, min over (d, f) of F_m + H[n - m] equals the bound
-   * table's root (tested): the first moves of solutions that start alike
-   * share F (enumerate memoises it by prefix), and only the last rows of
-   * the table are needed to rule a solution out.
+   * F[d * FLAGS + f] = the least that writing moves 0..q-1 adds (lead
+   * included) ending in frame d with boundTable's flag f; Fout = after move q
+   * too. The terms boundTable charges a move for its successor (own MCC 0
+   * before a same-axis move, AFTER after a split or rotation) use
+   * face[q + 1], as there. So for any cut m, min over (d, f) of F_m +
+   * H[n - m] equals the bound table's root (tested): the first moves of
+   * solutions that start alike share F (enumerate memoises it by prefix),
+   * and only the last rows of the table are needed to rule a solution out.
    */
   function forwardStep(face, q, Fin, Fout, mccMin, pen, L, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS } = t;
     const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions(!later);
+    const WL = wideLanding();
     const NM = MID_T.length;
     const ru = later ? 0 : 1;
     const lam = STEP_PENALTIES.natural;
@@ -548,20 +622,27 @@ const SpellingSearch = (() => {
     const fc = face[q];
     const pf = q + 1 < n && AXIS[fc] === AXIS[face[q + 1]];
     const next = q + 1 < n ? face[q + 1] : 18;
+    const x3 = q >= 2 ? face[q - 2] * NR : -1;
+    const x4 = q >= 1 ? face[q - 1] * NR : -1;
     Fout.fill(Infinity);
     // a rotation before move q: then the move from the rotated frame, its
     // first token's bits as flag 0 plus AFTER (no other rotation)
     const Fm = fwdMid;
     Fm.fill(Infinity);
-    if (q > 0) {
+    if (q > 0 && NM) {
       for (let d = 0; d < NR; d++) {
-        const v0 = Fin[d * 3];
-        const v1 = Fin[d * 3 + 1];
-        const v2 = Fin[d * 3 + 2];
-        if (v0 === Infinity && v1 === Infinity && v2 === Infinity) continue;
+        const o = d * FLAGS;
+        const v0 = Fin[o];
+        const v1 = Fin[o + 1];
+        const v2 = Fin[o + 2];
+        const v3 = Fin[o + 3];
+        const v4 = Fin[o + 4];
+        if (v0 === Infinity && v1 === Infinity && v2 === Infinity && v3 === Infinity && v4 === Infinity) continue;
         const cd = CONJ[d];
         const pp = cd[face[q - 1]];
         const ctx2 = ((q >= 2 ? cd[face[q - 2]] : NT) * NT1 + pp) * NT1;
+        const w3 = x3 >= 0 ? WL[x3 + d] : -1;
+        const w4 = WL[x4 + d];
         for (let k = 0; k < NM; k++) {
           const m = MID_T[k];
           const dm = MID_D[d * NM + k];
@@ -570,6 +651,8 @@ const SpellingSearch = (() => {
           if (v < best) best = v;
           v = v2 + lam * TRI[ctx2 + m];
           if (v < best) best = v;
+          if (w3 >= 0) { v = v3 + lam * TRI[(w3 * NT1 + pp) * NT1 + m]; if (v < best) best = v; }
+          if (w4 >= 0) { v = v4 + lam * MIN2[w4 * NT1 + m]; if (v < best) best = v; }
           const c = best + pen[m] + mccMin[m] + lam * AFTER[((m * NR + dm) * 19 + fc) * 2 + 1];
           if (c < Fm[dm]) Fm[dm] = c;
         }
@@ -577,29 +660,32 @@ const SpellingSearch = (() => {
     }
     for (let d = 0; d < NR; d++) {
       // flag-0 entries and those entered by a rotation read the same bits
-      const v0 = Math.min(Fin[d * 3], Fm[d]);
-      const v1 = Fin[d * 3 + 1];
-      const v2 = Fin[d * 3 + 2];
-      if (v0 === Infinity && v1 === Infinity && v2 === Infinity) continue;
+      const o = d * FLAGS;
+      const v0 = Math.min(Fin[o], Fm[d]);
+      const v1 = Fin[o + 1];
+      const v2 = Fin[o + 2];
+      const v3 = Fin[o + 3];
+      const v4 = Fin[o + 4];
+      if (v0 === Infinity && v1 === Infinity && v2 === Infinity && v3 === Infinity && v4 === Infinity) continue;
       const x = fc * NR + d;
       const cd = CONJ[d];
       const w = cd[fc];
       if (q === 0) {
         // the start: only flag 0, the first tokens' bits after the start
         const c = v0 + pen[w] + (pf ? 0 : OWNF[w]) + lam * TRI[START + w];
-        if (c < Fout[d * 3 + 1]) Fout[d * 3 + 1] = c;
+        if (c < Fout[o + 1]) Fout[o + 1] = c;
         for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
           const W = WI[2 * k];
           const d2 = WI[2 * k + 1];
-          const v = v0 + pen[W] + (pf ? 0 : OWNF[W]) + lam * (TRI[START + W] + AFTER[((W * NR + d2) * 19 + next) * 2 + ru]);
-          if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
+          const v = v0 + pen[W] + (pf ? 0 : OWNF[W]) + lam * TRI[START + W];
+          if (v < Fout[d2 * FLAGS + 4]) Fout[d2 * FLAGS + 4] = v;
         }
         for (let k = Q0[x], e = Q0[x + 1]; k < e; k++) {
           const t1 = QI[3 * k];
           const t2 = QI[3 * k + 1];
           const d2 = QI[3 * k + 2];
           const v = v0 + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2] + AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru]);
-          if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
+          if (v < Fout[d2 * FLAGS]) Fout[d2 * FLAGS] = v;
         }
         for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
           const q1 = MI[4 * k];
@@ -608,7 +694,7 @@ const SpellingSearch = (() => {
           const dm = MI[4 * k + 3];
           const v = v0 + pen[q1] + OWNF[q1] + pen[m] + mccMin[m] + pen[q2] + (pf ? 0 : OWNF[q2])
             + lam * (TRI[(q1 * NT1 + m) * NT1 + q2] + TRI[START + q1] + TRI[(NT * NT1 + q1) * NT1 + m] + AFTER[((q2 * NR + dm) * 19 + next) * 2 + 1]);
-          if (v < Fout[dm * 3]) Fout[dm * 3] = v;
+          if (v < Fout[dm * FLAGS]) Fout[dm * FLAGS] = v;
         }
         continue;
       }
@@ -616,13 +702,25 @@ const SpellingSearch = (() => {
       const ctx2 = ((q >= 2 ? cd[face[q - 2]] : NT) * NT1 + pp) * NT1;
       const ctx1 = q !== 1 ? pp * NT1 : -1; // flag 1 at move 1: the exact trigram
       const s1 = pp * NT1; // a second token's trigram after the plain token before
-      // plain: flag 0 -> 1, 1 -> 2, 2 -> 2
+      const w3 = x3 >= 0 ? WL[x3 + d] : -1;
+      const w4 = WL[x4 + d];
+      const ctx3 = w3 >= 0 ? (w3 * NT1 + pp) * NT1 : -1;
+      const ctx4 = w4 >= 0 ? w4 * NT1 : -1;
+      const b3 = ctx3 >= 0 ? v3 : Infinity;
+      const b4 = ctx4 >= 0 ? v4 : Infinity;
+      // plain: flag 0 -> 1, 1 -> 2, 2 -> 2, 3 -> 2, 4 -> 3
       {
         const c = pen[w] + (pf ? 0 : OWNF[w]);
         let v = v0 + c + lam * MIN1[w];
-        if (v < Fout[d * 3 + 1]) Fout[d * 3 + 1] = v;
-        v = Math.min(v1 + lam * (ctx1 >= 0 ? MIN2[ctx1 + w] : TRI[ctx2 + w]), v2 + lam * TRI[ctx2 + w]) + c;
-        if (v < Fout[d * 3 + 2]) Fout[d * 3 + 2] = v;
+        if (v < Fout[o + 1]) Fout[o + 1] = v;
+        v = Math.min(v1 + lam * (ctx1 >= 0 ? MIN2[ctx1 + w] : TRI[ctx2 + w]), v2 + lam * TRI[ctx2 + w]);
+        if (b3 < Infinity) v = Math.min(v, b3 + lam * TRI[ctx3 + w]);
+        v += c;
+        if (v < Fout[o + 2]) Fout[o + 2] = v;
+        if (b4 < Infinity) {
+          v = b4 + lam * MIN2[ctx4 + w] + c;
+          if (v < Fout[o + 3]) Fout[o + 3] = v;
+        }
       }
       for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
         const W = WI[2 * k];
@@ -632,8 +730,10 @@ const SpellingSearch = (() => {
         if (v < best) best = v;
         v = v2 + lam * TRI[ctx2 + W];
         if (v < best) best = v;
-        v = best + pen[W] + (pf ? 0 : OWNF[W]) + lam * AFTER[((W * NR + d2) * 19 + next) * 2 + ru];
-        if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
+        if (b3 < Infinity) { v = b3 + lam * TRI[ctx3 + W]; if (v < best) best = v; }
+        if (b4 < Infinity) { v = b4 + lam * MIN2[ctx4 + W]; if (v < best) best = v; }
+        v = best + pen[W] + (pf ? 0 : OWNF[W]);
+        if (v < Fout[d2 * FLAGS + 4]) Fout[d2 * FLAGS + 4] = v;
       }
       for (let k = Q0[x], e = Q0[x + 1]; k < e; k++) {
         const t1 = QI[3 * k];
@@ -645,8 +745,10 @@ const SpellingSearch = (() => {
         if (v < best) best = v;
         v = v2 + lam * (TRI[ctx2 + t1] + sx);
         if (v < best) best = v;
+        if (b3 < Infinity) { v = b3 + lam * (TRI[ctx3 + t1] + sx); if (v < best) best = v; }
+        if (b4 < Infinity) { v = b4 + lam * (MIN2[ctx4 + t1] + TRI[(ctx4 + t1) * NT1 + t2]); if (v < best) best = v; }
         v = best + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru];
-        if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
+        if (v < Fout[d2 * FLAGS]) Fout[d2 * FLAGS] = v;
       }
       for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
         const q1 = MI[4 * k];
@@ -659,9 +761,11 @@ const SpellingSearch = (() => {
         if (v < best) best = v;
         v = v2 + lam * (TRI[ctx2 + q1] + sx);
         if (v < best) best = v;
+        if (b3 < Infinity) { v = b3 + lam * (TRI[ctx3 + q1] + sx); if (v < best) best = v; }
+        if (b4 < Infinity) { v = b4 + lam * (MIN2[ctx4 + q1] + TRI[(ctx4 + q1) * NT1 + m]); if (v < best) best = v; }
         v = best + pen[q1] + OWNF[q1] + pen[m] + mccMin[m] + pen[q2] + (pf ? 0 : OWNF[q2])
           + lam * (TRI[(q1 * NT1 + m) * NT1 + q2] + AFTER[((q2 * NR + dm) * 19 + next) * 2 + 1]);
-        if (v < Fout[dm * 3]) Fout[dm * 3] = v;
+        if (v < Fout[dm * FLAGS]) Fout[dm * FLAGS] = v;
       }
     }
     return Fout;
@@ -1151,13 +1255,13 @@ const SpellingSearch = (() => {
         const fi = face[i];
         const w = CONJ[d][fi];
         write(w, len, ps, a, b, mcc, pend, anyTurn, true);
-        rec(i + 1, d, r, f === 2 ? 2 : f + 1, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, true, wide, false);
+        rec(i + 1, d, r, NEXT_PLAIN[f], nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, true, wide, false);
         const ws = WIDES[w];
         for (let k2 = 0; k2 < ws.length; k2++) {
           const W = ws[k2][0];
           if (IS_RL[W] ? nRL >= maxRL : nUDF >= maxUDF) continue;
           write(W, len, ps, a, b, mcc, pend, anyTurn, true);
-          rec(i + 1, MUL[d][ws[k2][1]], r, 0, IS_RL[W] ? nRL + 1 : nRL, IS_RL[W] ? nUDF : nUDF + 1, wa, wb, wps, wmcc, wown, len + 1, true, true, false);
+          rec(i + 1, MUL[d][ws[k2][1]], r, 4, IS_RL[W] ? nRL + 1 : nRL, IS_RL[W] ? nUDF : nUDF + 1, wa, wb, wps, wmcc, wown, len + 1, true, true, false);
         }
         const quarters = QUARTERS[fi];
         if (!r) {
@@ -1245,8 +1349,8 @@ const SpellingSearch = (() => {
     // of the rest and bounds their walks tightly).
     const MITM_ROWS = 5;
     const fwdMemo = new Map();
-    const F0 = new Float64Array(NR * 3).fill(Infinity);
-    for (const [lt, ld] of leads) F0[ld * 3] = Math.min(F0[ld * 3], lt >= 0 ? mccMin[lt] + leadBits(lt) : 0);
+    const F0 = new Float64Array(NR * FLAGS).fill(Infinity);
+    for (const [lt, ld] of leads) F0[ld * FLAGS] = Math.min(F0[ld * FLAGS], lt >= 0 ? mccMin[lt] + leadBits(lt) : 0);
     if (!OWN_FIRST || OWN_FIRST.src !== mccMin) boundTable([], null, mccMin, pen, L); // sets OWN_FIRST
     const forwardAt = (face, q) => {
       // F after moves 0..q-1, keyed by moves 0..q (move q's own terms need it)
@@ -1255,7 +1359,7 @@ const SpellingSearch = (() => {
       for (let p = 0; p <= q; p++) key = key * 19 + face[p] + 1;
       let F = fwdMemo.get(key);
       if (!F) {
-        F = forwardStep(face, q - 1, forwardAt(face, q - 1), new Float64Array(NR * 3), mccMin, pen, L, later);
+        F = forwardStep(face, q - 1, forwardAt(face, q - 1), new Float64Array(NR * FLAGS), mccMin, pen, L, later);
         fwdMemo.set(key, F);
         stats.fwdRows++;
       }
@@ -1282,9 +1386,9 @@ const SpellingSearch = (() => {
       if (boundRows < n - cut) continue;
       {
         const F = forwardAt(face, cut);
-        const row = (n - cut) * NR * 3;
+        const row = (n - cut) * NR * FLAGS;
         let m = Infinity;
-        for (let x = 0; x < NR * 3; x++) { const v = F[x] + HC[row + x]; if (v < m) m = v; }
+        for (let x = 0; x < NR * FLAGS; x++) { const v = F[x] + HC[row + x]; if (v < m) m = v; }
         if (m + sols[k].look > budgetNow()) continue;
       }
       if (!exact) {
@@ -1303,7 +1407,7 @@ const SpellingSearch = (() => {
       const pre = (i, out) => {
         if (i > cut) return false;
         const F = forwardAt(face, i);
-        for (let d = 0; d < NR; d++) out[d] = Math.min(F[d * 3], F[d * 3 + 1], F[d * 3 + 2]);
+        for (let d = 0; d < NR; d++) out[d] = Math.min(F[d * FLAGS], F[d * FLAGS + 1], F[d * FLAGS + 2], F[d * FLAGS + 3], F[d * FLAGS + 4]);
         return true;
       };
       exactTable(face, X, mccMin, pen, L, fromJ, stop, minMove, later, pre);

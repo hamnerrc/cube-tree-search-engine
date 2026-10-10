@@ -157,15 +157,15 @@ test('forward rows meet the bound table at every cut', () => {
       const H = SpellingSearch.boundTable(face, null, mm, pen, L, 0, Infinity, 0, n, !root);
       const lb = lt => (lt >= 0 ? mm[lt] + STEP_PENALTIES.natural * L.lm.trigramBits(L.lm.START, L.lm.START, L.id[lt]) : 0);
       let want = Infinity;
-      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) want = Math.min(want, H[(n * t.NR + ld) * 3] + lb(lt));
-      let F = new Float64Array(t.NR * 3).fill(Infinity);
-      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) F[ld * 3] = Math.min(F[ld * 3], lb(lt));
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) want = Math.min(want, H[(n * t.NR + ld) * SpellingSearch.FLAGS] + lb(lt));
+      let F = new Float64Array(t.NR * SpellingSearch.FLAGS).fill(Infinity);
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) F[ld * SpellingSearch.FLAGS] = Math.min(F[ld * SpellingSearch.FLAGS], lb(lt));
       for (let cut = 0; cut <= n; cut++) {
         let got = Infinity;
-        for (let x = 0; x < t.NR * 3; x++) got = Math.min(got, F[x] + H[(n - cut) * t.NR * 3 + x]);
+        for (let x = 0; x < t.NR * SpellingSearch.FLAGS; x++) got = Math.min(got, F[x] + H[(n - cut) * t.NR * SpellingSearch.FLAGS + x]);
         assert.ok(Math.abs(got - want) < 1e-9, `${Array.from(face, i => t.TOK[i]).join(' ')} cut ${cut}: ${got} vs ${want}`);
         checked++;
-        if (cut < n) F = SpellingSearch.forwardStep(face, cut, F, new Float64Array(t.NR * 3), mm, pen, L, !root);
+        if (cut < n) F = SpellingSearch.forwardStep(face, cut, F, new Float64Array(t.NR * SpellingSearch.FLAGS), mm, pen, L, !root);
       }
     }
   }

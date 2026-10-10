@@ -63,7 +63,22 @@ tree clean, every suite passing, one commit not yet pushed).
    Float32 LM tables (no gain: rows are instruction-bound, ~4.3 us each).
    Browser, default settings, same 8 scrambles: later steps mean 9.3 s
    (first pairs 8.8-33.9 s, the rest 1.9-11.4 s), first steps 2.6-5.1 s.
-7. **Where the first pair after a cross still goes** (~24 s in Node pools,
+7. **Five-flag bound table** (`FLAGS` 5, `wideLanding`; boundTable,
+   forwardStep, walks): the cheap table now follows a wide turn exactly for
+   two tokens -- flag 4 "the last token is the wide turn of move i-1 that
+   lands in frame d" (one per move and frame, so its token is known) and
+   flag 3 "a plain token after it". The slack measured below was the bound
+   using wide turns to forget the context. Big later-step call (187k):
+   solutions walked 136k -> 34k (no limits; 83k -> 13k with the type's
+   limit), walk nodes 12.6M -> 2.6M, rows 1.37x dearer each. Results
+   identical (md5 of lists on 5 scrambles x 2-3 steps, both settings,
+   identical exactly-scored spelling counts); brute force: 2.2M later-step
+   and 15k first-step spellings, none below the bound; the tests (lower
+   bound, MITM equal at every cut, best N = brute force) pass. Node pools:
+   crosses 3.2 -> 2.4, 4.4 -> 3.3 s; xcross first steps 11.4 -> 10.0,
+   8.2 -> 7.3 s; first pair after a cross -4%; whole later steps (with the
+   hidden multislots) -5 to -13%.
+8. **Where the first pair after a cross still goes** (before item 7) (~24 s in Node pools,
    10-30 s in the browser; the type's limit is now the final one almost from
    the start, so this is the algorithm's own cost): per solution ~13 us of
    preparation (luck replay, look and plan features), ~1.5 cheap MITM rows,
