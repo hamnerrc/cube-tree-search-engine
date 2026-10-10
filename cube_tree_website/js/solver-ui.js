@@ -274,6 +274,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             if (!job) return;
             jobs.delete(id);
             w.pending.delete(id);
+            if (job.seed) w.seeding = false;
             if (job.live) job.live.detach();
             if (error) job.reject(new Error(error)); else job.resolve(candidates);
           };
@@ -282,6 +283,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             w.broken = true;
             for (const id of w.pending) { const job = jobs.get(id); jobs.delete(id); if (job) { if (job.live) job.live.detach(); job.reject(new Error('worker failed')); } }
             w.pending.clear();
+            w.seeding = false;
           };
           return w;
         });
@@ -298,8 +300,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             return;
           }
           for (;;) {
-            const w = workers.find(x => !x.broken && x.pending.size < 1);
-            if (!w || !waiting.length) return;
+            if (!waiting.length) return;
             // a replaced search's jobs (owner.stale) after everyone else's
             let best = 0;
             const stale = x => !!(x.owner && x.owner.stale);
@@ -310,6 +311,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
               const c = compareSearchRanks(x.rank, b.rank);
               if (c < 0 || (c === 0 && x.cores.length > b.cores.length)) best = i;
             }
+            // A seed job (a big call's first, quick job: its type's limits
+            // for every other job) may share a worker with a running job,
+            // which waits at its next pause (solver-bridge.js liveHooks).
+            const seed = !!waiting[best].job.seedOnly;
+            const w = workers.find(x => !x.broken && x.pending.size < 1)
+              || (seed ? workers.find(x => !x.broken && x.pending.size < 2 && !x.seeding) : null);
+            if (!w) return;
             const { ctx, job: queued, cores, prepare, live, resolve, reject } = waiting.splice(best, 1)[0];
             // prepare: the caller's last word on the job when it starts
             // (solver-bridge.js: its type's current limits)
@@ -318,8 +326,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             // window.CUBETREE_TRACE = [] records ranking jobs (dev timing)
             const trace = typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE) ? window.CUBETREE_TRACE : null;
             if (trace) trace.push([performance.now(), 'start', id, job.pairCount, cores.length, job.seedOnly ? 'seed' : '']);
-            jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject, live });
+            jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject, live, seed });
             w.pending.add(id);
+            if (seed) w.seeding = true;
             w.postMessage({ id, ctx, job, cores, live: !!live });
             if (live) live.attach((limits) => { if (jobs.has(id)) w.postMessage({ id, limits }); });
           }
