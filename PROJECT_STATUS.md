@@ -33,7 +33,17 @@ tree was clean and every fast suite passed at the start.
    two written tokens; first-step calls that solve a pair use it (walk
    nodes ~10x fewer). The first-token tier is gone (in Chrome its call
    ran 3-4x slower than in Node: one cross chunk took 10-16 s).
-4. Browser (headless Chrome, this 2-core machine, warm), scramble
+4. **Later steps**: the multislot engine call (two pairs, up to 12 turns;
+   warm 1.2-5 s each, up to three per step, one engine worker) ended most
+   later steps (single pairs: 0.1-0.3 s). Now split by first move
+   (`splitByFirstMove`; identical sets on 24 real calls,
+   `tools/split-check.js`; no extra cost on one worker), the page says
+   when the shown rows are final (only hidden multislots left:
+   `onlyMultislotPending`, the finished types trimmed to their best N),
+   and a search nobody wants any more stops (memoSearch / engineCallMemo
+   track interest; a stopped search is never reused). Replaced searches
+   yield on the engine gate and the ranking pool.
+5. Browser (headless Chrome, this 2-core machine, warm), scramble
    `R2 U2 L D' ...`: first step 14.1-14.8 s -> 6.2-6.6 s, second
    6.9-8.9 s -> 6.9-7.9 s; hardest known scramble `D R2 U' B2 ...` first
    step 25-35 s -> 10.2-10.9 s, second 5 -> 5.4 s. Node (pools, quiet):
@@ -118,7 +128,8 @@ the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
 
-Tools: `tune-alg-speed.js` (tuning, below), `pair-choice-pro.js` (pros'
+Tools: `split-check.js` (multislot split == the whole engine call),
+`tune-alg-speed.js` (tuning, below), `pair-choice-pro.js` (pros'
 pair choices under the real search), `pair-choice.js` (pair-choice
 weights, below; `--model none+look+plan`), `continuity.js` (greedy solves:
 rotations, slot order, planning on/off), `complete-coverage.js` (pro steps
@@ -154,6 +165,14 @@ Everything in the README is implemented except the visual redesign
 
 ### Measurements
 
+- Thirtieth pass, later steps (browser, clicking as soon as the rows are
+  final): scramble `F2 U2 B2 D F2 U F2 L2 R2 F2 U' F2 R B D U B' L2 U'
+  R U' R'` second step rows final 6.5-9.3 s (the step itself ends at
+  16-18 s: three multislot calls), third 2.3-2.5 s (was 11 s while the
+  previous step's multislots still ran); `R2 U2 L D' ...` second 3.5-3.9 s,
+  third 0.5 s; hardest scramble second 2.0-2.3 s. Two engine workers on
+  this machine (Node, 3 ranking workers): later steps -0.5 to -1.5 s, first
+  steps +0.3-0.7 s: kept at one below 8 threads.
 - Thirtieth pass, browser (warm, quiet): scramble `R2 U2 L D' ...` first
   step 6.2-6.6 s, second 6.9-7.9 s (the hidden multislot engine call sets
   its end; single-pair rows are final ~2 s earlier), third 0.3-0.5 s;
@@ -559,9 +578,12 @@ not look-ahead optimal).
    solution (an exact meet in the middle would share prefixes, but its
    forward memo is ~3 KB per prefix); per-solution work before ranking
    (luck check, pair-choice features: ~23 us x 65k crosses; engine order
-   is DFS, so an incremental replay could share prefixes); the hidden
-   multislot engine call (3.6-5.6 s, one engine worker) ends most later
-   steps; small calls that must fill 300 results per view from a few
+   is DFS, so an incremental replay could share prefixes); the multislot
+   engine search itself (now split and stoppable, but 1.2-5 s of engine
+   time per call: a stronger admissible bound needs cross + two pieces,
+   ~109 MB per table; a combined search of a step's 2-3 multislot goals
+   from the one start state would share most of their trees -- engine C++
+   work); small calls that must fill 300 results per view from a few
    solutions (~1 s each at the root).
 2. **Ranking:** first steps' remaining misses are mostly longer pro steps
    (planning), not speed; later steps' rotation placement now matches pros

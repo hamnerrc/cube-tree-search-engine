@@ -111,9 +111,18 @@ function physicallyExact(session, r) {
     await searchWithLookahead(session(withMulti), h, null, null, {});
     const stepOnly = h.stats.length - before;
     const mid = h.stats.length;
-    const res = await searchWithLookahead(session(withMulti), h, null, null, { depth: 3, breadth: 3, isCancelled: () => true });
+    // cancelled once the step's own list is ready (its first look-ahead update)
+    let stepDone = false;
+    const res = await searchWithLookahead(session(withMulti), h, null, null, {
+      depth: 3, breadth: 3, isCancelled: () => stepDone, onUpdate: (list) => { if (list.lookaheadPending !== undefined) stepDone = true; },
+    });
     assert.strictEqual(h.stats.length - mid, stepOnly, 'only the step\'s own engine calls');
     assert.ok(res.length > 0);
+    // cancelled from the start, nobody else asking: the step's search stops too
+    const mid2 = h.stats.length;
+    const gone = await searchWithLookahead(session(withMulti), h, null, null, { depth: 3, breadth: 3, isCancelled: () => true });
+    assert.ok(h.stats.length - mid2 <= stepOnly, 'no more than the step\'s own calls');
+    assert.ok(gone.failedCalls > 0, 'it ends incomplete');
   });
 
   await h.terminate();
