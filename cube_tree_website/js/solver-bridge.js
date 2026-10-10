@@ -371,9 +371,13 @@ function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreA
   if (!actual.cross) {
     return { ok: false, reason: 'cross claimed solved but is not actually solved' };
   }
-  const piece = pseudoSolvedFlags(facelets);
+  // Per-piece checks only matter for a slot claimed by one piece (pseudo):
+  // a solved pair's mask is its corner mask plus its edge mask (verified,
+  // facelet-flags.js), so a claimed pair found solved has both home.
+  let piece = null;
   for (const slot of F2L_SLOTS) {
     const claimsPair = corners.has(slot) && edges.has(slot);
+    if (!piece && corners.has(slot) !== edges.has(slot)) piece = pseudoSolvedFlags(facelets);
     if (actual[slot] !== claimsPair) {
       return {
         ok: false,
@@ -382,6 +386,7 @@ function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreA
           : `slot ${slot} claimed solved but is not actually solved`,
       };
     }
+    if (claimsPair) continue;
     if (corners.has(slot) && !piece.cornerAt[slot]) {
       return { ok: false, reason: `slot ${slot} claimed solved but is not actually solved (corner)` };
     }
@@ -389,7 +394,7 @@ function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreA
       return { ok: false, reason: `slot ${slot} claimed solved but is not actually solved (edge)` };
     }
   }
-  return { ok: true, facelets };
+  return { ok: true, facelets, flags: actual };
 }
 
 /**
@@ -1941,9 +1946,9 @@ async function postProcessComplete(ctx, p, cores, live = null) {
   const base = isRoot ? p.baseRotation : ctx.rotation;
   const weights = ctx.lookWeights;
   const lookFeatures = [0, 0, 0, 0, 0];
-  const lookCost = (facelets) => {
+  const lookCost = (facelets, solved = null) => {
     if (!weights || !facelets) return 0;
-    pairLookFeatures(facelets, lookFeatures);
+    pairLookFeatures(facelets, lookFeatures, solved);
     let x = 0;
     for (let k = 0; k < weights.length; k++) x += weights[k] * lookFeatures[k];
     return x;
@@ -1972,12 +1977,12 @@ async function postProcessComplete(ctx, p, cores, live = null) {
       }
       continue;
     }
-    const sol = { face: core.split(' ').map(x => TID.get(x)), core, look: lookCost(check.facelets) };
+    const sol = { face: core.split(' ').map(x => TID.get(x)), core, look: lookCost(check.facelets, check.flags) };
     if (ctx.planWeights) {
       // every spelling ends as this solution then a y-family rotation: its
       // planning cost by that rotation ('', y, y2, y'; enumerate bounds
       // with the least)
-      const f = planFeaturesY(check.facelets, planYScratch);
+      const f = planFeaturesY(check.facelets, planYScratch, check.flags);
       const w = ctx.planWeights;
       const by = [0, 0, 0, 0];
       let least = Infinity;

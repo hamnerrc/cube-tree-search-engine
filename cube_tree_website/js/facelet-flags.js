@@ -163,6 +163,46 @@ const LOOK_BIT = { W: 1, R: 2, G: 4, Y: 8, O: 16, B: 32 };
 const LOOK_CORNER_KEYS = new Array(8);
 const LOOK_EDGE_KEYS = new Array(12);
 
+// Char-code versions of the tables above (these run for every engine
+// solution of every search): colour bits by char code, each slot's home
+// corner / edge colour positions (centres), the stickers a U-layer corner
+// and edge share a face on.
+const LOOK_BITC = new Uint8Array(128);
+for (const [ch, bit] of Object.entries(LOOK_BIT)) LOOK_BITC[ch.charCodeAt(0)] = bit;
+const LOOK_SLOT_LIST = ['FR', 'FL', 'BL', 'BR'];
+const LOOK_SLOT_GEO = LOOK_SLOT_LIST.map((slot) => {
+    const [hc, he] = LOOK_SLOTS[slot];
+    const cs = LOOK_CORNERS[hc];
+    const es = LOOK_EDGES[he];
+    const centre = i => i - (i % 9) + 4;
+    return { hc, he, cs, es, cc: cs.map(centre), ec: es.map(centre) };
+});
+// LOOK_SHARED[c * 4 + e] (U-layer corner c, edge e < 4): sticker pairs on a
+// common face, flattened (corner sticker, edge sticker, ...)
+const LOOK_SHARED = [];
+for (let c = 0; c < 4; c++) {
+    for (let e = 0; e < 4; e++) {
+        const pairs = [];
+        for (const ci of LOOK_CORNERS[c]) {
+            for (const ei of LOOK_EDGES[e]) if (ci - (ci % 9) === ei - (ei % 9)) pairs.push(ci, ei);
+        }
+        LOOK_SHARED.push(pairs);
+    }
+}
+const LOOK_CK = new Uint8Array(8);
+const LOOK_EK = new Uint8Array(12);
+function lookKeys(f) {
+    const B = LOOK_BITC;
+    for (let p = 0; p < 8; p++) {
+        const idx = LOOK_CORNERS[p];
+        LOOK_CK[p] = B[f.charCodeAt(idx[0])] | B[f.charCodeAt(idx[1])] | B[f.charCodeAt(idx[2])];
+    }
+    for (let p = 0; p < 12; p++) {
+        const idx = LOOK_EDGES[p];
+        LOOK_EK[p] = B[f.charCodeAt(idx[0])] | B[f.charCodeAt(idx[1])];
+    }
+}
+
 /**
  * Counts over the unsolved F2L pairs of a cube with the cross solved, in
  * LOOK_FEATURES order: corners stuck in a D-layer slot (not home and
@@ -170,45 +210,29 @@ const LOOK_EDGE_KEYS = new Array(12);
  * home and oriented without their partner, pairs with both pieces in the U
  * layer, and of those, pairs already connected (adjacent, both shared
  * stickers matching). Unchanged by any y rotation of the cube.
+ * (solved: solvedFlags(facelets), when the caller has it.)
  */
-function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0]) {
+function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0], solved = null) {
     out.fill(0);
     const f = facelets;
-    const center = i => f[i - (i % 9) + 4];
-    for (let p = 0; p < 8; p++) {
-        const idx = LOOK_CORNERS[p];
-        LOOK_CORNER_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]] | LOOK_BIT[f[idx[2]]];
-    }
-    for (let p = 0; p < 12; p++) {
-        const idx = LOOK_EDGES[p];
-        LOOK_EDGE_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]];
-    }
-    const flags = solvedFlags(f);
-    for (const slot of ['FR', 'FL', 'BL', 'BR']) {
-        if (flags[slot]) continue;
-        const [hc, he] = LOOK_SLOTS[slot];
-        const hcIdx = LOOK_CORNERS[hc];
-        const heIdx = LOOK_EDGES[he];
-        const wantC = LOOK_BIT[center(hcIdx[0])] | LOOK_BIT[center(hcIdx[1])] | LOOK_BIT[center(hcIdx[2])];
-        const wantE = LOOK_BIT[center(heIdx[0])] | LOOK_BIT[center(heIdx[1])];
-        const c = LOOK_CORNER_KEYS.indexOf(wantC);
-        const e = LOOK_EDGE_KEYS.indexOf(wantE);
-        const cHome = c === hc && f[hcIdx[0]] === center(hcIdx[0]) && f[hcIdx[1]] === center(hcIdx[1]) && f[hcIdx[2]] === center(hcIdx[2]);
-        const eHome = e === he && f[heIdx[0]] === center(heIdx[0]) && f[heIdx[1]] === center(heIdx[1]);
+    const B = LOOK_BITC;
+    lookKeys(f);
+    const flags = solved || solvedFlags(f);
+    for (let s = 0; s < 4; s++) {
+        if (flags[LOOK_SLOT_LIST[s]]) continue;
+        const { hc, he, cs, es, cc, ec } = LOOK_SLOT_GEO[s];
+        const wantC = B[f.charCodeAt(cc[0])] | B[f.charCodeAt(cc[1])] | B[f.charCodeAt(cc[2])];
+        const wantE = B[f.charCodeAt(ec[0])] | B[f.charCodeAt(ec[1])];
+        const c = LOOK_CK.indexOf(wantC);
+        const e = LOOK_EK.indexOf(wantE);
+        const cHome = c === hc && f.charCodeAt(cs[0]) === f.charCodeAt(cc[0]) && f.charCodeAt(cs[1]) === f.charCodeAt(cc[1]) && f.charCodeAt(cs[2]) === f.charCodeAt(cc[2]);
+        const eHome = e === he && f.charCodeAt(es[0]) === f.charCodeAt(ec[0]) && f.charCodeAt(es[1]) === f.charCodeAt(ec[1]);
         if (cHome) out[2]++; else if (c >= 4) out[0]++;
         if (eHome) out[2]++; else if (e >= 8) out[1]++;
         if (c < 4 && e < 4) {
             out[3]++;
-            let shared = 0;
-            let match = 0;
-            for (const ci of LOOK_CORNERS[c]) {
-                for (const ei of LOOK_EDGES[e]) {
-                    if (ci - (ci % 9) !== ei - (ei % 9)) continue;
-                    shared++;
-                    if (f[ci] === f[ei]) match++;
-                }
-            }
-            if (shared === 2 && match === 2) out[4]++;
+            const sh = LOOK_SHARED[c * 4 + e];
+            if (sh.length === 4 && f.charCodeAt(sh[0]) === f.charCodeAt(sh[1]) && f.charCodeAt(sh[2]) === f.charCodeAt(sh[3])) out[4]++;
         }
     }
     return out;
@@ -229,28 +253,28 @@ function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0]) {
  *   remaining piece is in view (docs/slot_and_rotation_info.txt).
  */
 const PLAN_FEATURES = ['badEdgesU', 'goodEdgesU', 'badEdgesMiddle', 'openBackSlots'];
-function planFeatures(facelets, out = [0, 0, 0, 0]) {
+function planFeatures(facelets, out = [0, 0, 0, 0], solved = null) {
     out.fill(0);
     const f = facelets;
-    const center = i => f[i - (i % 9) + 4];
-    const front = f[22];
-    const back = f[49];
+    const B = LOOK_BITC;
+    const front = f.charCodeAt(22);
+    const back = f.charCodeAt(49);
     for (let p = 0; p < 12; p++) {
         const idx = LOOK_EDGES[p];
-        LOOK_EDGE_KEYS[p] = LOOK_BIT[f[idx[0]]] | LOOK_BIT[f[idx[1]]];
+        LOOK_EK[p] = B[f.charCodeAt(idx[0])] | B[f.charCodeAt(idx[1])];
     }
-    const flags = solvedFlags(f);
-    for (const slot of ['FR', 'FL', 'BL', 'BR']) {
+    const flags = solved || solvedFlags(f);
+    for (let s = 0; s < 4; s++) {
+        const slot = LOOK_SLOT_LIST[s];
         if (flags[slot]) continue;
         if (slot === 'BL' || slot === 'BR') out[3]++;
-        const he = LOOK_SLOTS[slot][1];
-        const heIdx = LOOK_EDGES[he];
-        const e = LOOK_EDGE_KEYS.indexOf(LOOK_BIT[center(heIdx[0])] | LOOK_BIT[center(heIdx[1])]);
+        const { he, es, ec } = LOOK_SLOT_GEO[s];
+        const e = LOOK_EK.indexOf(B[f.charCodeAt(ec[0])] | B[f.charCodeAt(ec[1])]);
         // LOOK_EDGES lists the U (or F/B) sticker first
-        const sticker = f[LOOK_EDGES[e][0]];
+        const sticker = f.charCodeAt(LOOK_EDGES[e][0]);
         const good = sticker === front || sticker === back;
         if (e < 4) out[good ? 1 : 0]++;
-        else if (e >= 8 && !(e === he && f[heIdx[0]] === center(heIdx[0]) && f[heIdx[1]] === center(heIdx[1]))) {
+        else if (e >= 8 && !(e === he && f.charCodeAt(es[0]) === f.charCodeAt(ec[0]) && f.charCodeAt(es[1]) === f.charCodeAt(ec[1]))) {
             if (!good) out[2]++;
         }
     }
@@ -266,9 +290,10 @@ function planFeatures(facelets, out = [0, 0, 0, 0]) {
  * cube, test/pair-choice.test.js).
  */
 const PLAN_BACK_BY_Y = [['BL', 'BR'], ['FL', 'BL'], ['FL', 'FR'], ['FR', 'BR']];
-function planFeaturesY(facelets, out = new Array(16).fill(0)) {
-    const f = planFeatures(facelets, PLAN_Y_FLAGS);
-    const flags = solvedFlags(facelets);
+// (solved: solvedFlags(facelets), when the caller has it)
+function planFeaturesY(facelets, out = new Array(16).fill(0), solved = null) {
+    const flags = solved || solvedFlags(facelets);
+    const f = planFeatures(facelets, PLAN_Y_FLAGS, flags);
     for (let r = 0; r < 4; r++) {
         const swap = r === 1 || r === 3;
         out[4 * r] = swap ? f[1] : f[0];
