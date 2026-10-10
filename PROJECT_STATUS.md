@@ -78,7 +78,22 @@ tree clean, every suite passing, one commit not yet pushed).
    crosses 3.2 -> 2.4, 4.4 -> 3.3 s; xcross first steps 11.4 -> 10.0,
    8.2 -> 7.3 s; first pair after a cross -4%; whole later steps (with the
    hidden multislots) -5 to -13%.
-8. **Where the first pair after a cross still goes** (before item 7) (~24 s in Node pools,
+8. **Browser deoptimisation loops** (found by profiling the page's workers
+   over CDP and Chrome's `--js-flags=--trace-deopt[-verbose]`): one ranking
+   job of a step often ran 3-9x longer than its same-size sibling (48 s vs
+   5 s), different jobs in different runs. Two causes: (a) the search loops
+   ran inside the `enumerateSteps` generator, whose optimised code V8 threw
+   away at every live-limits yield (8,105 "exit from OSR'd inner loop"
+   deopts in one step) -- the loops now run in plain functions a batch at a
+   time (`prewalk`, `mainPass`) and the generator only yields between
+   batches; (b) `boundTable` / `forwardStep` deopted thousands of times
+   with "wrong map" at the move array (`face.length`, `face[i]`) -- every
+   solution's moves are now an `Int8Array` (postProcessComplete). After:
+   sibling jobs equal (7.3/7.1 s, 6.3/6.9 s), the scramble's first pair 41-99
+   s -> 23-32 s in the same browser harness; results identical (md5).
+   Also learned: headless Chrome numbers vary 2x with this machine's
+   background load; `--disable-renderer-backgrounding` did not matter.
+9. **Where the first pair after a cross still goes** (before item 7) (~24 s in Node pools,
    10-30 s in the browser; the type's limit is now the final one almost from
    the start, so this is the algorithm's own cost): per solution ~13 us of
    preparation (luck replay, look and plan features), ~1.5 cheap MITM rows,

@@ -2000,7 +2000,10 @@ async function postProcessComplete(ctx, p, cores, live = null) {
   for (const core of cores || []) {
     if (!core || seen.has(core)) continue;
     seen.add(core);
-    const face = core.split(' ').map(x => TID.get(x));
+    // one representation for every solution's moves (spelling-search.js
+    // reads them in its hottest loops; arrays of more than one kind made V8
+    // throw that code away thousands of times per job in browser workers)
+    const face = Int8Array.from(core.split(' '), x => TID.get(x));
     const check = checkFacelets(replayTokenIds(startCodes, face), p.allCorners, p.allEdges, claimSets);
     if (!check.ok) {
       if (check.reason.includes('claimed solved but is not actually solved')) {

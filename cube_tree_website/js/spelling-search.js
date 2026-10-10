@@ -1312,14 +1312,25 @@ const SpellingSearch = (() => {
       }
     };
     let H = null;
-    for (const k of first) {
-      if (pauseDue()) { yield; lastPause = now(); }
-      n = sols[k].face.length;
-      if (exact) exactTable(sols[k].face, X, mccMin, pen, L, 0, Infinity, 0, later);
-      else Hw = H = boundTable(sols[k].face, H, mccMin, pen, L, 0, Infinity, 0, n, later);
-      stats.rows += n + 1;
-      tryWalk(k);
-    }
+    // The loops run in plain functions, a batch per call until a pause is
+    // due, and the generator only yields between batches: with the loop in
+    // the generator itself, V8 threw its optimised code away at every yield
+    // (8,000 "exit from OSR'd inner loop" deopts in one browser step) and
+    // some jobs ran 3-9x slower.
+    let next1 = 0;
+    const prewalk = () => {
+      for (; next1 < first.length; next1++) {
+        if (pauseDue()) return false;
+        const k = first[next1];
+        n = sols[k].face.length;
+        if (exact) exactTable(sols[k].face, X, mccMin, pen, L, 0, Infinity, 0, later);
+        else Hw = H = boundTable(sols[k].face, H, mccMin, pen, L, 0, Infinity, 0, n, later);
+        stats.rows += n + 1;
+        tryWalk(k);
+      }
+      return true;
+    };
+    while (!prewalk()) { yield; lastPause = now(); }
     stats.prewalkMs = Math.round(now() - tStart);
     const byEnd = Array.from(sols.keys()).filter(k => !done[k]).sort((x, y) => {
       const a = sols[x].face;
@@ -1372,51 +1383,57 @@ const SpellingSearch = (() => {
     let prevCRows = 0;
     let prev = null;
     let prevRows = 0;
-    for (const k of byEnd) {
-      if (pauseDue()) { yield; lastPause = now(); }
-      const face = sols[k].face;
-      n = face.length;
-      const stop = budgetNow() - sols[k].look;
-      const fromC = firstRow(prevC, prevCRows, face);
-      const cut = Math.max(0, n - MITM_ROWS);
-      HC = boundTable(face, HC, mccMin, pen, L, fromC, stop, minMove, n - cut, later);
-      stats.cheapRows += Math.max(0, boundRows + 1 - fromC);
-      prevC = face;
-      prevCRows = boundRows;
-      if (boundRows < n - cut) continue;
-      {
-        const F = forwardAt(face, cut);
-        const row = (n - cut) * NR * FLAGS;
-        let m = Infinity;
-        for (let x = 0; x < NR * FLAGS; x++) { const v = F[x] + HC[row + x]; if (v < m) m = v; }
-        if (m + sols[k].look > budgetNow()) continue;
-      }
-      if (!exact) {
-        if (prevCRows < n) {
-          HC = boundTable(face, HC, mccMin, pen, L, prevCRows + 1, stop, minMove, n, later);
-          stats.cheapRows += Math.max(0, boundRows - prevCRows);
-          prevCRows = boundRows;
-          if (boundRows < n) continue;
+    let next3 = 0;
+    const mainPass = () => {
+      for (; next3 < byEnd.length; next3++) {
+        if (pauseDue()) return false;
+        const k = byEnd[next3];
+        const face = sols[k].face;
+        n = face.length;
+        const stop = budgetNow() - sols[k].look;
+        const fromC = firstRow(prevC, prevCRows, face);
+        const cut = Math.max(0, n - MITM_ROWS);
+        HC = boundTable(face, HC, mccMin, pen, L, fromC, stop, minMove, n - cut, later);
+        stats.cheapRows += Math.max(0, boundRows + 1 - fromC);
+        prevC = face;
+        prevCRows = boundRows;
+        if (boundRows < n - cut) continue;
+        {
+          const F = forwardAt(face, cut);
+          const row = (n - cut) * NR * FLAGS;
+          let m = Infinity;
+          for (let x = 0; x < NR * FLAGS; x++) { const v = F[x] + HC[row + x]; if (v < m) m = v; }
+          if (m + sols[k].look > budgetNow()) continue;
         }
-        Hw = HC;
+        if (!exact) {
+          if (prevCRows < n) {
+            HC = boundTable(face, HC, mccMin, pen, L, prevCRows + 1, stop, minMove, n, later);
+            stats.cheapRows += Math.max(0, boundRows - prevCRows);
+            prevCRows = boundRows;
+            if (boundRows < n) continue;
+          }
+          Hw = HC;
+          tryWalk(k);
+          continue;
+        }
+        const fromJ = firstRow(prev, prevRows, face);
+        // the cheap forward rows (memoised) bound the moves before a row by frame
+        const pre = (i, out) => {
+          if (i > cut) return false;
+          const F = forwardAt(face, i);
+          for (let d = 0; d < NR; d++) out[d] = Math.min(F[d * FLAGS], F[d * FLAGS + 1], F[d * FLAGS + 2], F[d * FLAGS + 3], F[d * FLAGS + 4]);
+          return true;
+        };
+        exactTable(face, X, mccMin, pen, L, fromJ, stop, minMove, later, pre);
+        stats.rows += Math.max(0, X.rows + 1 - fromJ);
+        prev = face;
+        prevRows = X.rows;
+        if (X.rows < n) continue;
         tryWalk(k);
-        continue;
       }
-      const fromJ = firstRow(prev, prevRows, face);
-      // the cheap forward rows (memoised) bound the moves before a row by frame
-      const pre = (i, out) => {
-        if (i > cut) return false;
-        const F = forwardAt(face, i);
-        for (let d = 0; d < NR; d++) out[d] = Math.min(F[d * FLAGS], F[d * FLAGS + 1], F[d * FLAGS + 2], F[d * FLAGS + 3], F[d * FLAGS + 4]);
-        return true;
-      };
-      exactTable(face, X, mccMin, pen, L, fromJ, stop, minMove, later, pre);
-      stats.rows += Math.max(0, X.rows + 1 - fromJ);
-      prev = face;
-      prevRows = X.rows;
-      if (X.rows < n) continue;
-      tryWalk(k);
-    }
+      return true;
+    };
+    while (!mainPass()) { yield; lastPause = now(); }
     stats.totalMs = Math.round(now() - tStart);
     return stats;
   }
