@@ -452,7 +452,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) || 'null'); } catch (err) { saved = null; }
     Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
-    view.lookaheadDepth = Math.max(1, Math.min(5, parseInt(view.lookaheadDepth, 10) || 1));
+    view.lookaheadDepth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, parseInt(view.lookaheadDepth, 10) || 1));
     view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
     view.pageSize = Math.max(1, Math.min(500, parseInt(view.pageSize, 10) || DEFAULT_PAGE_SIZE));
     view.simplePseudo = !!view.simplePseudo;

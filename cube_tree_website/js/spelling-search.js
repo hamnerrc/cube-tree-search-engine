@@ -5,7 +5,8 @@
  * The engine lists every face-turn solution of a goal up to the move limit
  * (uncapped). A human may write each of them in many ways: a free leading
  * rotation (the inspection at the first step; y, y' or y2 at a later one),
- * at most one mid-step y, y', x or x', any turn as a wide turn (r l, and at
+ * at most one mid-step y, y', x or x' (later steps only: a first step never
+ * rotates inside its alg), any turn as a wide turn (r l, and at
  * most SPELLING_MAX_UDF of u d f; never a wide b), as long as the cross ends
  * on the bottom. Every spelling is physically "the face-turn solution, then
  * a y-family rotation", so it solves the same pieces.
@@ -286,11 +287,14 @@ const SpellingSearch = (() => {
   let OWN_FIRST = null;
   // boundTable's last complete row (n when the whole table was computed).
   let boundRows = 0;
-  let RO = null;
-  function rowOptions() {
-    if (RO) return RO;
+  // rowOptions(noMid): the bound's per-move options; noMid (first steps:
+  // never a rotation inside the alg) leaves out the mid-step rotations.
+  const RO = [null, null];
+  function rowOptions(noMid = false) {
+    if (RO[noMid ? 1 : 0]) return RO[noMid ? 1 : 0];
     const t = tables();
-    const { NR, CONJ, WIDES, MIDS, MUL, QUARTERS } = t;
+    const { NR, CONJ, WIDES, MUL, QUARTERS } = t;
+    const MIDS = noMid ? [] : t.MIDS;
     const W0 = new Int32Array(18 * NR + 1);
     const Q0 = new Int32Array(18 * NR + 1);
     const M0 = new Int32Array(18 * NR + 1);
@@ -324,8 +328,8 @@ const SpellingSearch = (() => {
     const MID_T = Int32Array.from(MIDS, m => m[0]);
     const MID_D = new Int32Array(NR * MIDS.length);
     for (let d = 0; d < NR; d++) for (let k = 0; k < MIDS.length; k++) MID_D[d * MIDS.length + k] = MUL[d][MIDS[k][1]];
-    RO = { W0, Q0, M0, WI: Int32Array.from(wides), QI: Int32Array.from(qs), MI: Int32Array.from(ms), MID_T, MID_D };
-    return RO;
+    RO[noMid ? 1 : 0] = { W0, Q0, M0, WI: Int32Array.from(wides), QI: Int32Array.from(qs), MI: Int32Array.from(ms), MID_T, MID_D };
+    return RO[noMid ? 1 : 0];
   }
   // K: per row j and frame d, the least the rest of the step costs by the
   // first token written for move i, that token's own bits left out (KT
@@ -379,8 +383,11 @@ const SpellingSearch = (() => {
   function boundTable(face, H, mccMin, pen, L, fromJ = 0, stopAbove = Infinity, minMove = 0, withK = true, lastJ = face.length, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS, YF, TOK } = t;
-    const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions();
+    // first steps (!later) never rotate inside the alg: no rotation options,
+    // and AFTER's rotation-used half (no rotation as the next first token)
+    const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions(!later);
     const NM = MID_T.length;
+    const ru = later ? 0 : 1;
     const lam = STEP_PENALTIES.natural;
     const { MIN2, MIN1, NT1, AFTER } = L;
     const TRI = later ? L.TRIL : L.TRI;
@@ -466,7 +473,7 @@ const SpellingSearch = (() => {
         for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
           const W = WI[2 * k];
           const d2 = WI[2 * k + 1];
-          const c = pen[W] + (pf ? 0 : OWNF[W]) + (withK ? afterBound(j - 1, d2, W, 0) : H[prevRow + d2 * 3] + lam * AFTER[((W * NR + d2) * 19 + next) * 2]);
+          const c = pen[W] + (pf ? 0 : OWNF[W]) + (withK ? afterBound(j - 1, d2, W, ru) : H[prevRow + d2 * 3] + lam * AFTER[((W * NR + d2) * 19 + next) * 2 + ru]);
           if (withK) { addK(kx, W, c); const g = c + lam * MIN1[W]; if (g < GRP[kx * 4]) GRP[kx * 4] = g; }
           if (i === 0) {
             const v = c + lam * TRI[START + W];
@@ -487,7 +494,7 @@ const SpellingSearch = (() => {
           const t1 = QI[3 * k];
           const t2 = QI[3 * k + 1];
           const d2 = QI[3 * k + 2];
-          const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + (withK ? afterBound(j - 1, d2, t2, 0) : H[prevRow + d2 * 3] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2]);
+          const c = pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + (withK ? afterBound(j - 1, d2, t2, ru) : H[prevRow + d2 * 3] + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru]);
           const s0 = MIN2[t1 * NT1 + t2];
           if (withK) { addK(kx, t1, c + lam * s0); const g = c + lam * (MIN1[t1] + s0); if (g < GRP[kx * 4 + 1]) GRP[kx * 4 + 1] = g; }
           if (i === 0) {
@@ -592,8 +599,9 @@ const SpellingSearch = (() => {
   function forwardStep(face, q, Fin, Fout, mccMin, pen, L, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS } = t;
-    const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions();
+    const { W0, Q0, M0, WI, QI, MI, MID_T, MID_D } = rowOptions(!later);
     const NM = MID_T.length;
+    const ru = later ? 0 : 1;
     const lam = STEP_PENALTIES.natural;
     const { MIN2, MIN1, NT1, AFTER } = L;
     const TRI = later ? L.TRIL : L.TRI;
@@ -646,14 +654,14 @@ const SpellingSearch = (() => {
         for (let k = W0[x], e = W0[x + 1]; k < e; k++) {
           const W = WI[2 * k];
           const d2 = WI[2 * k + 1];
-          const v = v0 + pen[W] + (pf ? 0 : OWNF[W]) + lam * (TRI[START + W] + AFTER[((W * NR + d2) * 19 + next) * 2]);
+          const v = v0 + pen[W] + (pf ? 0 : OWNF[W]) + lam * (TRI[START + W] + AFTER[((W * NR + d2) * 19 + next) * 2 + ru]);
           if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
         }
         for (let k = Q0[x], e = Q0[x + 1]; k < e; k++) {
           const t1 = QI[3 * k];
           const t2 = QI[3 * k + 1];
           const d2 = QI[3 * k + 2];
-          const v = v0 + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2] + AFTER[((t2 * NR + d2) * 19 + next) * 2]);
+          const v = v0 + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * (TRI[START + t1] + TRI[(NT * NT1 + t1) * NT1 + t2] + AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru]);
           if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
         }
         for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
@@ -687,7 +695,7 @@ const SpellingSearch = (() => {
         if (v < best) best = v;
         v = v2 + lam * TRI[ctx2 + W];
         if (v < best) best = v;
-        v = best + pen[W] + (pf ? 0 : OWNF[W]) + lam * AFTER[((W * NR + d2) * 19 + next) * 2];
+        v = best + pen[W] + (pf ? 0 : OWNF[W]) + lam * AFTER[((W * NR + d2) * 19 + next) * 2 + ru];
         if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
       }
       for (let k = Q0[x], e = Q0[x + 1]; k < e; k++) {
@@ -700,7 +708,7 @@ const SpellingSearch = (() => {
         if (v < best) best = v;
         v = v2 + lam * (TRI[ctx2 + t1] + sx);
         if (v < best) best = v;
-        v = best + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2];
+        v = best + pen[t1] + OWNF[t1] + pen[t2] + (pf ? 0 : OWNF[t2]) + lam * AFTER[((t2 * NR + d2) * 19 + next) * 2 + ru];
         if (v < Fout[d2 * 3]) Fout[d2 * 3] = v;
       }
       for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
@@ -940,14 +948,16 @@ const SpellingSearch = (() => {
           }
         }
       };
+      // r = 1 from the start at a first step: no rotation inside the alg
+      const r0 = opts.root ? 1 : 0;
       for (const [lt, ld] of leads) {
         lead = ld;
         if (H[at(0, ld, 0)] + (lt >= 0 ? mccMin[lt] + leadBits(lt) : 0) + look > Math.max(opts.budget(false), opts.budget(true))) continue;
         if (lt >= 0) {
           written[0] = lt;
-          rec(0, ld, 0, 0, 0, 0, lm.START, L.id[lt], leadBits(lt), 0, mccMin[lt], 1, false, false);
+          rec(0, ld, r0, 0, 0, 0, lm.START, L.id[lt], leadBits(lt), 0, mccMin[lt], 1, false, false);
         } else {
-          rec(0, ld, 0, 0, 0, 0, lm.START, lm.START, 0, 0, 0, 0, false, false);
+          rec(0, ld, r0, 0, 0, 0, lm.START, lm.START, 0, 0, 0, 0, false, false);
         }
       }
     };

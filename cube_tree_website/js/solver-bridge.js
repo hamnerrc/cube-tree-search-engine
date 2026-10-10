@@ -130,11 +130,14 @@ const MOVE_RESTRICT = 'U_U2_U-_D_D2_D-_L_L2_L-_R_R2_R-_F_F2_F-_B_B2_B-';
 const PRO_MOVE_RESTRICT = `${MOVE_RESTRICT}_r_r2_r-_l_l2_l-_y_y-_x_x-`;
 const ENGINE_CENTER_OFFSETS = ['', 'y', 'y2', "y'", 'z2', 'z2 y', 'z2 y2', "z2 y'", "z'", "z' y", "z' y2", "z' y'",
   'z', 'z y', 'z y2', "z y'", "x'", "x' y", "x' y2", "x' y'", 'x', 'x y', 'x y2', "x y'"];
-function proEngineOptions(rotation) {
+// A first step never rotates inside its alg (README "Complete search": its
+// only rotation is the free inspection), so root calls get no y/x.
+const PRO_MOVE_RESTRICT_ROOT = PRO_MOVE_RESTRICT.split('_').filter(m => !/^[xyz]/.test(m)).join('_');
+function proEngineOptions(rotation, isRoot = false) {
   const down = applyAlgorithm(SOLVED_FACELETS, rotation || '')[31];
   const centerOffset = ENGINE_CENTER_OFFSETS.filter(o =>
     applyAlgorithm(SOLVED_FACELETS, [rotation, o].filter(Boolean).join(' '))[31] === down);
-  return { allowedMoves: PRO_MOVE_RESTRICT, maxRotCount: 1, centerOffset };
+  return { allowedMoves: isRoot ? PRO_MOVE_RESTRICT_ROOT : PRO_MOVE_RESTRICT, maxRotCount: isRoot ? 0 : 1, centerOffset };
 }
 
 /** A cross-solved node whose solved corners/edges are exactly these labels. */
@@ -1062,7 +1065,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   for (const p of startOrder) {
     // Complete search: face turns only (every rotation and wide spelling is
     // derived from them afterwards, spelling-search.js), every solution.
-    const extra = { ...(session.proMoves && !p.complete ? proEngineOptions(p.callRotation) : {}), ...(deadline ? { deadline } : {}) };
+    const extra = { ...(session.proMoves && !p.complete ? proEngineOptions(p.callRotation, isRoot) : {}), ...(deadline ? { deadline } : {}) };
     if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
     const deepen = async () => {
       let raw = await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra);
@@ -1426,6 +1429,8 @@ async function postProcessCall(ctx, p, cores, yieldState) {
   const push = (c, look = 0) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
     if (hasWideB(c.coreAlg)) return;
+    // a first step's only rotation is the inspection (README)
+    if (isRoot && /(^| )[xyz]/.test(c.coreAlg)) return;
     // pair planning: the cube as the step leaves it held
     if (ctx.planWeights) look += planCost(ctx.planWeights, replayFacelets(ctx.scramble, isRoot ? c.rotation : ctx.rotation, ctx.scoredPath, c.coreAlg));
     if (look) c.tpp += look / p.pieces;
@@ -1957,16 +1962,17 @@ function mergeRanked(a, b) {
 // Look-ahead (README "Look-ahead optimisation depth", PROJECT_STATUS.md §4.31)
 // ---------------------------------------------------------------------------
 
-const LOOKAHEAD_MAX_DEPTH = 5;
+// Depths 4 and 5 were removed: no use for finding a human solution.
+const LOOKAHEAD_MAX_DEPTH = 3;
 const DEFAULT_LOOKAHEAD_BREADTH = 5;
 // Below the first look-ahead level only the best few continuations of each
-// node are followed, or depth 5 would need breadth^4 searches.
+// node are followed, or depth 3 would need breadth^2 searches.
 const LOOKAHEAD_INNER_BREADTH = 2;
 // Result lists can hold hundreds of thousands of candidates (10,000 solutions
 // per call); keep the memo bounded by entries and by candidates held (~440
 // bytes each, so the cap is ~440 MB). A wide look-ahead at that default
 // holds more than this; its oldest searches are then searched again if
-// needed. A depth-5 look-ahead makes ~76 searches, so the entry limit must
+// needed. A depth-3 look-ahead makes ~16 searches, so the entry limit must
 // exceed that or committing an explored candidate searches it again.
 const SEARCH_MEMO_LIMIT = 200;
 const SEARCH_MEMO_CANDIDATES = 1000000;

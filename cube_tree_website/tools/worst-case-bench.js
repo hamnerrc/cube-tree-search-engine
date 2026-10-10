@@ -6,7 +6,7 @@
  * "All settings": every cross colour; xcross, xxcross, xxxcross,
  * multislotting, full pseudo (simplified pseudo OFF -- it only removes work),
  * cross optimisation, the pro move set; 500 solutions per call (the app
- * default); look-ahead depth 5, breadth 5 (--depth/--breadth to change).
+ * default); look-ahead depth 3, breadth 5 (--depth/--breadth to change).
  * Engines run on a worker pool like the browser's (--workers, default
  * cores - 1, at most 4; the pseudo engine gets a pool of the same size, as in the app).
  *
@@ -17,7 +17,7 @@
  * as in a page that is already open (the cold first search is reported
  * separately).
  *
- * Usage: node tools/worst-case-bench.js [--scrambles 2] [--seed 1] [--depth 5] [--breadth 5]
+ * Usage: node tools/worst-case-bench.js [--scrambles 2] [--seed 1] [--depth 3] [--breadth 5]
  *        [--workers 3] [--max 500] [--no-pseudo] [--colors white,yellow] [--steps 1] [--budget 60]
  *        [--advanced xcross,xxcross] [--post 3]
  *
@@ -44,7 +44,7 @@ const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i === -1 ? d : args[i + 1]; };
 const nScrambles = +opt('scrambles', '2');
 const seed = +opt('seed', '1');
-const depth = +opt('depth', '5');
+const depth = +opt('depth', '3');
 const breadth = +opt('breadth', '5');
 const workers = +opt('workers', String(Math.max(1, Math.min(4, os.cpus().length - 1))));
 const maxSolutions = +opt('max', '500');

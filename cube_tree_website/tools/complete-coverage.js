@@ -6,7 +6,7 @@
  * is one of the spellings spelling-search.js generates for them. (Whether it
  * is also among the best N depends on alg_speed: tools/tune-alg-speed.js.)
  * Reasons a step is not, counted separately: too long, two mid-step
- * rotations, slices / other notation.
+ * rotations, a rotation inside a first step, slices / other notation.
  *
  *   node tools/complete-coverage.js [--file data/pro_references.txt]
  */
@@ -36,6 +36,7 @@ function completeSpaceStatus(seg) {
   const lead = toks.slice(0, k).join(' ');
   const body = toks.slice(k);
   if (body.filter(x => /^[xyz]/.test(x)).length > 1) return 'two mid-step rotations';
+  if (seg.isRoot && body.some(x => /^[xyz]/.test(x))) return 'mid-step rotation (never at a first step)';
   if (!seg.isRoot && lead && !['y', "y'", 'y2'].includes(rotationName(lead))) return 'other leading rotation';
   // the face turns in the frame the step starts in (canonicalizeForEngine
   // gives them after the net rotation: "rotation, then moves")

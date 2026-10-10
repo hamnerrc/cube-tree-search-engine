@@ -30,7 +30,8 @@ pair at once, a multislot two pairs at once).
 ### Look-ahead
 
 An optional, per-step results-page setting ranks results by the best
-combined next *N* steps (N = 2–5; default off).
+combined next *N* steps (N = 2 or 3; default off). Deeper look-aheads
+(4 or 5 steps) are not offered: they are no use for finding a human solution.
 
 1. Search step *n* and rank it by TPP.
 2. For each of the top results (the **breadth**, default 5), commit it
@@ -45,8 +46,8 @@ The single-step ranking is shown first; the block then re-ranks as each
 candidate's look-ahead finishes (best-ranked candidates first, unfinished
 ones show "…"). Each re-ranked row shows its combined TPP and follow-up
 steps. Only the clicked step is committed; changing the depth re-searches
-the step, reusing its single-step search. Depths of 3 or more are marked as
-slow (tens of seconds to minutes per step).
+the step, reusing its single-step search. Depth 3 is marked as slow (tens
+of seconds per step or more).
 
 ## Orientation
 
@@ -74,7 +75,9 @@ based on Triangium's **MCC** hand-movement model, with these rules:
 - **Every action costs time**: face turns, wide moves, slices and every
   rotation, including `x` (untuned MCC treated `x` as free).
 - A rotation that **starts** a step pays no penalty (inspection, or done
-  while looking ahead between steps); `y2` is only allowed there. At a later
+  while looking ahead between steps); `y2` is only allowed there. **A first
+  step never rotates inside its alg**: its only rotation is the inspection
+  (professionals' habit; wide moves and side-cross inspections stay). At a later
   step the naturalness model still scores it like any move (professionals
   rotate mid-step, after an AUF, about as often as at the start; with the
   rotation free, the top results rotated at the start far more often).
@@ -244,13 +247,13 @@ an engine happens to list solutions in; the speed-ups below are exact.
      brought down by a wide turn, e.g. `x' y2 | l' U r ...`); `y`, `y'` or
      `y2` at a later step;
    - at most **one mid-step rotation**, `y`, `y'`, `x` or `x'` (never `y2`),
-     anywhere;
+     anywhere in a later step; **never in a first step** (wide moves only);
    - any turn as a **wide turn** (`r` `l`, and at most three of `u` `d`
      `f`; **never a wide `b`**), e.g. `D y R U' R'` as `u R U' R'`,
      `B U' B'` as `f R' f'`, `L x` as `r`;
    - a half turn as one plain and one wide quarter turn (`U2` + `y` as
-     `d' U'`), or as two quarter turns around the mid-step rotation
-     (`U y' U R' U' R`);
+     `d' U'`), or (later steps) as two quarter turns around the mid-step
+     rotation (`U y' U R' U' R`);
    - the cross always ends on the bottom;
    - never more turns than the solution has: spellings whose turns cancel
      (`L' l r` for `R`) are not generated.
@@ -286,7 +289,7 @@ capped engine search (10,000 solutions per call) with wide spellings only.
 | Multislot (later step) | 12 | 300 |
 
 These cover most of what professionals execute: of the reco.nz steps in
-the tuning data, 89.7% of later steps and 66% of first steps are in the
+the tuning data, 89.7% of later steps and 60% of first steps are in the
 complete search exactly as the professional wrote them (within the limit,
 in a spelling above; `tools/complete-coverage.js`). A single-pair limit of
 11 raises that to 92.8% but lists about five times as many solutions. A
@@ -327,8 +330,9 @@ pair" as one XXCross). Including **rotation choices during the search is a
 mandatory requirement**: professionals favour "spammable" `R`/`U` solutions
 with rotations because they ease look-ahead.
 
-Known gaps (measurements in PROJECT_STATUS.md): more than one mid-step
-rotation (only corpus candidates have them); slice-like combinations beyond
+Known gaps (measurements in PROJECT_STATUS.md): first steps that rotate
+inside the alg (excluded on purpose, 12% of the reco.nz first steps);
+more than one mid-step rotation (only corpus candidates have them); slice-like combinations beyond
 `r`/`l`; goal-no-op moves other than `U` turns (pruned by the engine); and
 steps longer than the move limits.
 

@@ -102,7 +102,7 @@ test('solutions that end alike (shared bound rows): best N equal brute force', (
   }
 });
 
-test('every spelling is the face turns then a y-family rotation; no b, no mid y2, one mid rotation', () => {
+test('every spelling is the face turns then a y-family rotation; no b, no mid y2, one mid rotation (none at a first step)', () => {
   const faces = Array.from({ length: 5 }, () => randomFace(6));
   for (const root of [true, false]) {
     const { list } = run(root ? [] : ["R U R'"], root, faces, 0, true);
@@ -112,6 +112,7 @@ test('every spelling is the face turns then a y-family rotation; no b, no mid y2
       const firstTurn = toks.findIndex(t => !/^[xyz]/.test(t));
       const mid = toks.slice(firstTurn).filter(t => /^[xyz]/.test(t));
       assert.ok(mid.length <= 1 && !mid.includes('y2'), c.alg);
+      if (root) assert.ok(!toks.some(t => /^[xyz]/.test(t)), `first step rotates: ${c.alg}`);
       const face = faces[c.sol].join(' ');
       const got = applyAlgorithm(SOLVED_FACELETS, [c.rotation, c.alg].filter(Boolean).join(' '));
       const ok = ['', 'y', 'y2', "y'"].some(r => applyAlgorithm(SOLVED_FACELETS, [face, r].filter(Boolean).join(' ')) === got);
@@ -139,6 +140,8 @@ test('known spellings are generated: wide u/f, rotations, side-cross inspections
   const root = all("L U R'", true);
   assert.ok([...root].some(x => /^(x|z)/.test(x) && /\|[rl]/.test(x)), 'side-cross inspection');
   assert.ok(![...later, ...root].some(x => /(^| |\|)b/.test(x)), 'never a wide b');
+  assert.ok(![...root].some(x => /\|(.* )?[xyz]/.test(x)), 'never a rotation inside a first step');
+  assert.ok([...later].some(x => / [xy]/.test(x)), 'later steps may rotate mid-step');
 });
 
 test('forward rows meet the bound table at every cut', () => {
