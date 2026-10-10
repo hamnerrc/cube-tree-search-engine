@@ -172,6 +172,26 @@ test('forward rows meet the bound table at every cut', () => {
   assert.ok(checked > 300, `${checked} cuts checked`);
 });
 
+test("a walk's step cost is the leaf's stepPenalty", () => {
+  const t = SpellingSearch.tables();
+  let checked = 0;
+  for (const root of [false, true]) {
+    for (let k = 0; k < (root ? 4 : 12); k++) {
+      const face = randomFace(root ? 4 : 5 + (k % 3)).map(x => t.TID.get(x));
+      SpellingSearch.enumerate([{ face, look: 0 }], {
+        root,
+        budget: () => Infinity,
+        leaf: (ids, lead, end, sol, step) => {
+          const alg = Array.from(ids, i => t.TOK[i]).join(' ');
+          assert.ok(Math.abs(step - stepPenalty(alg)) < 1e-9, `${alg}: ${step} vs ${stepPenalty(alg)}`);
+          checked++;
+        },
+      });
+    }
+  }
+  assert.ok(checked > 5000, `${checked} spellings checked`);
+});
+
 test('both bounds are lower bounds of the real cost', () => {
   // enumerate with an infinite budget and compare each leaf's real cost
   // with the bound the search pruned against (H at the root of its walk).

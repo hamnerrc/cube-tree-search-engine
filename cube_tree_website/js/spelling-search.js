@@ -767,7 +767,11 @@ const SpellingSearch = (() => {
   const AL = new Int32Array(8192);
   const GS = new Float64Array(64);
   const GF = new Int32Array(64);
-  function exactTable(face, X, mccMin, pen, L, fromJ, stopAbove, minMove, later) {
+  // pre(i, F24): optional per-frame lower bounds of what moves 0..i-1 cost
+  // (into F24, true if known) for stopping early
+  const PRE24 = new Float64Array(24);
+  const LEAST24 = new Float64Array(24);
+  function exactTable(face, X, mccMin, pen, L, fromJ, stopAbove, minMove, later, pre = null) {
     const t = tables();
     const { NR, NT, AXIS, YF, LEAD_LATER, LEAD_ROOT } = t;
     const { O0, OK, OT1, OT2, OT3, OD, LS0, LSV } = exactOptions(!later);
@@ -872,6 +876,7 @@ const SpellingSearch = (() => {
         }
       }
       let least = Infinity;
+      LEAST24.fill(Infinity);
       for (let g = 0; g < ng; g++) {
         const d = GD[g];
         const b = GB[g];
@@ -918,10 +923,17 @@ const SpellingSearch = (() => {
             }
           }
           V[base + d * NT2 + a * NT1 + b] = v;
-          if (v < least) least = v;
+          if (v < LEAST24[d]) LEAST24[d] = v;
         }
       }
-      if (least + i * minMove > stopAbove) {
+      for (let d = 0; d < NR; d++) if (LEAST24[d] < least) least = LEAST24[d];
+      let stop = least + i * minMove > stopAbove;
+      if (!stop && pre && i > 0 && stopAbove < Infinity && pre(i, PRE24)) {
+        let m = Infinity;
+        for (let d = 0; d < NR; d++) { const v = PRE24[d] + LEAST24[d]; if (v < m) m = v; }
+        stop = m > stopAbove;
+      }
+      if (stop) {
         X.rows = j;
         return X;
       }
@@ -937,7 +949,8 @@ const SpellingSearch = (() => {
    *         the 24 orientations; it is not part of the written alg),
    *   budget(wide): the most (C0 excluded) penalty + bits + minMCC + look a
    *         spelling may reach and still matter (wide: a wide turn written),
-   *   leaf(tokens, leadIndex, endFrame, sol): a complete spelling to score.
+   *   leaf(tokens, leadIndex, endFrame, sol, step): a complete spelling to
+   *         score (step: its stepPenalty, when a walk wrote it).
    * }
    * Returns stats { solutions, walked, nodes }.
    */
@@ -1024,8 +1037,10 @@ const SpellingSearch = (() => {
     // best -- and every walk's budget -- is tight from the start, instead of
     // infinite until N spellings of whatever the first walks meet are found.
     const seedCount = Math.min(order.length, opts.seed || 0);
+    const seeded = new Uint8Array(sols.length);
     for (let s = 0; s < seedCount; s++) {
       const k = order[s];
+      seeded[k] = 1;
       const face = sols[k].face;
       for (const [lt, ld] of yLeads) {
         let len = 0;
@@ -1103,8 +1118,12 @@ const SpellingSearch = (() => {
         if (ps + mcc + (len > 0 && !FACE_UD[tb] ? pend : 0) + look + rest > budget) return;
         if (i === n) {
           if (!YF[d]) return;
-          if (ps + lam * lm.trigramBits(a, b, lm.END) + mcc + pend + look > budget) return;
-          opts.leaf(written.subarray(0, len), lead, d, sol);
+          // a seeded solution's plain spelling (no wide turn, no rotation
+          // but the lead) was scored already
+          if (seeded[k] && !wide && (opts.root || r === 0)) return;
+          const step = ps + lam * lm.trigramBits(a, b, lm.END);
+          if (step + mcc + pend + look > budget) return;
+          opts.leaf(written.subarray(0, len), lead, d, sol, step);
           return;
         }
         if (!r && i > 0) {
@@ -1262,7 +1281,14 @@ const SpellingSearch = (() => {
         continue;
       }
       const fromJ = firstRow(prev, prevRows, face);
-      exactTable(face, X, mccMin, pen, L, fromJ, stop, minMove, later);
+      // the cheap forward rows (memoised) bound the moves before a row by frame
+      const pre = (i, out) => {
+        if (i > cut) return false;
+        const F = forwardAt(face, i);
+        for (let d = 0; d < NR; d++) out[d] = Math.min(F[d * 3], F[d * 3 + 1], F[d * 3 + 2]);
+        return true;
+      };
+      exactTable(face, X, mccMin, pen, L, fromJ, stop, minMove, later, pre);
       stats.rows += Math.max(0, X.rows + 1 - fromJ);
       prev = face;
       prevRows = X.rows;
@@ -1374,6 +1400,8 @@ const SpellingSearch = (() => {
    *   ['','y', 'y2', "y'"], with look its least),
    *   root, pieces, floor (C0 + the committed steps' penalties: cost minus
    *   that is what enumerate bounds), costOf(alg) (path cost, the real one),
+   *   mccOf(alg) (optional: the same without the step's own stepPenalty,
+   *   which a walk adds from what it summed while writing the spelling),
    *   views: [{ test(candidate), wide (may contain wide turns) }], size,
    *   initial: [TPP limit per view] (optional),
    *   make(alg, leadIndex, endFrame, sol, tpp): the candidate (with .key and
@@ -1412,11 +1440,13 @@ const SpellingSearch = (() => {
         if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor + BUDGET_EPS, limitTpp(true) * o.pieces - o.floor + BUDGET_EPS, limitTpp(false)];
         return budgets[wide ? 1 : 0];
       },
-      leaf: (ids, lead, end, sol) => {
+      leaf: (ids, lead, end, sol, step) => {
         let alg = '';
         for (let k = 0; k < ids.length; k++) alg += (k ? ' ' : '') + t.TOK[ids[k]];
         exact++;
-        const tpp = (o.costOf(alg) + (sol.lookByEnd ? sol.lookByEnd[t.YIDX[end]] : sol.look)) / o.pieces;
+        // a walk knows the spelling's own penalties + bits (stepPenalty)
+        const cost = step !== undefined && o.mccOf ? o.mccOf(alg) + step : o.costOf(alg);
+        const tpp = (cost + (sol.lookByEnd ? sol.lookByEnd[t.YIDX[end]] : sol.look)) / o.pieces;
         if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor + BUDGET_EPS, limitTpp(true) * o.pieces - o.floor + BUDGET_EPS, limitTpp(false)];
         if (!(tpp <= budgets[2])) return;
         const c = o.make(alg, lead, end, sol, tpp);

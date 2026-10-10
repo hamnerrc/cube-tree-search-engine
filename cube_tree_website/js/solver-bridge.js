@@ -510,9 +510,11 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
  * resumes from there. Exact: equal to algSpeed of the whole path
  * (test/script.test.js).
  */
-function stepsPathCost(holder, stepAlgs, alg) {
-  const key = stepAlgs.join('|');
+function costBase(holder, stepAlgs) {
   let base = holder._costBase;
+  // (called for every scored spelling: skip the key when nothing changed)
+  if (base && base.ref === stepAlgs && base.len === stepAlgs.length && base.last === stepAlgs[stepAlgs.length - 1]) return base;
+  const key = stepAlgs.join('|');
   if (!base || base.key !== key) {
     const scoredPath = stepAlgs.join(' ').trim();
     base = holder._costBase = {
@@ -522,10 +524,24 @@ function stepsPathCost(holder, stepAlgs, alg) {
       penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) : 0,
     };
   }
+  base.ref = stepAlgs;
+  base.len = stepAlgs.length;
+  base.last = stepAlgs[stepAlgs.length - 1];
+  return base;
+}
+function stepsPathCost(holder, stepAlgs, alg) {
+  const base = costBase(holder, stepAlgs);
   const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg) : 0;
   if (base.mcc) return algSpeedResume(base.mcc, alg) + penalty;
   const path = base.scoredPath ? `${base.scoredPath} ${alg}` : alg;
   return algSpeed(path, false, false) + penalty;
+}
+
+/** stepsPathCost without the new step's own stepPenalty (the caller adds it). */
+function stepsPathMcc(holder, stepAlgs, alg) {
+  const base = costBase(holder, stepAlgs);
+  if (base.mcc) return algSpeedResume(base.mcc, alg) + base.penalty;
+  return algSpeed(base.scoredPath ? `${base.scoredPath} ${alg}` : alg, false, false) + base.penalty;
 }
 
 // ---------------------------------------------------------------------------
@@ -1879,6 +1895,7 @@ function postProcessComplete(ctx, p, cores) {
     pieces: p.pieces,
     floor,
     costOf: alg => pathCostFor(ctx, alg),
+    mccOf: alg => stepsPathMcc(ctx, ctx.stepAlgs, alg),
     views: p.views || RESULT_VIEWS,
     size: p.topN,
     initial: p.limits,
