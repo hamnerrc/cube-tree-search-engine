@@ -405,14 +405,39 @@ function checkFacelets(facelets, claimedCorners, claimedEdges, claimSets = null)
 // a start state given as char codes: applyAlgorithm without parsing the
 // text again (the complete search replays every engine solution).
 let PERM_BY_TID = null;
+// PERM_PAIR[a * 18 + b]: face turns a then b as one permutation (two turns
+// per pass over the 54 facelets)
+let PERM_PAIR = null;
 const REPLAY_A = new Uint16Array(54);
 const REPLAY_B = new Uint16Array(54);
 function replayTokenIds(startCodes, ids) {
-  if (!PERM_BY_TID) PERM_BY_TID = SPELLING.tables().TOK.map(t => (MOVE_TABLE[t] ? Int32Array.from(MOVE_TABLE[t]) : null));
+  if (!PERM_BY_TID) {
+    PERM_BY_TID = SPELLING.tables().TOK.map(t => (MOVE_TABLE[t] ? Int32Array.from(MOVE_TABLE[t]) : null));
+    PERM_PAIR = [];
+    for (let a = 0; a < 18; a++) {
+      for (let b = 0; b < 18; b++) PERM_PAIR.push(Int32Array.from(PERM_BY_TID[b], i => PERM_BY_TID[a][i]));
+    }
+  }
   let cur = REPLAY_A;
   let next = REPLAY_B;
   cur.set(startCodes);
-  for (let k = 0; k < ids.length; k++) {
+  let k = 0;
+  for (; k + 1 < ids.length; k += 2) {
+    const a = ids[k];
+    const b = ids[k + 1];
+    const perm = a < 18 && b < 18 ? PERM_PAIR[a * 18 + b] : null;
+    if (perm) {
+      for (let i = 0; i < 54; i++) next[i] = cur[perm[i]];
+      const t = cur; cur = next; next = t;
+    } else {
+      for (const id of [a, b]) {
+        const one = PERM_BY_TID[id];
+        for (let i = 0; i < 54; i++) next[i] = cur[one[i]];
+        const t = cur; cur = next; next = t;
+      }
+    }
+  }
+  if (k < ids.length) {
     const perm = PERM_BY_TID[ids[k]];
     for (let i = 0; i < 54; i++) next[i] = cur[perm[i]];
     const t = cur; cur = next; next = t;
@@ -2003,7 +2028,9 @@ async function postProcessComplete(ctx, p, cores, live = null) {
     // one representation for every solution's moves (spelling-search.js
     // reads them in its hottest loops; arrays of more than one kind made V8
     // throw that code away thousands of times per job in browser workers)
-    const face = Int8Array.from(core.split(' '), x => TID.get(x));
+    const parts = core.split(' ');
+    const face = new Int8Array(parts.length);
+    for (let k = 0; k < parts.length; k++) face[k] = TID.get(parts[k]);
     const check = checkFacelets(replayTokenIds(startCodes, face), p.allCorners, p.allEdges, claimSets);
     if (!check.ok) {
       if (check.reason.includes('claimed solved but is not actually solved')) {
