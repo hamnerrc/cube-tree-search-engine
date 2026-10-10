@@ -301,11 +301,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             let best = 0;
             const stale = x => !!(x.owner && x.owner.stale);
             for (let i = 1; i < waiting.length; i++) {
-              const w = waiting[i];
+              const x = waiting[i];
               const b = waiting[best];
-              if (stale(w) !== stale(b)) { if (!stale(w)) best = i; continue; }
-              const c = compareSearchRanks(w.rank, b.rank);
-              if (c < 0 || (c === 0 && w.cores.length > b.cores.length)) best = i;
+              if (stale(x) !== stale(b)) { if (!stale(x)) best = i; continue; }
+              const c = compareSearchRanks(x.rank, b.rank);
+              if (c < 0 || (c === 0 && x.cores.length > b.cores.length)) best = i;
             }
             const { ctx, job: queued, cores, prepare, resolve, reject } = waiting.splice(best, 1)[0];
             // prepare: the caller's last word on the job when it starts

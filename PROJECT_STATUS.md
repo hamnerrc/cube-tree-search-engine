@@ -44,10 +44,13 @@ tree was clean and every fast suite passed at the start.
    track interest; a stopped search is never reused). Replaced searches
    yield on the engine gate and the ranking pool.
 5. Browser (headless Chrome, this 2-core machine, warm), scramble
-   `R2 U2 L D' ...`: first step 14.1-14.8 s -> 6.2-6.6 s, second
-   6.9-8.9 s -> 6.9-7.9 s; hardest known scramble `D R2 U' B2 ...` first
-   step 25-35 s -> 10.2-10.9 s, second 5 -> 5.4 s. Node (pools, quiet):
-   hardest first step 24 s -> 10.0 s.
+   `R2 U2 L D' ...`: first step 14.1-14.8 s -> 6.2-6.6 s, second step's
+   rows final 6.9-8.9 s -> 3.5-3.9 s; hardest known scramble
+   `D R2 U' B2 ...` first step 25-35 s -> 9.6-11.8 s, second 5 -> 2-2.3 s;
+   `F2 U2 B2 D ...` second step's rows final at 6.5-9.3 s (its multislots
+   end at 16-18 s), the next step after an early click 2.3-2.5 s. Node
+   (pools, quiet): hardest first step 24 s -> 10.0 s. Headless Chrome
+   reports 2 threads here (2 ranking workers); a 4-thread report gets 3.
 
 **Twenty-ninth pass (2026-10-09).** User tasks: (1) rankings had got much
 worse with the complete search: retune on the professional solves only,
