@@ -1751,7 +1751,8 @@ function postProcessComplete(ctx, p, cores) {
   // solutions that look best, scored exactly, as real candidates
   if (p.seedOnly) {
     const keyed = [];
-    for (const core of cores || []) if (core && !seen.has(core)) { seen.add(core); keyed.push([SPELLING.plainEstimate(core.split(' '), isRoot), core]); }
+    const estimate = SPELLING.plainEstimator(isRoot);
+    for (const core of cores || []) if (core && !seen.has(core)) { seen.add(core); keyed.push([estimate(core.split(' ')), core]); }
     keyed.sort((x, y) => x[0] - y[0]);
     cores = keyed.slice(0, 4 * p.topN).map(x => x[1]);
     seen.clear();
@@ -1885,6 +1886,7 @@ function postProcessComplete(ctx, p, cores) {
     extra,
     maxRL: wide ? undefined : 0,
     maxUDF: wide ? undefined : 0,
+    exact: p.pairCount > 0, // first steps: crosses walk cheaply (spelling-search.js)
     seedOnly: !!p.seedOnly,
   });
   for (const c of list) delete c.key;

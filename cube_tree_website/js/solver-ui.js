@@ -307,7 +307,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             // (solver-bridge.js: its type's current limits)
             const job = prepare ? prepare(queued) : queued;
             const id = nextId++;
-            jobs.set(id, { resolve, reject });
+            // window.CUBETREE_TRACE = [] records ranking jobs (dev timing)
+            const trace = typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE) ? window.CUBETREE_TRACE : null;
+            if (trace) trace.push([performance.now(), 'start', id, job.pairCount, cores.length, job.seedOnly ? 'seed' : '']);
+            jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject });
             w.pending.add(id);
             w.postMessage({ id, ctx, job, cores });
           }
@@ -611,6 +614,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const count = (n) => n.toLocaleString('en-US');
 
   function renderActiveResults(results, partial = false) {
+    // dev timing hook (window.CUBETREE_TRACE): the list on screen
+    if (typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE)) window.CUBETREE_SHOWN = results;
     shownOwner = activeStepKey();
     renderResults(results, partial ? 'no results yet.' : 'no results at this step with the current settings. try multislot, wide moves, fewer filters, or undo.');
     // The time limit cut some engine calls (or look-ahead searches) short.

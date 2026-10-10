@@ -154,7 +154,7 @@ test('forward rows meet the bound table at every cut', () => {
     for (let k = 0; k < 30; k++) {
       const face = randomFace(3 + (k % 8)).map(x => t.TID.get(x));
       const n = face.length;
-      const H = SpellingSearch.boundTable(face, null, mm, pen, L, 0, Infinity, 0, false, n, !root);
+      const H = SpellingSearch.boundTable(face, null, mm, pen, L, 0, Infinity, 0, n, !root);
       const lb = lt => (lt >= 0 ? mm[lt] + STEP_PENALTIES.natural * L.lm.trigramBits(L.lm.START, L.lm.START, L.id[lt]) : 0);
       let want = Infinity;
       for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) want = Math.min(want, H[(n * t.NR + ld) * 3] + lb(lt));
@@ -172,7 +172,7 @@ test('forward rows meet the bound table at every cut', () => {
   assert.ok(checked > 300, `${checked} cuts checked`);
 });
 
-test('the bound is a lower bound of the real cost', () => {
+test('both bounds are lower bounds of the real cost', () => {
   // enumerate with an infinite budget and compare each leaf's real cost
   // with the bound the search pruned against (H at the root of its walk).
   const t = SpellingSearch.tables();
@@ -185,10 +185,19 @@ test('the bound is a lower bound of the real cost', () => {
     for (let k = 0; k < (root ? 6 : 25); k++) {
       const face = randomFace(root ? 4 : 5 + (k % 3)).map(x => t.TID.get(x));
       const L = SpellingSearch.lmTables();
-      const H = SpellingSearch.boundTable(face, null, SpellingSearch.mccMinimum(), SpellingSearch.penalties(), L, 0, Infinity, 0, true, face.length, !root);
+      const mm = SpellingSearch.mccMinimum();
+      const pen = SpellingSearch.penalties();
+      const H = SpellingSearch.boundTable(face, null, mm, pen, L, 0, Infinity, 0, face.length, !root);
+      const X = SpellingSearch.exactTable(face, SpellingSearch.newExactTable(), mm, pen, L, 0, Infinity, 0, !root);
       const leastFrom = new Map();
+      const exactFrom = new Map();
       const lm = L.lm;
-      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) leastFrom.set(ld, H[(face.length * t.NR + ld) * SpellingSearch.FLAGS] + (lt >= 0 ? SpellingSearch.mccMinimum()[lt] + STEP_PENALTIES.natural * lm.trigramBits(lm.START, lm.START, L.id[lt]) : 0));
+      const NT1 = L.NT1;
+      for (const [lt, ld] of root ? t.LEAD_ROOT : t.LEAD_LATER) {
+        const lead = lt >= 0 ? mm[lt] + STEP_PENALTIES.natural * lm.trigramBits(lm.START, lm.START, L.id[lt]) : 0;
+        leastFrom.set(ld, H[(face.length * t.NR + ld) * SpellingSearch.FLAGS] + lead);
+        exactFrom.set(ld, X.V[face.length * t.NR * NT1 * NT1 + (ld * NT1 + t.NT) * NT1 + (lt >= 0 ? lt : t.NT)] + lead);
+      }
       SpellingSearch.enumerate([{ face, look: 0 }], {
         root,
         budget: () => Infinity,
@@ -197,6 +206,7 @@ test('the bound is a lower bound of the real cost', () => {
           const cost = costOf(alg);
           const least = leastFrom.get(lead);
           assert.ok(cost - floor >= least - 1e-9, `${alg}: ${cost - floor} < bound ${least}`);
+          assert.ok(cost - floor >= exactFrom.get(lead) - 1e-9, `${alg}: ${cost - floor} < exact bound ${exactFrom.get(lead)}`);
           checked++;
         },
       });
