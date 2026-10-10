@@ -343,6 +343,9 @@ runs; after any other written token (wide, rotation, split quarter) the
 next token's bits are MIN1 plus `AFTER` (the least extra any first token of
 the next move has after that token). Rows depend only on the last moves +
 2 of context, so solutions sorted by their endings share rows.
+(Thirty-first pass: five flags -- a wide turn's own token and the plain
+token after it are tracked exactly, `wideLanding` -- and the last rows stop
+early against the solution's forward rows; see "Where we left off".)
 
 Thirty-first pass: the jobs of a step type share their limits while they
 run (worker pools): `enumerate` is a generator that pauses about every
