@@ -16,6 +16,14 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 inside a first step, look-ahead depth 1-3 -- were already in and verified:
 tree clean, every suite passing, one commit not yet pushed).
 
+**Result of the pass** (browser, headless Chrome, this 2-core machine, 8
+random-state scrambles x 4 steps, top row clicked as soon as the rows are
+final): default settings (cross only) first steps mean 3.0 s (max 4.1),
+later steps mean 20.4 -> 8.1 s (max 103 -> 26.3 s; the first pair after the
+cross 6.9-26.3 s, every later pair <= 12.9 s); xcross + xxcross first steps
+mean 6.5 -> 5.6 s (max 10.3 -> 8.5), later mean 2.2 s (max 6.8). Every
+change kept the result lists identical (md5).
+
 1. **Default settings were the slow case.** With the configuration page's
    defaults (white, cross only) the first pair after a plain cross took
    10-103 s in the browser (8 random-state scrambles, `bench.js`-style CDP
@@ -695,12 +703,18 @@ not look-ahead optimal).
 ## Open
 
 1. **Speed** (user goal, thirtieth/thirty-first pass: ~10 s per step,
-   optimality kept). Browser, this 2-core machine: xcross + xxcross first
-   steps 4.8-10.3 s, later 0.5-7.3 s; default settings (cross only) first
-   steps 2.7-4.5 s, the first pair after the cross 10-30 s (the slow case
-   left), later pairs 5-13 s. The first pair is CPU-bound with ideal limits
-   (thirty-first pass, item 6): a cheaper exact-context row at later steps
-   (< 16 us) is the lever with the most room. Older levers: exact rows are still ~7 per root pair
+   optimality kept). Browser, this 2-core machine: xcross + xxcross every
+   step <= 8.5 s; default settings (cross only) first steps <= 4.1 s, later
+   pairs <= 12.9 s, the first pair after the cross 6.9-26.3 s (the slow case
+   left). That step: ~5-6 s of single-pair engine calls (one engine worker;
+   two workers measured no gain in Node), then ranking ~420k solutions with
+   the type's final limit almost from the start: per solution ~1.7 cheap
+   MITM rows + ~0.8 forward rows (5 flags, ~5.9 / ~11 us), ~8 us of
+   preparation; ~7% are walked. Next levers: preparation during the engine
+   phase (seed jobs could prepare every solution of their call and hand the
+   chunks typed arrays: ~10% of that step); the remaining bound slack is
+   mostly mid-step rotations (no rotations: 6.6% -> 3.0% walked; walks are
+   now cheap); the single-pair engine calls themselves (C++). Older levers: exact rows are still ~7 per root pair
    solution (an exact meet in the middle would share prefixes, but its
    forward memo is ~3 KB per prefix); per-solution work before ranking
    (luck check, pair-choice features: ~23 us x 65k crosses; engine order
