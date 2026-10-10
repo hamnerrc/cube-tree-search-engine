@@ -10,7 +10,8 @@
  *
  * Each call's solutions go to the next free worker, lowest look-ahead rank
  * first (as in the page); the worker runs solver-bridge.js's postProcessCall, the same function a search
- * runs in-thread without a postProcessor.
+ * runs in-thread without a postProcessor. Live jobs exchange limits with the
+ * search while they run, as in the page (solver-bridge.js liveHooks).
  */
 'use strict';
 const path = require('path');
@@ -23,9 +24,20 @@ if (!isMainThread && workerData && workerData.postProcessPool) {
     Object.assign(global, require(path.join(js, f)));
   }
   const { postProcessCall } = require(path.join(js, 'solver-bridge.js'));
-  parentPort.on('message', async ({ id, ctx, job, cores }) => {
+  // live limits, as js/postprocess-worker.js
+  const liveLimits = new Map();
+  parentPort.on('message', async ({ id, ctx, job, cores, live, limits }) => {
+    if (limits) { liveLimits.set(id, limits); return; }
+    const exchange = live ? async (snap) => {
+      if (snap) parentPort.postMessage({ id, report: snap });
+      await new Promise(r => setImmediate(r));
+      const l = liveLimits.get(id);
+      liveLimits.delete(id);
+      return l || null;
+    } : null;
     try {
-      const candidates = await postProcessCall(ctx, job, cores, null);
+      const candidates = await postProcessCall(ctx, job, cores, null, exchange);
+      liveLimits.delete(id);
       parentPort.postMessage({ id, candidates, stopped: !!candidates.stopped });
     } catch (err) {
       parentPort.postMessage({ id, error: String((err && err.stack) || err) });
@@ -50,33 +62,47 @@ async function createPostProcessPool(size) {
   let nextId = 0;
   const pump = () => {
     for (;;) {
-      const w = workers.find(x => x.pending < IN_FLIGHT);
-      if (!w || !queue.length) return;
+      if (!queue.length) return;
       let best = 0;
       for (let i = 1; i < queue.length; i++) {
         const c = compareSearchRanks(queue[i].rank, queue[best].rank);
         if (c < 0 || (c === 0 && queue[i].cores.length > queue[best].cores.length)) best = i;
       }
-      const { ctx, job: queued, cores, prepare, resolve, reject } = queue.splice(best, 1)[0];
+      // a seed job (a big call's first, quick job: its type's limits for
+      // every other job) may share a worker with a running job, which waits
+      // at its next pause (as the page's pool)
+      const seed = queue[best].job.seedOnly;
+      const w = workers.find(x => x.pending < IN_FLIGHT)
+        || (seed ? workers.find(x => x.pending < IN_FLIGHT + 1 && !x.seeding) : null);
+      if (!w) return;
+      const { ctx, job: queued, cores, prepare, live, resolve, reject } = queue.splice(best, 1)[0];
       const job = prepare ? prepare(queued) : queued; // the caller's last word (solver-bridge.js)
       const id = nextId++;
-      inFlight.set(id, { resolve, reject });
+      inFlight.set(id, { resolve, reject, live, seed });
       w.pending++;
-      w.postMessage({ id, ctx, job, cores });
+      if (seed) w.seeding = true;
+      if (global.process.env.TRACE_POOL) console.error( // dev timing: job timeline
+        'T', Date.now() % 1e6, 'start', id, 'w', workers.indexOf(w), job.pairCount, cores.length, seed ? 'seed' : '', JSON.stringify((job.limits || []).map(x => +x.toFixed(3))));
+      w.postMessage({ id, ctx, job, cores, live: !!live });
+      if (live) live.attach((limits) => { if (inFlight.has(id)) w.postMessage({ id, limits }); });
     }
   };
   for (const w of workers) {
-    w.on('message', ({ id, candidates, error, stopped }) => {
-      if (stopped && candidates) candidates.stopped = true;
+    w.on('message', ({ id, candidates, error, stopped, report }) => {
       const p = inFlight.get(id);
+      if (report) { if (p && p.live) p.live.report(report); return; }
+      if (stopped && candidates) candidates.stopped = true;
       inFlight.delete(id);
+      if (global.process.env.TRACE_POOL) console.error('T', Date.now() % 1e6, 'end', id);
       w.pending--;
+      if (p.seed) w.seeding = false;
+      if (p.live) p.live.detach();
       if (error) p.reject(new Error(error)); else p.resolve(candidates);
       pump();
     });
   }
-  const process = (ctx, job, cores, rank = null, prepare = null) => new Promise((resolve, reject) => {
-    queue.push({ ctx, job, cores, rank, prepare, resolve, reject });
+  const process = (ctx, job, cores, rank = null, prepare = null, live = null) => new Promise((resolve, reject) => {
+    queue.push({ ctx, job, cores, rank, prepare, live, resolve, reject });
     pump();
   });
   process.workers = workers.length; // solver-bridge.js completeChunks

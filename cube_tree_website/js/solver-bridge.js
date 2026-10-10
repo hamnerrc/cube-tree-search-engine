@@ -1134,12 +1134,22 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   const startOrder = deadline
     ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
     : (isRoot ? plan : plan.slice().sort((a, b) => (a.pairCount > 1) - (b.pairCount > 1)));
+  // ... and the multislot engine calls wait until the single-pair calls are
+  // ranked: on a machine with few cores the engine worker otherwise takes a
+  // core from the ranking of the rows a solver is waiting for (a first pair
+  // after a plain cross: 49 s -> see PROJECT_STATUS). Only the start order
+  // changes, never what is searched.
+  let releaseMultislots = null;
+  const singlesRanked = !isRoot && !deadline && session.holdMultislots !== false
+    ? new Promise((resolve) => { releaseMultislots = resolve; })
+    : null;
   for (const p of startOrder) {
     // Complete search: face turns only (every rotation and wide spelling is
     // derived from them afterwards, spelling-search.js), every solution.
     const extra = { ...(session.proMoves && !p.complete ? proEngineOptions(p.callRotation, isRoot) : {}), ...(deadline ? { deadline } : {}) };
     if (session.wideMoves === false && extra.allowedMoves) extra.allowedMoves = withoutWide(extra.allowedMoves);
     const deepen = async (stopped) => {
+      if (singlesRanked && p.pairCount > 1) await singlesRanked;
       let raw = !isRoot && p.pairCount > 1
         ? await splitByFirstMove(engine, p, extra, stopped)
         : await solverCallFor(engine, p.allCorners, p.scramble, p.callRotation, p.maxLength, p.postAlgForCall, p.effectiveMaxSolutions, extra);
@@ -1207,15 +1217,16 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // (finished calls), so a call's spellings only compete for places its type
   // still has (the type's N-th best only gets better).
   const typeBest = new Map();
-  // ... and the seed results of its type's big calls still being ranked
-  // (real candidates of other calls: their N-th best bounds this call too;
-  // dropped once that call is done, whose own results then count instead).
+  // ... and the seed results of its type's big calls still being ranked,
+  // the call's own included (real candidates, each once: their N-th best
+  // bounds every call of the type; dropped once that call is done, whose
+  // own results then count instead).
   const typeLimits = (p) => {
     const best = typeBest.get(p.category);
     return RESULT_VIEWS.map((_, v) => {
       let tpps = best ? best[v] : [];
       for (const q of plan) {
-        if (q !== p && q.category === p.category && q.seedViews && !q.noted) tpps = tpps.concat(q.seedViews[v]);
+        if (q.category === p.category && q.seedViews && !q.noted) tpps = tpps.concat(q.seedViews[v]);
       }
       if (tpps !== (best && best[v])) tpps = tpps.slice().sort((a, b) => a - b);
       return tpps.length >= p.topN ? tpps[p.topN - 1] : Infinity;
@@ -1226,10 +1237,88 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     if (!p.complete || !p.candidates.length) return;
     let best = typeBest.get(p.category);
     if (!best) typeBest.set(p.category, (best = RESULT_VIEWS.map(() => [])));
+    // each result once (its chunks may have found the same one)
+    const byKey = new Map();
+    for (const c of p.candidates) {
+      const k = dedupeKey(c);
+      const o = byKey.get(k);
+      if (!o || c.tpp < o.tpp) byKey.set(k, c);
+    }
+    const own = [...byKey.values()];
     RESULT_VIEWS.forEach((view, v) => {
-      const merged = best[v].concat(p.candidates.filter(view.test).map(c => c.tpp)).sort((a, b) => a - b);
+      const merged = best[v].concat(own.filter(view.test).map(c => c.tpp)).sort((a, b) => a - b);
       best[v] = merged.slice(0, p.topN);
     });
+  };
+  // Live limits (worker pools): every running ranking job of a complete call
+  // reports its kept candidates now and then (TopViews.snapshot: key, TPP,
+  // views) and gets back, per view, the N-th best of its type among the
+  // finished calls and every running job -- real candidates, each counted
+  // once (a key may turn up in two chunks of one call; different calls
+  // reach different nodes) -- so the jobs of a type prune like one job.
+  const liveCalls = new Map(); // call -> Set of its running jobs' records
+  const liveScheduled = new Set();
+  const mergedLimits = (category, topN) => {
+    const best = typeBest.get(category);
+    const per = RESULT_VIEWS.map((_, v) => (best ? best[v].slice() : []));
+    for (const [q, recs] of liveCalls) {
+      if (q.category !== category) continue;
+      const byKey = new Map();
+      for (const r of recs) {
+        if (!r.snap) continue;
+        for (const [key, tpp, mask] of r.snap) {
+          const o = byKey.get(key);
+          if (!o || tpp < o[0]) byKey.set(key, [tpp, mask]);
+        }
+      }
+      for (const [tpp, mask] of byKey.values()) {
+        for (let v = 0; v < per.length; v++) if ((mask >> v) & 1) per[v].push(tpp);
+      }
+    }
+    return per.map((a) => {
+      if (a.length < topN) return Infinity;
+      a.sort((x, y) => x - y);
+      return a[topN - 1];
+    });
+  };
+  const broadcast = (category) => {
+    liveScheduled.delete(category);
+    let merged = null;
+    for (const [q, recs] of liveCalls) {
+      if (q.category !== category) continue;
+      if (!merged) merged = mergedLimits(category, q.topN);
+      const own = typeLimits(q);
+      const limits = merged.map((l, v) => Math.min(l, own[v]));
+      for (const r of recs) {
+        if (!r.push || !limits.some((l, v) => l < r.sent[v])) continue;
+        r.sent = limits;
+        r.push(limits);
+      }
+    }
+  };
+  const scheduleBroadcast = (category) => {
+    if (liveScheduled.has(category)) return;
+    liveScheduled.add(category);
+    setTimeout(() => broadcast(category), LIVE_BROADCAST_MS);
+  };
+  const liveHooks = (p) => {
+    const rec = { snap: null, push: null, sent: RESULT_VIEWS.map(() => Infinity) };
+    const later = () => scheduleBroadcast(p.category);
+    return {
+      // the pool: push(limits) sends limits to the job's worker
+      attach(push) {
+        rec.push = push;
+        if (!liveCalls.has(p)) liveCalls.set(p, new Set());
+        liveCalls.get(p).add(rec);
+        later();
+      },
+      report(snap) { rec.snap = snap; later(); },
+      detach() {
+        rec.push = null;
+        const recs = liveCalls.get(p);
+        if (recs) { recs.delete(rec); if (!recs.size) liveCalls.delete(p); }
+      },
+    };
   };
   const processCall = async (p) => {
     p.candidates = [];
@@ -1259,6 +1348,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       p.big = true;
       await Promise.all(others.map(q => q.processing.catch(() => {})));
     }
+    if (!(p.complete && session.postProcessor && cores.length > COMPLETE_CHUNK)) p.markSeeded();
     const job = postProcessJob(session, p);
     if (p.complete) job.limits = typeLimits(p);
     // A worker pool may start the job later: by then more calls of its type
@@ -1275,16 +1365,24 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       const seedList = await session.postProcessor(ctx, { ...job, seedOnly: true, corpus: null }, cores, rank, refresh);
       job.limits = completeSeedLimits(seedList, p.topN, job.limits);
       p.seedViews = RESULT_VIEWS.map(view => seedList.filter(view.test).map(c => c.tpp).sort((a, b) => a - b).slice(0, p.topN));
+      p.markSeeded();
+      // The chunks start once every big call of the type has its seeds
+      // (quick jobs): their N-th best together is close to the type's final
+      // one, while a call ranked before the others' engine calls finish
+      // only knows its own (a first pair after a plain cross: the first of
+      // four calls walked 73% of its solutions instead of ~45%).
+      await Promise.all(plan.filter(q => q !== p && q.complete && q.category === p.category).map(q => q.seedReady));
       const chunks = completeChunks(cores, session.postProcessor.workers);
-      const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank, refresh)));
+      const parts = await Promise.all(chunks.map((c, k) => session.postProcessor(ctx, k ? { ...job, corpus: null } : job, c, rank, refresh, liveHooks(p))));
       p.candidates = [].concat(...parts);
     } else {
       p.candidates = session.postProcessor
-        ? await session.postProcessor(ctx, job, cores, rank, refresh)
+        ? await session.postProcessor(ctx, job, cores, rank, refresh, p.complete ? liveHooks(p) : null)
         : await postProcessCall(ctx, job, cores, yieldState);
     }
     listed += p.candidates.length;
     noteTypeBest(p);
+    if (p.complete && liveCalls.size) scheduleBroadcast(p.category);
     // Cut short by the time budget (postProcessCall stopped at job.stopAt).
     if (postStop && p.candidates.stopped && !(deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions)) truncatedCalls++;
   };
@@ -1317,7 +1415,17 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     lastPartial = now();
     onPartial(list);
   };
-  for (const p of plan) p.processing = p.cores.then(() => processCall(p));
+  // seedReady: a complete call's seeds are known (or it has none: small,
+  // failed or stopped), see processCall
+  for (const p of plan) p.seedReady = new Promise((resolve) => { p.markSeeded = resolve; });
+  for (const p of plan) {
+    p.processing = p.cores.then(() => processCall(p));
+    p.processing.then(p.markSeeded, p.markSeeded);
+  }
+  if (releaseMultislots) {
+    Promise.all(plan.filter(p => !(p.pairCount > 1)).map(p => p.processing.catch(() => {})))
+      .then(releaseMultislots);
+  }
   await Promise.all(plan.map(p => p.processing.then(() => {
     p.processed = true;
     maybeEmitPartial();
@@ -1499,8 +1607,8 @@ function pathCostFor(ctx, alg) {
  * arguments, so it gives the same list on the main thread or in a worker.
  * `yieldState` (main thread only) lets the page breathe between solutions.
  */
-async function postProcessCall(ctx, p, cores, yieldState) {
-  if (p.complete) return postProcessComplete(ctx, p, cores);
+async function postProcessCall(ctx, p, cores, yieldState, live = null) {
+  if (p.complete) return postProcessComplete(ctx, p, cores, live);
   const candidates = [];
   const { isRoot } = ctx;
   const wideOn = ctx.wideMoves !== false;
@@ -1828,7 +1936,7 @@ async function postProcessCall(ctx, p, cores, yieldState) {
  * spelling reaches is read off the physical result per end rotation. Pure,
  * like postProcessCall.
  */
-function postProcessComplete(ctx, p, cores) {
+async function postProcessComplete(ctx, p, cores, live = null) {
   const { isRoot } = ctx;
   const base = isRoot ? p.baseRotation : ctx.rotation;
   const weights = ctx.lookWeights;
@@ -1968,7 +2076,7 @@ function postProcessComplete(ctx, p, cores) {
     }));
   }
   const wide = p.wideMoves !== false;
-  const { list } = SPELLING.topSpellings({
+  const spec = {
     sols,
     root: isRoot,
     pieces: p.pieces,
@@ -1984,10 +2092,20 @@ function postProcessComplete(ctx, p, cores) {
     maxUDF: wide ? undefined : 0,
     exact: p.pairCount > 0, // first steps: crosses walk cheaply (spelling-search.js)
     seedOnly: !!p.seedOnly,
-  });
+  };
+  // live (a worker pool's job): limits from the other running jobs of the
+  // step type, taken about every LIVE_PAUSE_MS (searchCurrentNode's liveHooks)
+  const { list } = live && !p.seedOnly
+    ? await SPELLING.topSpellingsLive({ ...spec, live, pauseMs: LIVE_PAUSE_MS })
+    : SPELLING.topSpellings(spec);
   for (const c of list) delete c.key;
   return list;
 }
+
+// How often a pool job exchanges limits with the other jobs of its type,
+// and how long the page gathers reports before answering them.
+const LIVE_PAUSE_MS = 100;
+const LIVE_BROADCAST_MS = 30;
 
 // A candidate's identity for deduplication, cached per candidate object
 // (partial result lists rank the same candidates repeatedly).

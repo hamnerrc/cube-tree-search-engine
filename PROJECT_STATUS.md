@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-09 (thirtieth pass).*
+*Last updated 2026-10-10 (thirty-first pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,41 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-first pass (2026-10-10).** Same user tasks as the thirtieth
+(speed with optimality kept, ~10 s per step; the two rules -- no rotation
+inside a first step, look-ahead depth 1-3 -- were already in and verified:
+tree clean, every suite passing, one commit not yet pushed).
+
+1. **Default settings were the slow case.** With the configuration page's
+   defaults (white, cross only) the first pair after a plain cross took
+   10-103 s in the browser (8 random-state scrambles, `bench.js`-style CDP
+   run: later steps mean 20.4 s): four single-pair calls of 28k-187k
+   solutions (<= 10 turns) whose type-wide 300th best is ~7 TPP behind the
+   best, so about half the solutions must be walked even with perfect
+   limits. Chrome ranks as fast as Node (same call 7.0 vs 7.1 s): the loss
+   was scheduling.
+2. **Live limits** (`liveHooks`, `topSpellingsLive`, `TopViews.snapshot` /
+   `tighten`): a pool job pauses about every 100 ms (enumerate is a
+   generator; the sync path is unchanged), posts its kept candidates (key,
+   TPP, views) and takes back, per view, the N-th best of its type among
+   finished calls, every running job (each key once) and the seeds. The
+   jobs of a type prune like one job. Brute-force test with two jobs.
+3. **Chunks wait for every big call's seeds** of their type (`seedReady`;
+   quick jobs): a call ranked before the others' engine calls finished only
+   knew its own N-th best (the first of four calls walked 73% of its
+   solutions, ~45% with the type's limit). A call's own seeds now count in
+   its limits too (they were left out). Seed jobs may share a busy worker.
+4. **Multislot engine calls start after the single-pair calls are ranked**
+   (later steps, no time limit): the engine worker no longer takes a core
+   from the rows being waited for. Only start order changes.
+5. Results identical (md5 of whole lists, Node pools, 5 scrambles x 2-3
+   steps, both settings). Browser, default settings, 8 scrambles x 4
+   steps: later steps mean 20.4 -> 10.1 s, max 103 -> 30.3 s; first steps
+   unchanged (2.6-6.7 s, one 9.9 s). Node pools, first pair after a cross:
+   26.2 -> 17.7, 26.7 -> 20.3, 12.0 -> 9.5 s; third steps 8.6 -> 4.9 s.
+   Tried and dropped: two jobs per worker (interleaved at pauses: slower),
+   no in-chunk seeding when limits are known (noise).
 
 **Thirtieth pass (2026-10-09).** User tasks: (1) search speed with the
 optimality guarantee kept, ~10 s per step as the goal; (2) a first step

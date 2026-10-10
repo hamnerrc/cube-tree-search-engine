@@ -235,5 +235,59 @@ test('both bounds are lower bounds of the real cost', () => {
   assert.ok(checked > 5000, `${checked} spellings checked`);
 });
 
-if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }
-console.log('\nAll spelling-search tests passed.');
+// Two jobs sharing limits while they run (solver-bridge.js liveHooks): each
+// takes, at its pauses, the N-th best per view among both jobs' kept
+// candidates (each key once); their lists together hold the exact best N.
+async function liveTest() {
+  const name = 'jobs sharing live limits: the best N of both together equal brute force';
+  try {
+    const stepAlgs = ["F R' F' R", "U R U' R'"];
+    const faces = Array.from({ length: 400 }, () => randomFace(3));
+    const size = 12;
+    const holder = {};
+    const costOf = alg => stepsPathCost(holder, stepAlgs, alg);
+    costOf('R');
+    const floor = SpellingSearch.mccFloor(holder._costBase.mcc) + holder._costBase.penalty;
+    const make = (alg, lead, end, sol, tpp) => ({ alg, end, sol: sol.id, tpp, key: commuteNormalize(alg), wide: isWideAlg(alg), unorthodox: isUnorthodox(alg) });
+    const snaps = [null, null];
+    let pauses = 0;
+    let tightened = 0;
+    const limits = () => VIEWS.map((_, v) => {
+      const byKey = new Map();
+      for (const s of snaps) for (const [key, tpp, mask] of s || []) if ((mask >> v) & 1 && !(byKey.get(key) <= tpp)) byKey.set(key, tpp);
+      const t = [...byKey.values()].sort((a, b) => a - b);
+      return t.length >= size ? t[size - 1] : Infinity;
+    });
+    // looks as run() gives them (by the solution's index among all)
+    const job = (k, from, to) => SpellingSearch.topSpellingsLive({
+      sols: faces.slice(from, to).map((face, i) => ({ face, look: ((from + i) % 3) - 1, id: from + i })),
+      root: false, pieces: 5, floor, costOf, views: VIEWS, size, make, pauseMs: 1e-6,
+      live: async (snap) => {
+        pauses++;
+        if (snap) snaps[k] = snap;
+        await new Promise(r => setImmediate(r));
+        const l = limits();
+        if (l.some(Number.isFinite)) tightened++;
+        return l;
+      },
+    });
+    const [a, b] = await Promise.all([job(0, 0, 200), job(1, 200, 400)]);
+    assert.ok(pauses >= 6 && tightened >= 4, `limits exchanged (${pauses} pauses, ${tightened} with limits)`);
+    const all = run(stepAlgs, false, faces, size, true);
+    const joined = a.list.concat(b.list);
+    for (let v = 0; v < VIEWS.length; v++) {
+      const best = new Map();
+      for (const c of joined.filter(VIEWS[v].test)) if (!best.has(c.key) || best.get(c.key).tpp > c.tpp) best.set(c.key, c);
+      const got = [...best.values()].sort((x, y) => x.tpp - y.tpp).slice(0, size).map(c => c.tpp);
+      const want = new Map();
+      for (const c of all.list.filter(VIEWS[v].test)) if (!want.has(c.key) || want.get(c.key).tpp > c.tpp) want.set(c.key, c);
+      assert.deepStrictEqual(got, [...want.values()].sort((x, y) => x.tpp - y.tpp).slice(0, size).map(c => c.tpp), `view ${v}`);
+    }
+    console.log(`PASS: ${name}`);
+  } catch (err) { failures++; console.error(`FAIL: ${name}\n  ${err.stack}`); }
+}
+
+liveTest().then(() => {
+  if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }
+  console.log('\nAll spelling-search tests passed.');
+});

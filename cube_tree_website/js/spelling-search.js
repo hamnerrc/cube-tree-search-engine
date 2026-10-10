@@ -954,7 +954,18 @@ const SpellingSearch = (() => {
    * }
    * Returns stats { solutions, walked, nodes }.
    */
+  // enumerate runs as a generator: with opts.pauseMs it yields between
+  // solutions about every pauseMs, so an async caller (topSpellingsLive) can
+  // take tighter limits from other jobs in between; without it, it never
+  // yields and enumerate() runs it to the end at once.
   function enumerate(sols, opts) {
+    const run = enumerateSteps(sols, opts);
+    for (;;) {
+      const r = run.next();
+      if (r.done) return r.value;
+    }
+  }
+  function* enumerateSteps(sols, opts) {
     const t = tables();
     const L = lmTables();
     const mccMin = mccMinimum();
@@ -1003,6 +1014,11 @@ const SpellingSearch = (() => {
     for (let k = 0; k < t.NT; k++) if (!IS_ROT[k]) minMove = Math.min(minMove, pen[k] + lam * L.MIN1[k]);
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const tStart = now();
+    // pause points (see enumerateSteps): checked every 64 solutions
+    const pauseMs = opts.pauseMs || 0;
+    let lastPause = tStart;
+    let tick = 0;
+    const pauseDue = () => pauseMs > 0 && (++tick & 63) === 0 && now() - lastPause >= pauseMs;
     const written = new Int32Array(64);
     const done = new Uint8Array(sols.length);
     // Phase 1: a cheap estimate (not a bound) of each solution's plain
@@ -1193,6 +1209,7 @@ const SpellingSearch = (() => {
     };
     let H = null;
     for (const k of first) {
+      if (pauseDue()) { yield; lastPause = now(); }
       n = sols[k].face.length;
       if (exact) exactTable(sols[k].face, X, mccMin, pen, L, 0, Infinity, 0, later);
       else Hw = H = boundTable(sols[k].face, H, mccMin, pen, L, 0, Infinity, 0, n, later);
@@ -1252,6 +1269,7 @@ const SpellingSearch = (() => {
     let prev = null;
     let prevRows = 0;
     for (const k of byEnd) {
+      if (pauseDue()) { yield; lastPause = now(); }
       const face = sols[k].face;
       n = face.length;
       const stop = budgetNow() - sols[k].look;
@@ -1324,6 +1342,7 @@ const SpellingSearch = (() => {
       this.views = views;
       this.size = size;
       this.initial = initial || views.map(() => Infinity);
+      this.given = this.initial;
       this.heaps = views.map(() => []);
       this.keys = views.map(() => new Map());
     }
@@ -1362,6 +1381,33 @@ const SpellingSearch = (() => {
         }
       }
       return kept;
+    }
+
+    /** Lowers the per-view limits known from elsewhere (other jobs' real candidates). */
+    tighten(limits) {
+      let changed = false;
+      for (let v = 0; v < this.views.length; v++) {
+        if (limits[v] < this.initial[v]) {
+          if (this.initial === this.given) this.initial = this.initial.slice();
+          this.initial[v] = limits[v];
+          changed = true;
+        }
+      }
+      return changed;
+    }
+
+    /**
+     * The kept candidates as [key, tpp, view mask] (each once), for other
+     * jobs' limits (a view's N-th best among real candidates bounds it).
+     */
+    snapshot() {
+      const mask = new Map();
+      for (let v = 0; v < this.heaps.length; v++) {
+        for (const c of this.heaps[v]) mask.set(c, (mask.get(c) || 0) | (1 << v));
+      }
+      const out = [];
+      for (const [c, m] of mask) out.push([c.key, c.tpp, m]);
+      return out;
     }
 
     /** Every kept candidate once, best first. */
@@ -1416,6 +1462,31 @@ const SpellingSearch = (() => {
   // (which ties survive would then depend on the order calls finish in).
   const BUDGET_EPS = 1e-9;
   function topSpellings(o) {
+    const { run, finish } = spellingRun(o, 0);
+    for (;;) if (run.next().done) return finish();
+  }
+
+  /**
+   * topSpellings for a job that shares limits with other jobs while it runs
+   * (o.live(snapshot) -> per-view limits or null, awaited about every
+   * o.pauseMs; snapshot = TopViews.snapshot() of this job, null when nothing
+   * changed since the last call). Same result as topSpellings with the final
+   * limits given up front could have pruned more; exact either way.
+   */
+  async function topSpellingsLive(o) {
+    const { run, finish, top, retighten } = spellingRun(o, o.pauseMs || 100);
+    let version = -1;
+    for (;;) {
+      const r = run.next();
+      if (r.done) return finish();
+      const changed = top.version !== version;
+      version = top.version;
+      const limits = await o.live(changed ? top.snapshot() : null);
+      if (limits && top.tighten(limits)) retighten();
+    }
+  }
+
+  function spellingRun(o, pauseMs) {
     const t = tables();
     // faces as token ids (callers may pass them so already)
     const sols = o.sols.map(s => (typeof s.face[0] === 'number' || !s.face.length ? s : { ...s, face: s.face.map(x => t.TID.get(x)) }));
@@ -1428,7 +1499,9 @@ const SpellingSearch = (() => {
     for (const c of o.extra || []) top.offer(c);
     let budgets = null;
     let exact = 0;
-    const stats = enumerate(sols, {
+    top.version = 0;
+    const run = enumerateSteps(sols, {
+      pauseMs,
       root: o.root,
       seed: o.seed === undefined ? 2 * o.size : o.seed,
       seedOnly: !!o.seedOnly,
@@ -1450,11 +1523,15 @@ const SpellingSearch = (() => {
         if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor + BUDGET_EPS, limitTpp(true) * o.pieces - o.floor + BUDGET_EPS, limitTpp(false)];
         if (!(tpp <= budgets[2])) return;
         const c = o.make(alg, lead, end, sol, tpp);
-        if (c && top.offer(c)) budgets = null;
+        if (c && top.offer(c)) { budgets = null; top.version++; }
       },
     });
-    stats.exact = exact;
-    return { list: top.list(), stats };
+    const finish = () => {
+      const stats = run.result;
+      stats.exact = exact;
+      return { list: top.list(), stats };
+    };
+    return { run: { next: () => { const r = run.next(); if (r.done) run.result = r.value; return r; } }, finish, top, retighten: () => { budgets = null; } };
   }
 
   /**
@@ -1498,7 +1575,7 @@ const SpellingSearch = (() => {
     return tables().ROT_NAME[index];
   }
 
-  return { FLAGS, tables, enumerate, topSpellings, plainEstimate, plainEstimator, orientationName, boundTable, forwardStep, exactTable, newExactTable, mccMinimum, mccFloor, lmTables, penalties, TopViews, SPELLING_MAX_RL, SPELLING_MAX_UDF };
+  return { FLAGS, tables, enumerate, topSpellings, topSpellingsLive, plainEstimate, plainEstimator, orientationName, boundTable, forwardStep, exactTable, newExactTable, mccMinimum, mccFloor, lmTables, penalties, TopViews, SPELLING_MAX_RL, SPELLING_MAX_UDF };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

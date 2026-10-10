@@ -266,18 +266,21 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           const w = new Worker(`js/postprocess-worker.js${UI_SCRIPT_QUERY}`);
           w.pending = new Set();
           w.onmessage = (e) => {
-            const { id, candidates, error, stopped } = e.data;
-            if (stopped && candidates) candidates.stopped = true; // the time budget cut it (postProcessCall)
+            const { id, candidates, error, stopped, report } = e.data;
             const job = jobs.get(id);
+            // a live job's kept candidates (solver-bridge.js liveHooks)
+            if (report) { if (job && job.live) job.live.report(report); return; }
+            if (stopped && candidates) candidates.stopped = true; // the time budget cut it (postProcessCall)
             if (!job) return;
             jobs.delete(id);
             w.pending.delete(id);
+            if (job.live) job.live.detach();
             if (error) job.reject(new Error(error)); else job.resolve(candidates);
           };
           w.onerror = (e) => {
             console.error('Post-processing worker failed; using the main thread', e.message || e);
             w.broken = true;
-            for (const id of w.pending) { const job = jobs.get(id); jobs.delete(id); if (job) job.reject(new Error('worker failed')); }
+            for (const id of w.pending) { const job = jobs.get(id); jobs.delete(id); if (job) { if (job.live) job.live.detach(); job.reject(new Error('worker failed')); } }
             w.pending.clear();
           };
           return w;
@@ -307,7 +310,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
               const c = compareSearchRanks(x.rank, b.rank);
               if (c < 0 || (c === 0 && x.cores.length > b.cores.length)) best = i;
             }
-            const { ctx, job: queued, cores, prepare, resolve, reject } = waiting.splice(best, 1)[0];
+            const { ctx, job: queued, cores, prepare, live, resolve, reject } = waiting.splice(best, 1)[0];
             // prepare: the caller's last word on the job when it starts
             // (solver-bridge.js: its type's current limits)
             const job = prepare ? prepare(queued) : queued;
@@ -315,14 +318,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
             // window.CUBETREE_TRACE = [] records ranking jobs (dev timing)
             const trace = typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE) ? window.CUBETREE_TRACE : null;
             if (trace) trace.push([performance.now(), 'start', id, job.pairCount, cores.length, job.seedOnly ? 'seed' : '']);
-            jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject });
+            jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject, live });
             w.pending.add(id);
-            w.postMessage({ id, ctx, job, cores });
+            w.postMessage({ id, ctx, job, cores, live: !!live });
+            if (live) live.attach((limits) => { if (jobs.has(id)) w.postMessage({ id, limits }); });
           }
         };
-        const send = (ctx, job, cores, rank, prepare, owner) => new Promise((resolve, reject) => {
+        const send = (ctx, job, cores, rank, prepare, owner, live) => new Promise((resolve, reject) => {
           if (!workers.some(w => !w.broken)) { reject(new Error('no post-processing worker')); return; }
-          waiting.push({ ctx, job, cores, rank, prepare, resolve, reject, owner });
+          waiting.push({ ctx, job, cores, rank, prepare, resolve, reject, owner, live });
           pump();
         });
         for (const w of workers) {
@@ -332,7 +336,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           w.onerror = (e) => { fail(e); pump(); };
         }
         const make = (owner) => {
-          const f = (ctx, job, cores, rank, prepare) => send(ctx, job, cores, rank, prepare, owner)
+          const f = (ctx, job, cores, rank, prepare, live) => send(ctx, job, cores, rank, prepare, owner, live)
             .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
           f.workers = workers.length; // solver-bridge.js completeChunks
           // the same pool, its jobs tagged with a search job (stale: yields)
