@@ -1393,13 +1393,18 @@ const SpellingSearch = (() => {
         const stop = budgetNow() - sols[k].look;
         const fromC = firstRow(prevC, prevCRows, face);
         const cut = Math.max(0, n - MITM_ROWS);
-        HC = boundTable(face, HC, mccMin, pen, L, fromC, stop, minMove, n - cut, later);
+        // The forward rows first: their least bounds the first moves, so the
+        // last rows can stop as soon as the moves they cover, the moves
+        // between (minMove each) and that least exceed the budget.
+        const F = forwardAt(face, cut);
+        let leastF = Infinity;
+        for (let x = 0; x < NR * FLAGS; x++) if (F[x] < leastF) leastF = F[x];
+        HC = boundTable(face, HC, mccMin, pen, L, fromC, stop - leastF + cut * minMove, minMove, n - cut, later);
         stats.cheapRows += Math.max(0, boundRows + 1 - fromC);
         prevC = face;
         prevCRows = boundRows;
         if (boundRows < n - cut) continue;
         {
-          const F = forwardAt(face, cut);
           const row = (n - cut) * NR * FLAGS;
           let m = Infinity;
           for (let x = 0; x < NR * FLAGS; x++) { const v = F[x] + HC[row + x]; if (v < m) m = v; }
