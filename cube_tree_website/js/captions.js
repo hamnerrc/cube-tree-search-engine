@@ -92,9 +92,11 @@ const CAPTIONS = {
   // --- critique ---
   'critique.button': 'critique',
   'critique.title': 'how did it go?',
+  'critique.intro': 'here is each step next to my list.',
   'critique.step.top': '{label}: the best pick!',
   'critique.step.rank': '{label}: #{rank} of {total}, +{gap} tpp.',
   'critique.step.outside': '{label}: not in my search ({why}). tpp {tpp}.',
+  'critique.step.below': '{label}: below my top {total} (+{gap} tpp).',
   'critique.step.unsolved': 'this part doesn’t finish a step.',
   'critique.alt': 'try {alg}: {reason}',
   'critique.total': 'overall {stm} / tpp {tpp}.',

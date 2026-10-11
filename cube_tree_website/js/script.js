@@ -102,6 +102,19 @@ function readSearchConfig() {
     return Object.keys(config).length ? config : undefined;
 }
 
+/** The per-type limits table of the settings drawer (one row per category; the ids readSearchConfig reads). */
+function buildLimitsTable() {
+    const body = typeof document !== 'undefined' && document.getElementById('limits-body');
+    if (!body || body.children.length) return;
+    const names = { cross: 'cross', xcross: 'xcross', xxcross: 'xxcross', xxxcross: 'xxxcross', singlePair: 'pair', multislot: 'multislot' };
+    for (const key of SEARCH_CONFIG_CATEGORIES) {
+        const tr = document.createElement('tr');
+        const cell = (id, max, label) => `<td><input class="px-input" type="number" id="${id}" min="1" max="${max}" aria-label="${names[key]} ${label}"></td>`;
+        tr.innerHTML = `<td>${names[key]}</td>${cell(`cfg-${key}-maxsol`, 20000, 'max solutions')}${cell(`cfg-${key}-maxlen`, 20, 'move depth')}${cell(`cfg-${key}-pseudo-maxsol`, 20000, 'pseudo max solutions')}${cell(`cfg-${key}-pseudo-maxlen`, 20, 'pseudo move depth')}`;
+        body.appendChild(tr);
+    }
+}
+
 /** Inverse of readSearchConfig: fills the per-category inputs from a saved config. */
 function restoreSearchConfigInputs(searchConfig) {
     if (!searchConfig) return;
@@ -248,6 +261,8 @@ const scrambleController = {
         if (displayNode) {
             displayNode.textContent = this.sequenceList[this.activeIndex] ?? '';
         }
+        const countNode = document.getElementById('scramble-pos');
+        if (countNode) countNode.textContent = `${this.activeIndex + 1}/${this.sequenceList.length}`;
 
         if (typeof window.onActiveScrambleChanged === 'function') {
             window.onActiveScrambleChanged(this.activeIndex, this.sequenceList[this.activeIndex]);
@@ -1675,6 +1690,7 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', async () => {
         installInfoDialog();
+        buildLimitsTable();
         if (document.getElementById('scramble-input')) {
             // A corrupt saved blob only loses the restored values, not the page.
             try {

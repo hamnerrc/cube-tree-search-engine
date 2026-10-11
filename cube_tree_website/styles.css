@@ -105,7 +105,7 @@ body {
 }
 
 /* Algorithms and scrambles are case-sensitive (r is not R). */
-textarea, input, .moves, .alg, .scramble-text { text-transform: none; }
+textarea, input, .moves, .alg, .scramble-text, .editor, .editor *, .critique-list, .stat-card dd { text-transform: none; }
 textarea, input, select, button { font: inherit; color: inherit; }
 
 :focus-visible { outline: var(--px) dashed var(--accent); outline-offset: 3px; }
@@ -307,7 +307,7 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
     display: grid;
     grid-template-columns: minmax(300px, 1fr) minmax(340px, 1.05fr);
     gap: 26px var(--gap);
-    padding: 26px 16px 140px;
+    padding: 26px 16px 48px;
     max-width: 1320px;
     margin: 0 auto;
     align-items: start;
@@ -373,7 +373,7 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 .editor {
     position: relative;
     width: 100%;
-    min-height: 168px;
+    min-height: 128px;
     font-size: 23px;
     line-height: 30px;
     border: var(--px) solid var(--line);
@@ -403,7 +403,7 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 .editor textarea:focus { outline: none; }
 .editor:focus-within { outline: var(--px) dashed var(--accent); outline-offset: 3px; }
 .editor .editor-shadow { color: var(--ink); pointer-events: none; z-index: 1; overflow: hidden; }
-.editor .editor-sizer { visibility: hidden; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 168px; }
+.editor .editor-sizer { visibility: hidden; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 128px; }
 .editor .tok-comment { color: var(--accent); }
 .editor .tok-step { }
 .editor .tok-pending { color: var(--dim); }
@@ -486,14 +486,11 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 
 /* ---- avatar ------------------------------------------------------------- */
 .buddy {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    z-index: 40;
+    /* desktop: in the flow at the bottom of the right column; phones: a corner buddy (below) */
     display: flex;
     align-items: flex-end;
-    gap: 10px;
-    max-width: calc(100vw - 32px);
+    justify-content: flex-end;
+    gap: 14px;
 }
 .buddy-sprite {
     width: 72px; height: 72px;
@@ -508,7 +505,8 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 .buddy-sprite.bob canvas { animation: bob 1.2s steps(2) infinite; }
 @keyframes bob { 50% { transform: translateY(-2px); } }
 .bubble {
-    width: min(380px, calc(100vw - 120px));
+    flex: 1;
+    min-width: 0;
     padding: 20px 12px 10px;
     order: -1;
 }
@@ -586,7 +584,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 
 /* ---- phones ------------------------------------------------------------- */
 @media (max-width: 899px) {
-    .main { grid-template-columns: 1fr; padding-bottom: 110px; }
+    .main { grid-template-columns: 1fr; }
     .cube-stage { aspect-ratio: auto; height: 42vh; min-height: 240px; }
 }
 @media (max-width: 600px) {
@@ -595,9 +593,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
     .brand h1 { font-size: 15px; }
     .play-row { gap: 6px; }
     .avatar-grid { grid-template-columns: repeat(3, 1fr); }
-    .buddy { right: 10px; bottom: 10px; }
+    .buddy { position: fixed; right: 10px; bottom: 10px; z-index: 40; }
     .buddy-sprite { width: 56px; height: 56px; }
-    .buddy .bubble { position: fixed; left: 10px; right: 10px; bottom: 78px; width: auto; }
+    .buddy .bubble { position: fixed; left: 10px; right: 10px; bottom: 78px; width: auto; max-height: calc(100vh - 160px); overflow: auto; }
     .bubble::after { right: 22px; bottom: -12px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
     .buddy.collapsed .bubble { display: none; }
     .suggest li { grid-template-columns: 52px 12px 1fr auto; gap: 8px; }

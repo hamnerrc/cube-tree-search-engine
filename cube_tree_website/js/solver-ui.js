@@ -54,15 +54,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   let activeIndex = 0;
   let searchToken = 0; // bumped on every navigation/click to discard stale async results
 
-  function statusEl() { return document.getElementById('search-status'); }
-  // kind: 'busy' (a search is running: progress bar), 'done' or 'error'.
-  function setStatus(msg, kind = 'busy') {
-    const el = statusEl();
-    if (el) el.textContent = msg || '';
-    const box = document.getElementById('search-state');
-    if (box) box.dataset.state = kind;
-  }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -376,52 +367,74 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return sessions.get(index);
   }
 
-  // The committed solve, one labelled line per step as in pro_references.txt
-  // ("alg // label"), with copy and a Cubedb link (solutionLines/cubedbUrl).
-  function renderPath(session) {
-    const lines = solutionLines(session);
-    const list = document.getElementById('solution-steps');
-    if (list) {
-      list.innerHTML = lines.map((line) => {
-        const [alg, label] = line.split(' // ');
-        return `<li><span class="step-alg">${escapeHtml(alg)}</span><span class="step-label">${escapeHtml(label || '')}</span></li>`;
-      }).join('');
-    }
-    const empty = document.getElementById('solution-empty');
-    if (empty) empty.hidden = lines.length > 0;
-    const link = document.getElementById('cubedb-link');
-    if (link) link.href = cubedbUrl(session.scramble, lines);
-    const copy = document.getElementById('copy-btn');
-    if (copy) copy.disabled = !lines.length;
-    const copyAll = document.getElementById('copy-all-btn');
-    if (copyAll) copyAll.disabled = ![...sessions.values()].some(s => s.committedRows.length);
-    const count = document.getElementById('move-count');
-    if (count) {
-      count.hidden = !lines.length;
-      count.textContent = lines.length ? moveCounts(session).text : '';
-    }
+  const $ = id => document.getElementById(id);
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const profile = () => (typeof cubeProfiles !== 'undefined' && cubeProfiles ? cubeProfiles.active() : null);
+  const answers = () => (profile() && profile().answers) || {};
+  const prefs = () => ({ ...(typeof PROFILE_DEFAULT_PREFS !== 'undefined' ? PROFILE_DEFAULT_PREFS : {}), ...((profile() && profile().prefs) || {}) });
+
+  // ---------------------------------------------------------------------
+  // The solution as text: committed steps written back (rowsText), copy,
+  // copy all, Cubedb, move count (README "Solution entry").
+  // ---------------------------------------------------------------------
+
+  /** The committed steps as editor text, one per line (as found: the editor keeps steps uncancelled). */
+  function rowsText(session) {
+    const out = [];
+    let pairs = 0;
+    session.committedRows.forEach((row, i) => {
+      const node = session.nodeMap.get(row.targetNodeId);
+      const after = node ? (node.state.corners || []).length : pairs;
+      if (i === 0 && row.rotation) out.push(`${row.rotation} // inspection`);
+      out.push(`${row.coreAlg} // ${stepLabel(i === 0, pairs, after, /pseudo/i.test(row.type || ''))}`);
+      pairs = after;
+    });
+    return out.length ? out.join('\n') + '\n' : '';
   }
 
-  // Every scramble of the list, each as the copy button copies it (a
-  // scramble with no committed step is just its scramble), a blank line
-  // between them.
+  /** The uncommitted moves after the last step (as typed). */
+  const tailText = () => (reading && reading.tail.tokens.length ? reading.tail.tokens.join(' ') : '');
+
+  /** What copy writes: the scramble, the solution as a reconstruction (cancellations merged), then any unfinished moves. */
+  function copyText(session, tail = '') {
+    return solutionText(session) + (tail ? `\n${tail}` : '');
+  }
+
+  function renderPath(session) {
+    const lines = solutionLines(session);
+    const link = $('cubedb-link');
+    if (link) {
+      const tail = sessions.get(activeIndex) === session ? tailText() : '';
+      link.href = cubedbUrl(session.scramble, tail ? [...lines, tail] : lines);
+      link.setAttribute('aria-disabled', String(!lines.length && !tail));
+    }
+    const copy = $('copy-btn');
+    if (copy) copy.disabled = !lines.length && !tailText();
+    const copyAll = $('copy-all-btn');
+    if (copyAll) copyAll.disabled = ![...sessions.values()].some(s => s.committedRows.length);
+    const count = $('move-count');
+    if (count) count.textContent = lines.length ? moveCounts(session).text : '';
+  }
+
   function allSolutionsText() {
     return scrambleController.sequenceList.map((raw, idx) => {
       const session = sessions.get(idx);
-      return session ? solutionText(session) : cleanScramble(raw || '');
+      return session ? copyText(session, idx === activeIndex ? tailText() : '') : cleanScramble(raw || '');
     }).join('\n\n');
   }
 
   function bindSolutionActions() {
-    const copy = document.getElementById('copy-btn');
-    if (copy) {
-      copy.addEventListener('click', () => {
-        const session = sessions.get(activeIndex);
-        if (session) copyToClipboard(copy, 'copy', solutionText(session));
-      });
-    }
-    const copyAll = document.getElementById('copy-all-btn');
+    const copy = $('copy-btn');
+    if (copy) copy.addEventListener('click', () => {
+      const session = sessions.get(activeIndex);
+      if (session) copyToClipboard(copy, 'copy', copyText(session, tailText()));
+    });
+    const copyAll = $('copy-all-btn');
     if (copyAll) copyAll.addEventListener('click', () => copyToClipboard(copyAll, 'copy all', allSolutionsText()));
+    const undo = $('undo-btn');
+    if (undo) undo.addEventListener('click', handleUndo);
+    const crit = $('critique-btn');
+    if (crit) crit.addEventListener('click', runCritique);
   }
 
   async function copyToClipboard(btn, label, text) {
@@ -447,29 +460,24 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function renderUndoButton(session) {
-    const btn = document.getElementById('undo-btn');
-    if (btn) btn.disabled = !session.canUndo;
+    const btn = $('undo-btn');
+    if (btn) btn.disabled = !session.canUndo && !tailText();
   }
 
-  const STATUS_LABELS = { pending: 'queued', searching: 'searching…', done: 'ready', error: 'search failed' };
-
+  const STATUS_LABELS = { pending: 'queued', searching: 'searching…', done: 'ready', error: 'failed' };
   const PAGE_TITLE = typeof document !== 'undefined' ? document.title : '';
 
   function renderScrambleStatus() {
-    const el = document.getElementById('scramble-status');
+    const el = $('scramble-status');
     const session = sessions.get(activeIndex);
     const status = !session ? 'pending' : session.isComplete ? 'done' : (session._status || 'pending');
     if (el) {
       el.textContent = STATUS_LABELS[status] || '';
-      el.className = 'scramble-status scramble-status-' + status;
+      el.className = 'scramble-status ' + status;
     }
-    // Also in the tab title: a search keeps running in a background tab
-    // (more slowly: browsers give hidden tabs less CPU), and the tab strip
-    // shows when it is done.
-    if (typeof document !== 'undefined') {
-      const prefix = status === 'searching' ? 'searching… · ' : status === 'error' ? 'failed · ' : '';
-      document.title = prefix + PAGE_TITLE;
-    }
+    // Also in the tab title: a search keeps running in a background tab.
+    const prefix = status === 'searching' ? 'searching… · ' : status === 'error' ? 'failed · ' : '';
+    document.title = prefix + PAGE_TITLE;
   }
 
   function renderScrambleStatusIfActive(session) {
@@ -477,25 +485,24 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // Results-page view settings (look-ahead per step, simple-pseudo filter,
-  // page size), remembered per browser. Changing look-ahead or the filter
-  // re-searches the current step; the depth-1 search behind it is reused.
+  // Per-step settings (filters, pair planning, look-ahead), remembered per
+  // profile. Look-ahead and pair planning re-search the step (reusing the
+  // depth-1 search behind it); filters only hide.
   // ---------------------------------------------------------------------
-  const DEFAULT_PAGE_SIZE = 25;
   const view = {
     lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, wideMoves: true,
-    hideUnorthodox: false, simplePseudo: false, planning: true, pageSize: DEFAULT_PAGE_SIZE,
+    hideUnorthodox: false, simplePseudo: false, planning: true,
   };
-  let currentPage = 0;
-  let shownResults = null; // the list on screen (complete or partial)
-  // The scramble and step the list on screen belongs to: a click on a row
-  // of a list that is no longer current (a step committed or undone, another
-  // scramble shown) must not commit it to the wrong node.
+  let shownResults = null; // the current step's list (complete or partial)
+  // The scramble and step the list belongs to: a pick from a list that is no
+  // longer current must never be committed at another node.
   let shownOwner = null;
+  let shownPartial = false;
   function activeStepKey() {
     const s = sessions.get(activeIndex);
     return s ? `${activeIndex}|${s.rotation}|${s.stepAlgs.join(' | ')}` : null;
   }
+  const currentList = () => (shownResults && shownOwner === activeStepKey() ? shownResults : null);
 
   function loadViewPrefs(crit) {
     let saved = null;
@@ -503,10 +510,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
     view.lookaheadDepth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, parseInt(view.lookaheadDepth, 10) || 1));
     view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
-    view.pageSize = Math.max(1, Math.min(500, parseInt(view.pageSize, 10) || DEFAULT_PAGE_SIZE));
     view.simplePseudo = !!view.simplePseudo;
     view.multislot = !!view.multislot;
-    delete view.noR2L2; // a removed option (unorthodox filter replaces it), maybe still saved
+    delete view.noR2L2; // a removed option, maybe still saved
+    delete view.pageSize; // the results table is gone
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
@@ -519,36 +526,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const pseudoOn = () => !!(criteria && (criteria.advanced || []).includes('full_pseudo'));
 
   function syncViewControls() {
-    const depth = document.getElementById('lookahead-depth');
-    if (depth) depth.value = String(view.lookaheadDepth);
-    const breadth = document.getElementById('lookahead-breadth');
-    if (breadth) {
-      breadth.value = view.lookaheadBreadth;
-      breadth.disabled = view.lookaheadDepth <= 1;
-    }
-    const slow = document.getElementById('lookahead-slow');
-    if (slow) slow.hidden = view.lookaheadDepth < 3;
-    const wrap = document.getElementById('simple-pseudo-wrap');
+    const set = (id, prop, value) => { const el = $(id); if (el) el[prop] = value; };
+    set('lookahead-depth', 'value', String(view.lookaheadDepth));
+    set('lookahead-breadth', 'value', view.lookaheadBreadth);
+    set('lookahead-breadth', 'disabled', view.lookaheadDepth <= 1);
+    const wrap = $('simple-pseudo-wrap');
     if (wrap) wrap.hidden = !pseudoOn();
-    const multi = document.getElementById('multislot');
-    if (multi) multi.checked = view.multislot;
-    const wide = document.getElementById('wide-moves');
-    if (wide) wide.checked = view.wideMoves;
-    const unorthodox = document.getElementById('hide-unorthodox');
-    if (unorthodox) unorthodox.checked = view.hideUnorthodox;
-    const simple = document.getElementById('simple-pseudo');
-    if (simple) simple.checked = view.simplePseudo;
-    const planning = document.getElementById('pair-planning');
-    if (planning) planning.checked = view.planning;
-    const size = document.getElementById('page-size');
-    if (size) size.value = view.pageSize;
+    set('multislot', 'checked', view.multislot);
+    set('wide-moves', 'checked', view.wideMoves);
+    set('hide-unorthodox', 'checked', view.hideUnorthodox);
+    set('simple-pseudo', 'checked', view.simplePseudo);
+    set('pair-planning', 'checked', view.planning);
   }
 
   function bindViewControls() {
-    const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
-    const research = () => { saveViewPrefs(); syncViewControls(); currentPage = 0; runSearch(); };
-    // Settings that only hide results keep the list on screen until the new
-    // one arrives instead of clearing it first.
+    const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+    const research = () => { saveViewPrefs(); syncViewControls(); runSearch(); };
     const refine = () => { saveViewPrefs(); syncViewControls(); runSearch({ keepRows: true }); };
     on('lookahead-depth', 'change', (e) => { view.lookaheadDepth = parseInt(e.target.value, 10) || 1; research(); });
     on('lookahead-breadth', 'change', (e) => {
@@ -562,156 +555,46 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     // Pair planning changes the ranking itself: the step is searched again
     // (or taken from the memo, if it was searched with that setting before).
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
-    on('page-size', 'change', (e) => {
-      view.pageSize = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || DEFAULT_PAGE_SIZE));
-      saveViewPrefs();
-      syncViewControls();
-      currentPage = 0;
-      if (shownResults) renderResults(shownResults);
-    });
   }
 
   const formatTpp = (tpp) => (Number.isFinite(tpp) ? tpp.toFixed(2) : '-');
-  const COLUMNS = ['#', 'colour', 'type', 'rotation', 'edges', 'corners', 'alg', 'tpp', 'look-ahead'];
-
-  function lookaheadCell(r) {
-    if (r.lookaheadPending) return '…';
-    if (!r.lookaheadAlgs) return '-';
-    return `${formatTpp(r.lookaheadTpp)}${r.lookaheadAlgs.length ? '  → ' + r.lookaheadAlgs.join(' | ') : ''}`;
-  }
-
-  // A row's alg; when its first turns cancel with the end of the solution
-  // ("R" then "R U' R'"), they are struck through and the result is noted
-  // ("R R → R2"), as the solution box will write it.
-  function algCellHtml(r, stepAlgs) {
-    const c = stepAlgs.length ? candidateCancellation(stepAlgs, r.coreAlg) : null;
-    if (!c) return escapeHtml(r.coreAlg);
-    const note = c.after ? `${c.before} ${c.cancelled} → ${c.after}` : `${c.before} ${c.cancelled} cancel`;
-    return `<s class="cancel-tok">${escapeHtml(c.cancelled)}</s>${c.rest ? ' ' + escapeHtml(c.rest) : ''} <span class="cancel-note" title="cancels with the end of the solution">${escapeHtml(note)}</span>`;
-  }
-
-  // Only one page of rows is rendered; ranking still covers every result.
-  function renderResults(results, emptyText = 'no results yet.') {
-    shownResults = results;
-    const tbody = document.getElementById('results-body');
-    if (!tbody) return;
-    const pages = Math.max(1, Math.ceil(results.length / view.pageSize));
-    currentPage = Math.max(0, Math.min(currentPage, pages - 1));
-    const offset = currentPage * view.pageSize;
-    // the committed steps the rows follow (a row may cancel with their end)
-    const active = sessions.get(activeIndex);
-    const stepAlgs = active && !active.isAtRoot ? active.stepAlgs : [];
-    tbody.innerHTML = '';
-    if (!results.length) {
-      tbody.innerHTML = `<tr class="placeholder-row"><td colspan="9">${escapeHtml(emptyText)}</td></tr>`;
-    }
-    results.slice(offset, offset + view.pageSize).forEach((r, i) => {
-      const cells = [
-        String(offset + i + 1),
-        r.color || '-',
-        String(r.type || '').toLowerCase(),
-        r.rotation || '-',
-        (r.edges || []).join('+') || '-',
-        (r.corners || []).join('+') || '-',
-        r.coreAlg,
-        formatTpp(r.tpp),
-        lookaheadCell(r),
-      ];
-      const tr = document.createElement('tr');
-      tr.tabIndex = 0;
-      tr.innerHTML = cells.map((c, k) => `<td data-label="${COLUMNS[k]}" class="col-${k}${c === '-' ? ' empty' : ''}">${k === 6 ? algCellHtml(r, stepAlgs) : escapeHtml(c)}</td>`).join('');
-      const owner = shownOwner;
-      const commit = () => { if (owner && owner === activeStepKey()) handleResultClick(r); };
-      tr.addEventListener('click', commit);
-      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); });
-      tbody.appendChild(tr);
-    });
-    renderPagination(results.length, pages);
-  }
-
-  function renderPagination(total, pages) {
-    const nav = document.getElementById('pagination');
-    if (!nav) return;
-    nav.innerHTML = '';
-    if (pages <= 1) return;
-    const button = (label, page, aria) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.setAttribute('aria-label', aria);
-      b.disabled = page < 0 || page >= pages || page === currentPage;
-      b.addEventListener('click', () => { currentPage = page; renderResults(shownResults); });
-      return b;
-    };
-    const info = document.createElement('span');
-    info.className = 'page-info';
-    info.textContent = `${currentPage + 1} / ${pages}`;
-    nav.append(
-      button('«', 0, 'first page'),
-      button('‹', currentPage - 1, 'previous page'),
-      info,
-      button('›', currentPage + 1, 'next page'),
-      button('»', pages - 1, 'last page'),
-    );
-  }
-
-  // One row of text instead of results (solved, or no list yet). Old rows
-  // must never stay clickable once the step they belong to is gone.
-  function renderMessageRow(text, cls) {
-    shownResults = null;
-    shownOwner = null;
-    const tbody = document.getElementById('results-body');
-    if (tbody) tbody.innerHTML = `<tr class="${cls}"><td colspan="9">${escapeHtml(text)}</td></tr>`;
-    const nav = document.getElementById('pagination');
-    if (nav) nav.innerHTML = '';
-  }
-
-  function renderSolved() {
-    renderMessageRow('cross + f2l solved. copy the solution or open it on cubedb above.', 'solved-row');
-  }
-
   const count = (n) => n.toLocaleString('en-US');
+
+  function setStatus(msg, kind = 'busy') {
+    const el = $('search-status');
+    if (el) {
+      el.textContent = msg || '';
+      el.dataset.state = kind;
+    }
+  }
 
   function renderActiveResults(results, partial = false) {
     // dev timing hook (window.CUBETREE_TRACE): the list on screen
-    if (typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE)) window.CUBETREE_SHOWN = results;
+    if (Array.isArray(window.CUBETREE_TRACE)) window.CUBETREE_SHOWN = results;
+    shownResults = results;
     shownOwner = activeStepKey();
-    renderResults(results, partial ? 'no results yet.' : 'no results at this step with the current settings. try multislot, wide moves, fewer filters, or undo.');
-    // The time limit cut some engine calls (or look-ahead searches) short.
+    shownPartial = partial;
     const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
-    // Some engine calls failed (the worker is restarted): results are missing.
-    const failed = results.failedCalls ? ` · ${results.failedCalls} solver call${results.failedCalls > 1 ? 's' : ''} failed, results incomplete (undo and redo to retry)` : '';
+    const failed = results.failedCalls ? ` · ${results.failedCalls} solver call${results.failedCalls > 1 ? 's' : ''} failed (undo and redo to retry)` : '';
     let msg;
     if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
-    // only hidden multislot calls are left: the rows shown are final
-    else if (partial && results.onlyMultislotPending && !view.multislot) msg = `${count(results.length)} results · final (hidden multislots still searching)`;
+    else if (partial && results.onlyMultislotPending && !view.multislot) msg = `${count(results.length)} results · final`;
     else if (partial) msg = `${count(results.length)} results so far · searching…`;
-    else msg = results.length ? `${count(results.length)} results` : 'no results for the current filters at this step';
+    else msg = results.length ? `${count(results.length)} results` : caption('solve.noResults');
     const hidden = results.hiddenCount ? ` · ${count(results.hiddenCount)} hidden by filters` : '';
     const final = !partial || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
     setStatus(msg + hidden + cut + failed, !final ? 'busy' : results.failedCalls ? 'error' : 'done');
+    renderSuggestions();
+    renderBuddy();
   }
 
-  // One search per (session, committed path, view settings): navigating away
-  // from a scramble mid-search no longer throws the work away, and coming
-  // back to an already-searched node (or one still searching) reuses it
-  // instead of starting again. The path only grows by commits, so node +
-  // path text identifies the step.
-  //
-  // The solver helpers reject a second call while one is running ("Another
-  // solve is in progress", §4.18), so every engine call goes through one
-  // scheduler. Background scrambles run one at a time; the active scramble's
-  // search starts at once and pre-empts them at their next engine call
-  // (README "Multi-scramble queueing"; PROJECT_STATUS.md §4.30).
+  // ---------------------------------------------------------------------
+  // Searching (unchanged machinery: one search per session, path and
+  // settings; a priority scheduler; background scrambles one at a time).
+  // ---------------------------------------------------------------------
   const scheduler = createSearchScheduler();
   const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
 
-  // Background scrambles search one step without look-ahead; the scramble
-  // on screen uses the results page's look-ahead setting (reusing that
-  // single-step search when it becomes active).
-  // The results-page filters (they only hide results; look-ahead follows them).
-  // Every search includes multislot and wide-move results, so ticking either
-  // back shows them at once, like the other filters.
   function resultFilter() {
     const simple = pseudoOn() && view.simplePseudo;
     const orthodox = view.hideUnorthodox;
@@ -744,33 +627,21 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const opts = searchOptions(priority);
     const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey, opts.planning ? '' : 'noplan'].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
-      // the search it replaces (the step before a click, another setting)
-      // lets this one's engine calls go first (search-scheduler.js)
       if (session.resultsCache && session.resultsCache.job) scheduler.setStale(session.resultsCache.job);
       session._status = 'searching';
       renderScrambleStatusIfActive(session);
-      // Set before the job starts: a search the memo already has running
-      // reports its latest partial list synchronously.
       const cache = { key, live: null };
       session.resultsCache = cache;
       const isShown = () => sessions.get(activeIndex) === session && session.resultsCache === cache;
-      const onStatus = (msg) => {
-        if (isShown() && !cache.live) setStatus(msg);
-      };
-      onStatus(priority === ACTIVE ? 'searching…' : 'queued behind the active search…');
-      // Progressive results: partial lists while the step's calls finish,
-      // then look-ahead re-ranking as each candidate's look-ahead finishes.
+      const onStatus = (msg) => { if (isShown() && !cache.live) setStatus(msg); };
+      onStatus(priority === ACTIVE ? caption('solve.searching') : 'queued behind the active search…');
       const onUpdate = (list) => {
         if (session.resultsCache !== cache) return;
         cache.live = list;
         if (isShown()) renderActiveResults(list, true);
       };
-      // Replaced (another setting, a commit or an undo): its look-ahead stops
-      // starting new searches, so it does not compete with the new one.
       const isCancelled = () => session.resultsCache !== cache;
       const job = scheduler.submit((wrap) => {
-        // its ranking jobs carry it, so they yield once it is replaced (the
-        // search forks the session at once, keeping this post-processor)
         if (session.postProcessor && session.postProcessor.forJob) session.postProcessor = session.postProcessor.forJob(job);
         return searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled });
       }, priority);
@@ -778,8 +649,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       cache.job = job;
       cache.promise = promise;
       trackJob(session, job, priority);
-      // Only the current search of a session sets its status: a replaced one
-      // finishing must not show "ready" while its replacement still runs.
       promise.then(() => {
         cache.live = null;
         if (session.resultsCache !== cache) return;
@@ -798,10 +667,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return session.resultsCache.promise;
   }
 
-  // Every unfinished job of a scramble runs at that scramble's priority: its
-  // searches share one memo, so a new job (another look-ahead setting, the
-  // next step) can be waiting on engine calls an older job started, and an
-  // ACTIVE job waiting on BACKGROUND calls would never let them run.
   function trackJob(session, job, priority) {
     if (!session._jobs) session._jobs = new Set();
     session._jobs.add(job);
@@ -814,21 +679,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     for (const job of session._jobs || []) scheduler.setPriority(job, priority);
   }
 
-  // The scramble the user is looking at always outranks the background.
   function setSessionPriority(index, priority) {
     const session = sessions.get(index);
     if (session) setJobsPriority(session, priority);
   }
 
-  // Enqueues every OTHER scramble's search as BACKGROUND work -- not awaited
-  // here; each one's own .then() re-renders only if that scramble happens to
-  // be active by the time it resolves.
   function scheduleBackgroundSearches(h, ph) {
     scrambleController.sequenceList.forEach((_, idx) => {
-      if (idx === activeIndex) return; // runSearch already enqueued this one
+      if (idx === activeIndex) return;
       const session = getOrCreateSession(idx);
-      if (session.isComplete) return;
-      if (session.resultsCache) return; // already queued/searched; keep its current priority
+      if (session.isComplete || session.resultsCache) return;
       const promise = resultsFor(session, h, ph, BACKGROUND);
       promise
         .then((results) => {
@@ -842,77 +702,745 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (!prunedTree) return;
     const session = getOrCreateSession(activeIndex);
     const myToken = ++searchToken;
-    const keep = keepRows && shownResults && shownOwner === activeStepKey();
-
     renderPath(session);
     renderUndoButton(session);
     renderScrambleStatus();
-
     if (session.isComplete) {
-      renderSolved();
-      setStatus('cross + f2l solved.', 'done');
+      shownResults = null;
+      shownOwner = null;
+      setStatus(caption('solve.solved'), 'done');
+      renderSuggestions();
+      renderBuddy();
       return;
     }
-
-    // Until this step's list arrives (at once if it is already known).
-    if (!keep) {
-      renderMessageRow(session.resultsCache ? 'searching…' : 'starting the search…', 'placeholder-row');
-      setStatus('loading solver…');
+    if (!keepRows || shownOwner !== activeStepKey()) {
+      shownResults = null;
+      shownOwner = null;
+      renderSuggestions();
+      renderBuddy();
+      setStatus('loading the solver…');
     }
     let h;
     try {
       h = await ensureHelper();
     } catch (err) {
-      setStatus('failed to load the solver: ' + err.message, 'error');
-      renderMessageRow('the solver could not be loaded. reload the page to try again.', 'placeholder-row');
+      setStatus(caption('solve.loadFailed') + ' (' + err.message + ')', 'error');
       return;
     }
     if (myToken !== searchToken) return;
-
     const ph = await ensurePseudoHelper();
     if (myToken !== searchToken) return;
-
     const activePromise = resultsFor(session, h, ph, ACTIVE);
     scheduleBackgroundSearches(h, ph);
-
     let results;
     try {
       results = await activePromise;
     } catch (err) {
-      if (myToken === searchToken) {
-        setStatus('search failed: ' + err.message, 'error');
-        renderMessageRow('this search failed. undo, change a setting or reload to try again.', 'placeholder-row');
-      }
+      if (myToken === searchToken) setStatus(caption('solve.searchFailed') + ' (' + err.message + ')', 'error');
       return;
     }
     if (myToken !== searchToken) return;
-
     renderActiveResults(results);
   }
 
-  async function handleResultClick(candidate) {
+  // ---------------------------------------------------------------------
+  // The solution bar (solve-editor.js): the text is the truth; committed
+  // steps follow it.
+  // ---------------------------------------------------------------------
+  let editor = null;
+  let editorSession = null; // the session whose text the editor holds
+  let reading = null;      // readSolution of the active session's text
+  let activeIdx = -1;      // keyboard-selected suggestion
+  let suggestions = [];    // [{ kind: 'alg'|'comment', r?, toks?, text }]
+  let syncTimer = 0;
+
+  function syncEditor() {
+    clearTimeout(syncTimer);
+    if (!prunedTree || !editor) return;
     const session = getOrCreateSession(activeIndex);
-    // Look-ahead annotations describe this step's ranking, not the commit.
-    const { lookaheadPending, lookaheadTpp, lookaheadAlgs, lookaheadTruncated, unorthodox, multislot, ...row } = candidate;
-    session.commit(row);
-    currentPage = 0;
-    persistSessionState();
-    await runSearch();
+    if (editorSession !== session) return; // the editor is not showing this session yet
+    session._text = editor.value;
+    const atNode = session.committedRows.length;
+    const list = currentList() || [];
+    const read = readSolution(session, editor.value, list);
+    let changed = false;
+    while (session.committedRows.length > read.keep) { session.undo(); changed = true; }
+    for (const st of read.steps) { session.commit(st.row); changed = true; }
+    reading = read;
+    if (changed || atNode !== session.committedRows.length) {
+      persistSessionState();
+      runSearch();
+    } else {
+      persistSessionState();
+    }
+    renderEditor();
+    renderSuggestions();
+    renderBuddy();
+    renderPath(session);
+    renderUndoButton(session);
+    updatePlayer();
   }
 
+  function scheduleSync() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncEditor, 40);
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /** The coloured copy of the text under the transparent textarea, plus the ghost of the top suggestion. */
+  function renderEditor() {
+    if (!editor || !reading) return;
+    const text = editor.value;
+    const shadow = $('editor-shadow');
+    const sizer = $('editor-sizer');
+    let html = '';
+    reading.parsed.forEach((line, li) => {
+      const kind = reading.lines[li].kind;
+      let pos = line.start;
+      const cls = kind === 'tail' ? 'tok-pending' : 'tok-step';
+      for (const t of line.tokens) {
+        html += esc(text.slice(pos, t.start));
+        html += `<span class="${cls}${t.valid ? '' : ' tok-bad'}">${esc(t.tok)}</span>`;
+        pos = t.end;
+      }
+      if (line.commentStart >= 0) {
+        html += esc(text.slice(pos, line.commentStart));
+        html += `<span class="tok-comment">${esc(text.slice(line.commentStart, line.end))}</span>`;
+      } else html += esc(text.slice(pos, line.end));
+      if (li < reading.parsed.length - 1) html += '\n';
+    });
+    const ghost = ghostText();
+    if (ghost && document.activeElement === editor && editor.selectionStart === text.length) {
+      html += `<span class="ghost">${esc(ghost)}</span><span class="ghost-key">tab</span>`;
+    }
+    if (!text) html = `<span class="ghost">${esc(caption('solve.placeholder'))}</span>`;
+    shadow.innerHTML = html + '\n';
+    sizer.textContent = text + (ghost ? ghost + '     ' : '') + '\n';
+  }
+
+  /** The rest of the top suggestion after what is typed (shown greyed after the caret). */
+  function ghostText() {
+    const top = suggestions[activeIdx >= 0 ? activeIdx : 0];
+    if (!top || !reading) return '';
+    const text = editor.value;
+    if (top.kind === 'comment') return (/\s$/.test(text) ? '' : ' ') + top.text;
+    const typed = reading.tail.tokens;
+    const partial = reading.tail.partial;
+    const rest = top.toks.slice(typed.length - (partial ? 1 : 0));
+    if (!rest.length) return '';
+    if (partial) {
+      const first = rest[0].slice(partial.length);
+      return first + (rest.length > 1 ? ' ' + rest.slice(1).join(' ') : '');
+    }
+    return (text && !/\s$/.test(text) ? ' ' : '') + rest.join(' ');
+  }
+
+  /** The label a candidate's step gets in the solution. */
+  function labelFor(session, r) {
+    const before = session.isAtRoot ? 0 : (session.currentNode.state.corners || []).length;
+    const node = session.nodeMap.get(r.targetNodeId);
+    const after = node ? (node.state.corners || []).length : before + (r.corners || []).length;
+    return stepLabel(session.isAtRoot, before, after, /pseudo/i.test(r.type || ''));
+  }
+
+  /** Text before the tail (the committed steps' lines), ending at a line start. */
+  function textBeforeTail() {
+    const text = editor.value;
+    if (!reading || !reading.tail.tokens.length) {
+      return text && !text.endsWith('\n') ? text + '\n' : text;
+    }
+    const line = reading.parsed[reading.tail.line];
+    return text.slice(0, line.start);
+  }
+
+  function setEditorText(text) {
+    editor.value = text;
+    editor.selectionStart = editor.selectionEnd = text.length;
+    activeIdx = -1;
+    syncEditor();
+  }
+
+  /** Writes candidate `r` as the next step (with its label) and commits it. */
+  function commitSuggestion(r) {
+    const session = getOrCreateSession(activeIndex);
+    if (!currentList() || !currentList().includes(r)) return;
+    const label = labelFor(session, r);
+    const lines = session.isAtRoot && r.rotation
+      ? `${r.rotation} // inspection\n${r.coreAlg} // ${label}\n`
+      : `${r.coreAlg} // ${label}\n`;
+    const before = textBeforeTail();
+    animateFrom = player ? player.length : 0;
+    setEditorText(before + lines);
+    editor.focus();
+  }
+
+  /** Tab: fill the top (or selected) suggestion, or write the step's comment and go to the next line. */
+  function acceptSuggestion() {
+    const s = suggestions[activeIdx >= 0 ? activeIdx : 0];
+    if (!s) return false;
+    if (s.kind === 'comment') {
+      const text = editor.value.replace(/\s+$/, '');
+      animateFrom = null;
+      setEditorText(`${text} ${s.text}\n`);
+      return true;
+    }
+    const before = textBeforeTail();
+    animateFrom = player ? player.length : 0;
+    setEditorText(before + s.toks.join(' '));
+    return true;
+  }
+
+  function renderSuggestions() {
+    const listEl = $('suggest-list');
+    const box = $('suggest');
+    if (!listEl || !box) return;
+    const session = sessions.get(activeIndex);
+    suggestions = [];
+    let empty = '';
+    if (!session || !reading) empty = caption('solve.searching');
+    else if (session.isComplete) empty = caption('solve.solved');
+    else {
+      const tail = reading.tail;
+      const list = currentList();
+      // a tail that finishes a step: suggest its comment (CubeDB-style)
+      const done = tail.tokens.length && !tail.onNewLine ? stepFromTail(session, tail.tokens, list) : null;
+      const line = reading.parsed[tail.line];
+      if (done && line && line.commentStart < 0) {
+        suggestions.push({ kind: 'comment', text: `// ${done.label}` });
+      }
+      if (list) {
+        const matches = prefixMatches(list, tail.tokens, tail.partial, session.isAtRoot);
+        for (const m of matches) {
+          if (suggestions.length >= 5) break;
+          if (done && m.toks.length === tail.tokens.length) continue; // that one is typed already
+          suggestions.push({ kind: 'alg', r: m.r, toks: m.toks });
+        }
+        if (!suggestions.length) empty = tail.tokens.length ? caption('solve.noMatch') : (shownPartial ? caption('solve.searching') : caption('solve.noResults'));
+      } else if (!suggestions.length) empty = caption('solve.searching');
+    }
+    if (activeIdx >= suggestions.length) activeIdx = -1;
+    box.classList.toggle('dim', !!empty && !!reading && reading.tail.tokens.length > 0);
+    const session2 = sessions.get(activeIndex);
+    const stepAlgs = session2 && !session2.isAtRoot ? session2.stepAlgs : [];
+    listEl.innerHTML = '';
+    if (!suggestions.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = empty;
+      listEl.appendChild(li);
+    }
+    const typedCount = reading ? reading.tail.tokens.length - (reading.tail.partial ? 1 : 0) : 0;
+    suggestions.forEach((s, i) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.id = `sugg-${i}`;
+      if (i === activeIdx || (activeIdx < 0 && i === 0)) li.classList.add('active');
+      if (s.kind === 'comment') {
+        li.innerHTML = `<span class="badge">note</span><span></span><span class="alg">${esc(s.text)}</span><span class="meta"></span>`;
+        li.addEventListener('mousedown', (e) => { e.preventDefault(); activeIdx = i; acceptSuggestion(); });
+      } else {
+        const r = s.r;
+        const rotToks = session2 && session2.isAtRoot ? String(r.rotation || '').split(/\s+/).filter(Boolean).length : 0;
+        const c = stepAlgs.length ? candidateCancellation(stepAlgs, r.coreAlg) : null;
+        let algHtml = s.toks.map((t, k) => {
+          const cls = [k < typedCount ? 'typed' : '', k < rotToks ? 'rot' : ''].filter(Boolean).join(' ');
+          return cls ? `<span class="${cls}">${esc(t)}</span>` : esc(t);
+        }).join(' ');
+        if (c) algHtml += ` <s title="cancels with the end of the solution">${esc(c.before)} ${esc(c.cancelled)}</s>${c.after ? ' → ' + esc(c.after) : ''}`;
+        const la = Number.isFinite(r.lookaheadTpp) ? `<span class="la" title="look-ahead: best combined tpp">+${formatTpp(r.lookaheadTpp)}</span>` : (r.lookaheadPending ? '<span class="la">…</span>' : '');
+        li.innerHTML = `<span class="badge">${esc(shortType(r.type))}</span><span class="chip" style="background:${COLOUR_HEX[r.color] || 'transparent'}" title="${esc(r.color || '')}"></span><span class="alg">${algHtml}</span><span class="meta">${formatTpp(r.tpp)}${la}</span>`;
+        li.addEventListener('mousedown', (e) => { e.preventDefault(); commitSuggestion(r); });
+        li.addEventListener('mouseenter', () => { showStatCard(li, r, null); previewCandidate(r); });
+        li.addEventListener('mouseleave', () => { hideStatCard(); endPreview(); });
+      }
+      listEl.appendChild(li);
+    });
+    if (editor) {
+      editor.setAttribute('aria-activedescendant', suggestions.length ? `sugg-${activeIdx >= 0 ? activeIdx : 0}` : '');
+    }
+    renderEditor();
+  }
+
+  const COLOUR_HEX = { white: '#f4f4f4', yellow: '#ffd500', green: '#13c447', blue: '#1e5bff', red: '#e8231c', orange: '#ff8a00' };
+  function shortType(type) {
+    const t = String(type || '').toLowerCase();
+    if (t === 'single pair') return 'pair';
+    return t.replace(' (pseudo)', '*');
+  }
+
+  /** The tail as a finished step: { label } (a listed candidate or the user's own), or null. */
+  function stepFromTail(session, tokens, list) {
+    const cand = (list || []).find((c) => {
+      const want = rowTokens(c, session.isAtRoot);
+      return want.length === tokens.length && want.every((t, j) => t === tokens[j]);
+    });
+    if (cand) return { label: labelFor(session, cand), row: cand };
+    const row = userStepRow(session, tokens);
+    return row ? { label: labelFor(session, row), row } : null;
+  }
+
+  function bindEditor() {
+    editor = $('solution-input');
+    if (!editor) return;
+    editor.addEventListener('input', () => { activeIdx = -1; animateFrom = player ? player.length : null; scheduleSync(); });
+    editor.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        if (acceptSuggestion()) e.preventDefault();
+        return;
+      }
+      const atEnd = editor.selectionStart === editor.value.length;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggestions.length && atEnd) {
+        e.preventDefault();
+        const n = suggestions.length;
+        activeIdx = e.key === 'ArrowDown' ? (activeIdx + 1) % n : (activeIdx <= 0 ? n - 1 : activeIdx - 1);
+        renderSuggestions();
+        return;
+      }
+      if (e.key === 'Enter' && activeIdx >= 0 && suggestions[activeIdx]) {
+        e.preventDefault();
+        const s = suggestions[activeIdx];
+        if (s.kind === 'comment') acceptSuggestion(); else commitSuggestion(s.r);
+        return;
+      }
+      if (e.key === 'Escape') { activeIdx = -1; renderSuggestions(); }
+    });
+    for (const ev of ['click', 'keyup', 'focus', 'blur']) editor.addEventListener(ev, () => renderEditor());
+  }
+
+  // ---------------------------------------------------------------------
+  // The cube (pixel-cube.js) and playback of scramble + solution + typed moves
+  // ---------------------------------------------------------------------
+  let pixelCube = null;
+  let player = null;
+  let animateFrom = null; // the playback position to animate from after the next change
+  let previewing = false;
+
+  function cubeTheme() {
+    if (!pixelCube) return;
+    pixelCube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee' });
+  }
+
+  function solutionTokens(session) {
+    const toks = [];
+    session.committedRows.forEach((row, i) => toks.push(...rowTokens(row, i === 0)));
+    return toks;
+  }
+
+  function updatePlayer() {
+    if (!player || previewing) return;
+    const session = sessions.get(activeIndex);
+    if (!session) return;
+    const scr = playbackTokens(session.scramble);
+    const sol = solutionTokens(session);
+    const tail = reading ? reading.tail.tokens.filter(t => isMoveToken(t)) : [];
+    const tokens = [...scr, ...sol, ...tail];
+    const marks = [{ at: scr.length, label: 'solve' }];
+    const from = animateFrom;
+    animateFrom = null;
+    const animate = from !== null && from < tokens.length && tokens.length - from <= 24 && prefs().animSpeed > 0
+      && player.tokens.length === from && player.pos === from && tokens.slice(0, from).every((t, i) => t === player.tokens[i]);
+    if (animate) {
+      player.setSequence(tokens, marks, from);
+      player.playTo(tokens.length);
+    } else player.setSequence(tokens, marks, tokens.length);
+  }
+
+  function renderPlayback() {
+    const scrub = $('scrub');
+    if (scrub && player) {
+      scrub.max = String(player.length);
+      scrub.value = String(player.pos);
+    }
+    const label = $('cube-step');
+    const session = sessions.get(activeIndex);
+    if (label && player && session) {
+      const scr = playbackTokens(session.scramble).length;
+      label.textContent = player.pos <= scr ? `scramble ${player.pos}/${scr}` : `move ${player.pos - scr}/${player.length - scr}`;
+    }
+    const play = $('pb-play');
+    if (play && player) play.textContent = player.playing ? '||' : '>>';
+  }
+
+  function previewCandidate(r) {
+    if (!player || !pixelCube || matchMedia('(hover: none)').matches) return;
+    const session = sessions.get(activeIndex);
+    if (!session) return;
+    previewing = true;
+    player.pause();
+    const toks = [...playbackTokens(session.scramble), ...solutionTokens(session), ...rowTokens(r, session.isAtRoot)];
+    pixelCube.setFacelets(applyAlgorithm(SOLVED_FACELETS, toks.join(' ')));
+    const note = $('stage-note');
+    if (note) note.textContent = 'preview';
+  }
+
+  function endPreview() {
+    if (!previewing) return;
+    previewing = false;
+    const note = $('stage-note');
+    if (note) note.textContent = '';
+    if (player) pixelCube.setFacelets(player.stateAt(player.pos));
+  }
+
+  function bindCube() {
+    const canvas = $('cube-canvas');
+    if (!canvas || typeof PixelCube === 'undefined') return;
+    const p = prefs();
+    pixelCube = new PixelCube(canvas, { resolution: p.pixelRes, backFaces: p.backFaces });
+    cubeTheme();
+    player = new CubePlayer(pixelCube, renderPlayback);
+    player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
+    const stage = $('cube-stage');
+    let drag = null;
+    stage.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; stage.setPointerCapture(e.pointerId); });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      drag = { x: e.clientX, y: e.clientY };
+      pixelCube.orbit(dx * 0.012, dy * 0.012);
+    });
+    const end = () => { drag = null; };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+    stage.addEventListener('dblclick', () => pixelCube.resetView());
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('pb-start', () => { player.pause(); player.seek(0, false); });
+    on('pb-end', () => { player.pause(); player.seek(player.length, false); });
+    on('pb-back', () => { player.pause(); player.step(-1); });
+    on('pb-fwd', () => { player.pause(); player.step(1); });
+    on('pb-play', () => player.play());
+    on('pb-full', () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (stage.requestFullscreen) stage.requestFullscreen();
+    });
+    document.addEventListener('fullscreenchange', () => setTimeout(() => pixelCube.resize(), 50));
+    const scrub = $('scrub');
+    if (scrub) scrub.addEventListener('input', () => { player.pause(); player.seek(parseInt(scrub.value, 10) || 0, false); });
+    let resizeTimer = 0;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => pixelCube.resize(), 80); });
+  }
+
+  // ---------------------------------------------------------------------
+  // The buddy (suggest.js): three picks with reasons, or the critique
+  // ---------------------------------------------------------------------
+  let critiqueShown = null; // { key, items } while the critique is on screen
+  const viewMemo = new Map();
+
+  function viewAfter(session, r) {
+    const key = `${session.scramble}|${session.isAtRoot ? r.rotation : session.rotation}|${session.scoredPath}|${r.coreAlg}`;
+    if (!viewMemo.has(key)) {
+      if (viewMemo.size > 2000) viewMemo.clear();
+      const f = replayFacelets(session.scramble, session.isAtRoot ? r.rotation : session.rotation, session.isAtRoot ? '' : session.scoredPath, r.coreAlg);
+      viewMemo.set(key, solvedFlags(f).cross ? cubeView(f) : null);
+    }
+    return viewMemo.get(key);
+  }
+
+  function pickContext(session) {
+    const a = answers();
+    return {
+      style: a.style === 'efficiency' ? 'efficiency' : 'tps',
+      answers: a,
+      isRoot: session.isAtRoot,
+      stepAlgs: session.isAtRoot ? [] : session.stepAlgs,
+      before: session.isAtRoot ? null : cubeView(replayFacelets(session.scramble, session.rotation, session.scoredPath, '')),
+      viewOf: r => viewAfter(session, r),
+      lookahead: view.lookaheadDepth > 1,
+      finishing: (session.currentNode.state.corners || []).length >= 3,
+    };
+  }
+
+  function drawBuddySprites() {
+    const p = profile();
+    const sprite = $('buddy-sprite');
+    if (sprite) drawAvatar(sprite.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--panel'));
+    const chip = $('profile-chip');
+    if (chip) {
+      drawAvatar(chip.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--bg'));
+      const name = $('profile-name');
+      if (name) name.textContent = p ? p.name : '';
+    }
+  }
+
+  function renderBuddy() {
+    const say = $('buddy-say');
+    const picksEl = $('picks');
+    const actions = $('bubble-actions');
+    const title = $('bubble-title');
+    if (!say || !picksEl) return;
+    const session = sessions.get(activeIndex);
+    if (critiqueShown && session && critiqueShown.key === `${activeIndex}|${session.scoredPath}`) return; // the critique stays until something changes
+    critiqueShown = null;
+    picksEl.innerHTML = '';
+    actions.innerHTML = '';
+    title.textContent = 'options';
+    if (!session) { say.textContent = caption('avatar.thinking'); return; }
+    if (session.isComplete) {
+      say.textContent = caption('avatar.solved');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'px-btn primary';
+      b.textContent = caption('critique.button');
+      b.addEventListener('click', runCritique);
+      actions.appendChild(b);
+      return;
+    }
+    const list = currentList();
+    if (reading && reading.tail.tokens.length && !suggestions.some(s => s.kind === 'alg')) {
+      say.textContent = caption('avatar.offNode');
+      return;
+    }
+    if (!list || !list.length) { say.textContent = caption('avatar.thinking'); return; }
+    const picks = avatarPicks(list, pickContext(session));
+    say.textContent = caption('avatar.greeting');
+    picks.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'px-btn pick';
+      const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
+      const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
+      b.innerHTML = `<span class="n">${i + 1}</span><span class="alg">${esc(tokens)}</span><span class="why"><span class="tag">${esc(caption(`avatar.pick.${p.role}`))}</span>${esc(why)}</span>`;
+      b.addEventListener('click', () => commitSuggestion(p.r));
+      b.addEventListener('mouseenter', () => { showStatCard(b, p.r, p.reasons); previewCandidate(p.r); });
+      b.addEventListener('mouseleave', () => { hideStatCard(); endPreview(); });
+      b.addEventListener('focus', () => showStatCard(b, p.r, p.reasons));
+      b.addEventListener('blur', hideStatCard);
+      picksEl.appendChild(b);
+    });
+  }
+
+  function stepCounts(alg) {
+    const toks = String(alg || '').split(/\s+/).filter(Boolean);
+    return `${toks.filter(t => !/^[xyz]/.test(t)).length}stm / ${toks.length}etm`;
+  }
+
+  function showStatCard(anchor, r, reasons) {
+    const card = $('stat-card');
+    if (!card || matchMedia('(hover: none)').matches) return;
+    const session = sessions.get(activeIndex);
+    if (!session) return;
+    const rs = reasons || avatarPicksReasons(session, r);
+    const rows = [
+      ['type', shortType(r.type)],
+      ['colour', r.color || '-'],
+      ['tpp', formatTpp(r.tpp)],
+      ['moves', stepCounts(r.coreAlg)],
+    ];
+    if (Number.isFinite(r.lookaheadTpp)) rows.push(['look-ahead', formatTpp(r.lookaheadTpp)]);
+    card.innerHTML = `<div class="alg">${esc(rowTokens(r, session.isAtRoot).join(' '))}</div>`
+      + `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
+      + (rs.length ? `<ul class="reasons">${rs.map(x => `<li>${esc(caption(`reason.${x.key}`, x.vars))}</li>`).join('')}</ul>` : '')
+      + (r.lookaheadAlgs && r.lookaheadAlgs.length ? `<div class="next">then ${esc(r.lookaheadAlgs.join(' | '))}</div>` : '');
+    card.hidden = false;
+    const a = anchor.getBoundingClientRect();
+    const w = card.offsetWidth;
+    const h = card.offsetHeight;
+    let x = a.left - w - 12;
+    if (x < 8) x = Math.min(window.innerWidth - w - 8, a.right + 12);
+    let y = Math.min(window.innerHeight - h - 8, Math.max(8, a.top));
+    card.style.left = `${x}px`;
+    card.style.top = `${y}px`;
+  }
+
+  function hideStatCard() {
+    const card = $('stat-card');
+    if (card) card.hidden = true;
+  }
+
+  function avatarPicksReasons(session, r) {
+    const list = currentList() || [];
+    const ctx = pickContext(session);
+    return reasonsFor(r, {
+      best: list[0], rank: list.indexOf(r), before: ctx.before, after: ctx.viewOf(r), stepAlgs: ctx.stepAlgs,
+      answers: ctx.answers, lookahead: ctx.lookahead, isRoot: ctx.isRoot,
+    });
+  }
+
+  function bindBuddy() {
+    const sprite = $('buddy-sprite');
+    const buddy = $('buddy');
+    if (!sprite || !buddy) return;
+    if (matchMedia('(max-width: 600px)').matches) { buddy.classList.add('collapsed'); sprite.setAttribute('aria-expanded', 'false'); }
+    sprite.addEventListener('click', () => {
+      const collapsed = buddy.classList.toggle('collapsed');
+      sprite.setAttribute('aria-expanded', String(!collapsed));
+    });
+    drawBuddySprites();
+  }
+
+  // ---------------------------------------------------------------------
+  // The critique (critique.js)
+  // ---------------------------------------------------------------------
+  async function runCritique() {
+    const session = getOrCreateSession(activeIndex);
+    const say = $('buddy-say');
+    const picksEl = $('picks');
+    const actions = $('bubble-actions');
+    const buddy = $('buddy');
+    if (buddy) buddy.classList.remove('collapsed');
+    $('bubble-title').textContent = caption('critique.title');
+    picksEl.innerHTML = '';
+    actions.innerHTML = '';
+    critiqueShown = { key: `${activeIndex}|${session.scoredPath}`, items: null };
+    if (!session.committedRows.length) { say.textContent = caption('critique.needSolve'); return; }
+    say.textContent = caption('critique.working');
+    let h;
+    try { h = await ensureHelper(); } catch (err) { say.textContent = caption('solve.loadFailed'); return; }
+    const ph = await ensurePseudoHelper();
+    const myKey = critiqueShown.key;
+    const report = await critiqueSolve(session, {
+      search: (fork, { multislot }) => {
+        // through the scheduler; unfiltered: the step is ranked among every result for its goal
+        const opts = searchOptions(ACTIVE);
+        const job = scheduler.submit(wrap => searchWithLookahead(fork, wrap(h), () => {}, wrap(ph), {
+          ...opts, depth: 1, filter: null, filterKey: '', multislot, lookaheadMultislot: multislot,
+        }), ACTIVE);
+        return job.promise;
+      },
+      answers: answers(),
+      onProgress: (done, total) => { if (critiqueShown && critiqueShown.key === myKey) say.textContent = `${caption('critique.working')} ${done}/${total}`; },
+    });
+    if (!critiqueShown || critiqueShown.key !== myKey) return;
+    say.textContent = caption('critique.intro');
+    const ol = document.createElement('ol');
+    ol.className = 'critique-list';
+    for (const item of report.items) {
+      const li = document.createElement('li');
+      li.innerHTML = `<div>${esc(item.text)}</div>${item.alt ? `<div class="alt">${esc(item.alt)}</div>` : ''}`;
+      li.addEventListener('click', () => {
+        if (!player) return;
+        const scr = playbackTokens(session.scramble).length;
+        player.pause();
+        player.seek(scr + item.startMove, false);
+        if (item.altRow) previewCandidateAt(session, item.stepIndex, item.altRow);
+      });
+      ol.appendChild(li);
+    }
+    const total = document.createElement('li');
+    total.className = 'total';
+    total.textContent = report.total;
+    ol.appendChild(total);
+    picksEl.appendChild(ol);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'px-btn';
+    close.textContent = 'ok';
+    close.addEventListener('click', () => { critiqueShown = null; renderBuddy(); });
+    actions.appendChild(close);
+  }
+
+  /** Shows the cube after the critique's alternative for step `k` (instead of the user's step). */
+  function previewCandidateAt(session, k, row) {
+    if (!pixelCube) return;
+    const toks = [...playbackTokens(session.scramble)];
+    session.committedRows.slice(0, k).forEach((r, i) => toks.push(...rowTokens(r, i === 0)));
+    toks.push(...rowTokens(row, k === 0));
+    pixelCube.setFacelets(applyAlgorithm(SOLVED_FACELETS, toks.join(' ')));
+    const note = $('stage-note');
+    if (note) note.textContent = 'their alternative · press > to go back';
+  }
+
+  // ---------------------------------------------------------------------
+  // Undo, settings drawer, new scramble
+  // ---------------------------------------------------------------------
   async function handleUndo() {
     const session = getOrCreateSession(activeIndex);
-    if (!session.undo()) return;
-    currentPage = 0;
-    persistSessionState();
-    await runSearch();
+    if (!editor || !reading) return;
+    if (reading.tail.tokens.length) {
+      // first the unfinished moves
+      setEditorText(textBeforeTail());
+      return;
+    }
+    if (!session.canUndo) return;
+    const last = session.committedRows.length - 1;
+    const first = reading.lines.findIndex(l => l.row === last);
+    if (first < 0) { session.undo(); setEditorText(rowsText(session)); return; }
+    let start = reading.parsed[first].start;
+    // the inspection line belongs to the first step
+    if (last === 0) start = 0;
+    setEditorText(editor.value.slice(0, start));
   }
   window.handleUndoClick = handleUndo;
 
-  // ---------------------------------------------------------------------
-  // README "State persistence on reload"
-  // ---------------------------------------------------------------------
+  function applyLook() {
+    const p = prefs();
+    applyProfileLook(profile());
+    if (pixelCube) {
+      pixelCube.setResolution(p.pixelRes);
+      pixelCube.setBackFaces(p.backFaces);
+      cubeTheme();
+    }
+    if (player) player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
+    drawBuddySprites();
+  }
 
+  function bindSettings() {
+    const dialog = $('settings');
+    const btn = $('settings-btn');
+    if (!dialog || !btn || typeof dialog.showModal !== 'function') return;
+    btn.addEventListener('click', () => { syncLookControls(); dialog.showModal(); });
+    $('settings-close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    const themes = $('theme-choices');
+    if (themes) {
+      for (const t of PROFILE_THEMES) {
+        const label = document.createElement('label');
+        label.className = 'px-check';
+        label.innerHTML = `<input type="radio" name="theme" value="${t}"> ${t}`;
+        label.querySelector('input').addEventListener('change', () => setPref({ theme: t }));
+        themes.appendChild(label);
+      }
+    }
+    const res = $('pixel-res');
+    if (res) res.addEventListener('change', () => setPref({ pixelRes: res.value }));
+    const back = $('back-faces');
+    if (back) back.addEventListener('change', () => setPref({ backFaces: back.checked }));
+    const speed = $('anim-speed');
+    if (speed) speed.addEventListener('change', () => setPref({ animSpeed: Number(speed.value) }));
+    const signOut = $('sign-out');
+    if (signOut) signOut.addEventListener('click', () => { cubeProfiles.signOut(); location.href = 'index.html'; });
+    const apply = $('apply-search');
+    if (apply) apply.addEventListener('click', () => persistAndNavigate());
+  }
+
+  function syncLookControls() {
+    const p = prefs();
+    document.querySelectorAll('#theme-choices input').forEach((i) => { i.checked = i.value === (p.theme || 'ink'); });
+    const res = $('pixel-res');
+    if (res) res.value = p.pixelRes || 'chunky';
+    const back = $('back-faces');
+    if (back) back.checked = p.backFaces !== false;
+    const speed = $('anim-speed');
+    if (speed) speed.value = String(p.animSpeed === undefined ? 1 : p.animSpeed);
+  }
+
+  function setPref(patch) {
+    const p = profile();
+    if (p) cubeProfiles.update(p.id, { prefs: patch });
+    applyLook();
+  }
+
+  function bindNewScramble() {
+    const btn = $('new-scramble-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const scr = typeof generateRandomStateScramble === 'function' ? generateRandomStateScramble() : generateScramble();
+      scrambleController.sequenceList.push(scr);
+      if (criteria) {
+        criteria.scrambles = scrambleController.sequenceList.slice();
+        try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify(normalizeCriteria({ ...criteria, version: CRITERIA_VERSION }))); } catch (err) { /* not remembered */ }
+        const ta = $('scramble-input');
+        if (ta) ta.value = criteria.scrambles.join('\n');
+      }
+      scrambleController.activeIndex = scrambleController.sequenceList.length - 1;
+      scrambleController.render();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Persistence: committed rows and the solution text of every scramble
+  // ---------------------------------------------------------------------
   function sameList(a, b) {
     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
   }
@@ -920,8 +1448,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function persistSessionState() {
     try {
       const sessionsOut = {};
+      const texts = {};
       for (const [idx, session] of sessions.entries()) {
         if (session.committedRows.length) sessionsOut[idx] = session.committedRows;
+        if (session._text) texts[idx] = session._text;
       }
       localStorage.setItem(scopedKey(SESSION_STATE_KEY), JSON.stringify({
         scrambles: criteria ? criteria.scrambles : [],
@@ -929,30 +1459,21 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         advanced: criteria ? criteria.advanced : [],
         activeIndex,
         sessions: sessionsOut,
+        texts,
       }));
     } catch (err) {
       console.error('Failed to persist session state', err);
     }
   }
 
-  // A saved blob is only trusted when it matches the CURRENT search
-  // criteria exactly -- a reload after starting a different scramble list
-  // (or changing colors/advanced options) must not replay stale progress
-  // onto a tree it wasn't computed against.
+  // A saved blob is only trusted when it matches the CURRENT search criteria
+  // exactly: progress is never replayed onto a tree it was not made on.
   function loadPersistedState(crit) {
     let raw;
-    try {
-      raw = localStorage.getItem(scopedKey(SESSION_STATE_KEY));
-    } catch (err) {
-      return null;
-    }
+    try { raw = localStorage.getItem(scopedKey(SESSION_STATE_KEY)); } catch (err) { return null; }
     if (!raw) return null;
     let saved;
-    try {
-      saved = JSON.parse(raw);
-    } catch (err) {
-      return null;
-    }
+    try { saved = JSON.parse(raw); } catch (err) { return null; }
     if (!crit || !sameList(saved.scrambles, crit.scrambles)
       || !sameList(saved.colors, crit.colors) || !sameList(saved.advanced, crit.advanced)) {
       return null;
@@ -961,14 +1482,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // Replays each scramble's committed rows through the same commit() a click
-  // would use, so rehydrated state goes through the exact tested mutation
-  // path rather than reconstructing fields by hand.
+  // would use; the text comes back as it was typed.
   function rehydrateSessions(saved) {
+    const n = scrambleController.sequenceList.length;
     for (const [idxStr, rows] of Object.entries(saved.sessions || {})) {
       const idx = Number(idxStr);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= scrambleController.sequenceList.length) continue;
+      if (!Number.isInteger(idx) || idx < 0 || idx >= n) continue;
       const session = getOrCreateSession(idx);
       for (const row of rows) session.commit(row);
+    }
+    for (const [idxStr, text] of Object.entries(saved.texts || {})) {
+      const idx = Number(idxStr);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= n) continue;
+      getOrCreateSession(idx)._text = String(text);
     }
   }
 
@@ -977,8 +1503,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return Math.max(0, Math.min(idx, length - 1));
   }
 
-  // Hooks called by script.js (see DOMContentLoaded handler and
-  // scrambleController.render()).
+  // Hooks called by script.js (DOMContentLoaded and scrambleController.render()).
   window.onPrunedTreeReady = function (tree, crit) {
     prunedTree = tree;
     criteria = crit;
@@ -987,29 +1512,39 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     syncViewControls();
     bindViewControls();
     bindSolutionActions();
-
+    bindEditor();
+    bindCube();
+    bindBuddy();
+    bindSettings();
+    bindNewScramble();
     const saved = loadPersistedState(crit);
     if (saved) {
       rehydrateSessions(saved);
       scrambleController.activeIndex = clampIndex(saved.activeIndex, scrambleController.sequenceList.length);
     }
-
-    // scrambleController.render() fires onActiveScrambleChanged below, which
-    // sets activeIndex and runs the search now that prunedTree is set --
-    // this keeps the restored nav UI and the active session in sync in one
-    // path, whether or not there was anything to rehydrate.
     scrambleController.render();
   };
 
   window.onActiveScrambleChanged = function (index) {
     if (index !== activeIndex) {
       setSessionPriority(activeIndex, BACKGROUND);
-      currentPage = 0;
+      critiqueShown = null;
     }
+    // the editor's text belongs to the session it was loaded for
+    if (editorSession && editor) editorSession._text = editor.value;
     activeIndex = index;
-    if (prunedTree) {
-      persistSessionState();
-      runSearch();
+    if (!prunedTree) return;
+    const session = getOrCreateSession(index);
+    if (editor) {
+      editor.value = session._text !== undefined ? session._text : rowsText(session);
+      editorSession = session;
+      animateFrom = null;
     }
+    shownResults = null;
+    shownOwner = null;
+    reading = null;
+    syncEditor();
+    persistSessionState();
+    runSearch();
   };
 })();

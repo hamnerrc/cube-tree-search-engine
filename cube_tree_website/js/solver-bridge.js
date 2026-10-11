@@ -2745,5 +2745,6 @@ if (typeof module !== 'undefined' && module.exports) {
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, solutionText, moveCounts, cubedbUrl, corpusSolutions,
     cancelBoundary, cancelledSteps, candidateCancellation,
+    lookWeightsFor, planCost, edgeTypeLabel, F2L_SLOTS,
   };
 }
