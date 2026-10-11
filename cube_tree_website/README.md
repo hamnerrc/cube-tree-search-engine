@@ -385,6 +385,14 @@ rotation and alg; the better-ranked copy is kept. Clicking a row commits it.
 
 The solution so far is shown one step per line, labelled like a
 reconstruction (`z y // inspection`, `… // xcross`, `… // 3rd/4th pairs`).
+Turns that **cancel** across a step boundary are written once, as a
+reconstruction writes them: a step ending `R` followed by `R U' R' …`
+reads `… R2 // 1st pair (cancels with 2nd pair)` then `U' R' … // 2nd
+pair` (`R` + `R'` is nothing, and the next pair of turns is tried; same
+layer only, rotations too). A result row whose first turns cancel with the
+end of the solution shows them struck through with the result (`R R → R2`).
+The copied text, the Cubedb link and the move counts use the cancelled
+solution. Ranking scores each step as found (the cube is the same).
 Its move count is shown in two metrics, as `25STM / 28ETM`: **STM** (slice
 turn metric) counts every turn of any layer once (face, wide and slice
 turns) and no rotations; **ETM** (execution turn metric, the WCA's

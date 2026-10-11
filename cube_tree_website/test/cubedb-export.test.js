@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const jsRoot = path.join(__dirname, '..', 'js');
 for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js']) Object.assign(global, require(path.join(jsRoot, f)));
-const { SolveSession, solutionLines, solutionText, moveCounts, cubedbUrl } = require(path.join(jsRoot, 'solver-bridge.js'));
+const { SolveSession, solutionLines, solutionText, moveCounts, cubedbUrl, cancelledSteps, candidateCancellation } = require(path.join(jsRoot, 'solver-bridge.js'));
 
 let failures = 0;
 function test(name, fn) {
@@ -88,6 +88,47 @@ test('moveCounts: STM counts turns (wide and slice too), ETM rotations as well, 
   assert.deepStrictEqual(moveCounts(s), { stm: 9 + 4 + 5, etm: 9 + 5 + 7, text: '18STM / 21ETM' });
   assert.strictEqual(moveCounts(session([])).text, '0STM / 0ETM');
   assert.strictEqual(solutionText(s), ['R U F', ...solutionLines(s)].join('\n'));
+});
+
+test('cancellations across steps: written once, the step whose end changed says so, counted once', () => {
+  const s = session([
+    { type: 'Cross', coreAlg: "U R U R2 F D2 F'", targetNodeId: nodeWith([], []) },
+    { type: 'Single pair', coreAlg: "R' U R U R' U' R", targetNodeId: nodeWith(['FR'], ['FR']) },
+    { type: 'Single pair', coreAlg: "R U' R' U' L U L'", targetNodeId: nodeWith(['FR', 'FL'], ['FR', 'FL']) },
+    { type: 'Multislot', coreAlg: "U L' U' L F U F' U R U' R'", targetNodeId: nodeWith(['FR', 'FL', 'BR', 'BL'], ['FR', 'FL', 'BR', 'BL']) },
+  ], "z2 y'");
+  assert.deepStrictEqual(solutionLines(s), [
+    "z2 y' // inspection",
+    "U R U R2 F D2 F' // cross",
+    "R' U R U R' U' R2 // 1st pair (cancels with 2nd pair)",
+    "U' R' U' L U L' // 2nd pair",
+    "U L' U' L F U F' U R U' R' // 3rd/4th pairs",
+  ]);
+  assert.strictEqual(moveCounts(s).stm, 7 + 7 + 6 + 11);
+});
+
+test('cancellations: R2 + R = R\', R + R\' = nothing and the next pair is tried, rotations too, other layers never', () => {
+  assert.deepStrictEqual(cancelledSteps(["F R2", "R U"]).map(x => x.alg), ["F R'", 'U']);
+  assert.deepStrictEqual(cancelledSteps(["F R U", "U' R' F"]).map(x => x.alg), ['F2', '']);
+  assert.deepStrictEqual(cancelledSteps(["F R", "R'", "F U"]), [{ alg: 'F2', cancelsWith: 2 }, { alg: '', cancelsWith: -1 }, { alg: 'U', cancelsWith: -1 }]);
+  assert.deepStrictEqual(cancelledSteps(["R U y", "y' L"]).map(x => x.alg), ['R U', 'L']);
+  assert.deepStrictEqual(cancelledSteps(["R U r", "R U'"]).map(x => x.alg), ['R U r', "R U'"]);
+  assert.deepStrictEqual(cancelledSteps(["R U R'", "L U"]).map(x => x.alg), ["R U R'", 'L U']);
+  assert.strictEqual(candidateCancellation(["U R", "R' U R U R' U' R"], "U R U R'"), null);
+  assert.deepStrictEqual(candidateCancellation(["U R", "R' U R U R' U' R"], "R U' R' U' L U L'"), { cancelled: 'R', rest: "U' R' U' L U L'", before: 'R', after: 'R2' });
+  assert.deepStrictEqual(candidateCancellation(["R U R'"], "R U' R' U"), { cancelled: "R U' R'", rest: 'U', before: "R U R'", after: '' });
+});
+
+test('cancellations: the written steps are the same cube as the steps found (random sequences)', () => {
+  let seed = 7;
+  const rnd = n => ((seed = (seed * 1103515245 + 12345) >>> 0) % n);
+  const toks = ['R', "R'", 'R2', 'U', "U'", 'U2', 'r', "r'", 'y', "y'", 'y2', 'F', 'L2'];
+  for (let k = 0; k < 2000; k++) {
+    const steps = [1, 2, 3].map(() => Array.from({ length: 1 + rnd(4) }, () => toks[rnd(toks.length)]).join(' '));
+    const want = applyAlgorithm(SOLVED_FACELETS, steps.join(' '));
+    const got = applyAlgorithm(SOLVED_FACELETS, cancelledSteps(steps).map(x => x.alg).filter(Boolean).join(' '));
+    assert.strictEqual(got, want, steps.join(' | '));
+  }
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

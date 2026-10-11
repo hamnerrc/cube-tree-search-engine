@@ -2563,6 +2563,7 @@ function edgeLabel(pairCount, isRoot, isPseudo) {
 function solutionLines(session) {
   const ordinal = n => ['1st', '2nd', '3rd', '4th'][n - 1] || `${n}th`;
   const lines = session.rotation ? [`${session.rotation} // inspection`] : [];
+  const labels = [];
   let pairs = 0;
   session.committedRows.forEach((row, i) => {
     const before = pairs;
@@ -2574,22 +2575,122 @@ function solutionLines(session) {
     else if (pairs - before <= 1) label = `${ordinal(pairs)} pair`;
     else label = `${ordinal(before + 1)}/${ordinal(pairs)} pairs`;
     if (pseudo) label += ' (pseudo)';
-    if (row.coreAlg) lines.push(`${row.coreAlg} // ${label}`);
+    labels.push(label);
+  });
+  // Turns that cancel across a step boundary are written once ("R" then
+  // "R U' R'" is "R2", then "U' R'"); the step whose end changed says so.
+  const steps = cancelledSteps(session.committedRows.map(row => row.coreAlg || ''));
+  steps.forEach((step, i) => {
+    const label = step.cancelsWith >= 0 ? `${labels[i]} (cancels with ${labels[step.cancelsWith]})` : labels[i];
+    if (step.alg) lines.push(`${step.alg} // ${label}`);
   });
   return lines;
 }
 
+// ---------------------------------------------------------------------------
+// Cancellations across step boundaries. Two turns of the same layer (or two
+// rotations about the same axis) next to each other are one turn: R + R =
+// R2, R + R' = nothing, R2 + R = R'. Only display and move counts use them:
+// the committed rows, the engine's postAlg and the ranking keep every step
+// as it was found (the same cube either way).
+// ---------------------------------------------------------------------------
+
+const CANCEL_QUARTERS = { '': 1, '2': 2, "2'": 2, "'": 3 };
+const CANCEL_SUFFIX = ['', '', '2', "'"];
+
+/** The quarter turns of a token about its layer, [layer, quarters], or null. */
+function cancelParts(tok) {
+  const m = /^([URFDLBurfdlbMESxyz])(2'|2|'|)$/.exec(tok || '');
+  return m ? [m[1], CANCEL_QUARTERS[m[2]]] : null;
+}
+
 /**
- * Move counts of the committed solve (the inspection rotation excluded):
- * STM counts every turn of any layer once (face, wide and slice turns),
- * rotations not at all; ETM (the WCA's definition) counts every turn and
- * every rotation once. { stm, etm, text: "25STM / 28ETM" }.
+ * The boundary of `prev` (tokens) and `next` (tokens) with cancelling turns
+ * combined: { prev, next, merged, used, removed, combined }. The combined
+ * turn stays at the end of `prev` (as cubers write it); when it is no turn
+ * at all, both lose a token and the new boundary is tried again. `used`:
+ * tokens taken from the start of `next`; `removed`: tokens of `prev`'s end
+ * replaced by `combined` ('' when they all cancelled). `merged` false: nothing
+ * cancels.
+ */
+function cancelBoundary(prev, next) {
+  const a = prev.slice();
+  let used = 0;
+  let combined = '';
+  while (a.length && used < next.length) {
+    const x = cancelParts(a[a.length - 1]);
+    const y = cancelParts(next[used]);
+    if (!x || !y || x[0] !== y[0]) break;
+    used++;
+    a.pop();
+    const q = (x[1] + y[1]) % 4;
+    if (q) { combined = x[0] + CANCEL_SUFFIX[q]; break; }
+  }
+  const removed = prev.length - a.length;
+  if (combined) a.push(combined);
+  return { prev: a, next: next.slice(used), merged: used > 0, used, removed, combined };
+}
+
+/**
+ * The steps' algs as written after cancelling across their boundaries,
+ * [{ alg, cancelsWith }] in order: cancelsWith is the index of the later step
+ * the end of this one cancelled with (-1: none). A step can cancel away
+ * completely; the next one then meets the step before it.
+ */
+function cancelledSteps(algs) {
+  const toks = algs.map(a => String(a || '').split(/\s+/).filter(Boolean));
+  const out = toks.map(() => ({ alg: '', cancelsWith: -1 }));
+  let prev = -1;
+  for (let j = 0; j < toks.length; j++) {
+    if (prev >= 0) {
+      const c = cancelBoundary(toks[prev], toks[j]);
+      if (c.merged) {
+        toks[prev] = c.prev;
+        toks[j] = c.next;
+        out[prev].cancelsWith = j;
+      }
+    }
+    if (toks[j].length) prev = j;
+  }
+  toks.forEach((t, i) => { out[i].alg = t.join(' '); });
+  return out;
+}
+
+/**
+ * How a candidate step `alg` reads after the committed steps `stepAlgs` (the
+ * results page shows it): null when its first turn does not cancel with the
+ * solution's last; otherwise { cancelled: the tokens of `alg` that cancel,
+ * rest: the step as written after them, before: the solution's last turns
+ * they cancel with, after: what those become ('' = gone) }.
+ */
+function candidateCancellation(stepAlgs, alg) {
+  const steps = cancelledSteps(stepAlgs);
+  let prevAlg = '';
+  for (let i = steps.length - 1; i >= 0 && !prevAlg; i--) prevAlg = steps[i].alg;
+  const prev = prevAlg.split(' ').filter(Boolean);
+  const next = String(alg || '').split(' ').filter(Boolean);
+  const c = cancelBoundary(prev, next);
+  if (!c.merged) return null;
+  return {
+    cancelled: next.slice(0, c.used).join(' '),
+    rest: c.next.join(' '),
+    before: prev.slice(prev.length - c.removed).join(' '),
+    after: c.combined,
+  };
+}
+
+/**
+ * Move counts of the committed solve (the inspection rotation excluded),
+ * after cancellations across steps: STM counts every turn of any layer once
+ * (face, wide and slice turns), rotations not at all; ETM (the WCA's
+ * definition) counts every turn and every rotation once.
+ * { stm, etm, text: "25STM / 28ETM" }.
  */
 function moveCounts(session) {
   let stm = 0;
   let etm = 0;
-  for (const row of session.committedRows) {
-    for (const tok of String(row.coreAlg || '').split(/\s+/)) {
+  for (const step of cancelledSteps(session.committedRows.map(row => row.coreAlg || ''))) {
+    for (const tok of step.alg.split(/\s+/)) {
       if (!tok) continue;
       etm++;
       if (!/^[xyz]/.test(tok)) stm++;
@@ -2631,5 +2732,6 @@ if (typeof module !== 'undefined' && module.exports) {
     isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey, splitByFirstMove,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
     solutionLines, solutionText, moveCounts, cubedbUrl, corpusSolutions,
+    cancelBoundary, cancelledSteps, candidateCancellation,
   };
 }

@@ -580,6 +580,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return `${formatTpp(r.lookaheadTpp)}${r.lookaheadAlgs.length ? '  → ' + r.lookaheadAlgs.join(' | ') : ''}`;
   }
 
+  // A row's alg; when its first turns cancel with the end of the solution
+  // ("R" then "R U' R'"), they are struck through and the result is noted
+  // ("R R → R2"), as the solution box will write it.
+  function algCellHtml(r, stepAlgs) {
+    const c = stepAlgs.length ? candidateCancellation(stepAlgs, r.coreAlg) : null;
+    if (!c) return escapeHtml(r.coreAlg);
+    const note = c.after ? `${c.before} ${c.cancelled} → ${c.after}` : `${c.before} ${c.cancelled} cancel`;
+    return `<s class="cancel-tok">${escapeHtml(c.cancelled)}</s>${c.rest ? ' ' + escapeHtml(c.rest) : ''} <span class="cancel-note" title="cancels with the end of the solution">${escapeHtml(note)}</span>`;
+  }
+
   // Only one page of rows is rendered; ranking still covers every result.
   function renderResults(results, emptyText = 'no results yet.') {
     shownResults = results;
@@ -588,6 +598,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const pages = Math.max(1, Math.ceil(results.length / view.pageSize));
     currentPage = Math.max(0, Math.min(currentPage, pages - 1));
     const offset = currentPage * view.pageSize;
+    // the committed steps the rows follow (a row may cancel with their end)
+    const active = sessions.get(activeIndex);
+    const stepAlgs = active && !active.isAtRoot ? active.stepAlgs : [];
     tbody.innerHTML = '';
     if (!results.length) {
       tbody.innerHTML = `<tr class="placeholder-row"><td colspan="9">${escapeHtml(emptyText)}</td></tr>`;
@@ -606,7 +619,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       ];
       const tr = document.createElement('tr');
       tr.tabIndex = 0;
-      tr.innerHTML = cells.map((c, k) => `<td data-label="${COLUMNS[k]}" class="col-${k}${c === '-' ? ' empty' : ''}">${escapeHtml(c)}</td>`).join('');
+      tr.innerHTML = cells.map((c, k) => `<td data-label="${COLUMNS[k]}" class="col-${k}${c === '-' ? ' empty' : ''}">${k === 6 ? algCellHtml(r, stepAlgs) : escapeHtml(c)}</td>`).join('');
       const owner = shownOwner;
       const commit = () => { if (owner && owner === activeStepKey()) handleResultClick(r); };
       tr.addEventListener('click', commit);

@@ -687,6 +687,17 @@ button:disabled {
     color: var(--bright);
 }
 
+/* A row's first turns that cancel with the end of the solution. */
+.results-table .cancel-tok {
+    color: var(--muted);
+}
+
+.results-table .cancel-note {
+    color: var(--muted);
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
 .results-table td.empty {
     color: var(--muted);
 }
