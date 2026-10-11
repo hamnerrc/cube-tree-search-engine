@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-11 (thirty-fourth pass).*
+*Last updated 2026-10-11 (thirty-fifth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,71 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-fifth pass (2026-10-11): the UI overhaul.** The developer's
+blueprint arrived as `cube_tree_website/UI_references/` (CubeDB
+screenshots, one-bit pixel art and UI kit, pixel avatars, two pixel cubes,
+Pokémon Showdown) plus a brief; the agent composes the visuals from those
+references (developer decisions: 2 dark + 2 light themes; the results table
+replaced entirely by the top 5 and the avatar; style changes only the
+avatar's picks; agent-drawn placeholder avatars; chunky/fine/smooth pixels;
+strict prefixes; free entry; Showdown ideas without the battle theme;
+look-ahead without clutter; **no last-layer work at all**). Tree clean at
+the start (only the new references untracked), every fast suite passing.
+Plan: `~/.claude/plans/pasted-content-id-ed99-phase-0-floofy-giraffe.md`.
+README sections "Profiles", "Onboarding", "The solving screen" replace the
+configuration/results pages and the planned redesign. The solver, the
+ranking and the search are unchanged (real-engine e2e suites re-run:
+cubedb-export, pair-choice).
+
+1. **Profiles** (`js/profile.js`): sign-in = picking a local profile; every
+   saved key scoped per profile (`profileKey`, script.js `scopedKey`); the
+   first profile takes over the pre-profile keys; export/import codes.
+2. **Onboarding** (`index.html`, `js/onboarding.js`, `js/skill-levels.js`):
+   name + buddy, average, inspection planning, style, goals gated by draft
+   brackets (rest behind "show all"), colours -> existing settings.
+3. **Captions** (`js/captions.js`): every user-facing sentence by key,
+   placeholders for the developer (TODO(copy)); the info dialog reads them.
+4. **Themes** (`styles.css` rewritten): ink, violet, paper, mint; pixel
+   frames with corner brackets; Silkscreen + VT323.
+5. **Pixel cube** (`js/pixel-cube.js`): software rasteriser (z-buffer,
+   perspective, outlines, bevels, back-face panels), orbit, turn animation,
+   playback. Geometry == MOVE_TABLE for all 54 tokens and 500 random algs
+   (`test/pixel-cube.test.js`; signs and layout were right first time, the
+   test is the guard). ~5 ms per frame at 356x320 in headless Chrome after
+   culling hidden faces (11.6 ms before).
+6. **Solution bar** (`js/solve-editor.js`): text is the truth; steps cut at
+   line ends by facelet replay (strict superset of solved pairs, compared
+   in the frame the step starts in); identical to `segmentProSolve` on all
+   19 reference solves and 80 reco.nz solves (`test/solve-editor.test.js`);
+   user steps scored with the search's TPP formula (checked: final step =
+   pathCost / 12). Top 5 by strict token prefix; Tab fills, Tab again writes
+   the label and commits.
+7. **Avatar** (`js/suggest.js`): best / style pick within 10% / setup pick
+   (pair-choice view within 16% or look-ahead best); families differ; level
+   gating; role-led reasons (`test/suggest.test.js`).
+8. **Critique** (`js/critique.js`): each step ranked among its node's
+   unfiltered same-goal results; "below my top N" vs "not in my search
+   (why)"; inspection compared physically. Pro reference #1 typed in the
+   browser: 12 s (xcross below the top results, +4.56 TPP; 2nd and 3rd pairs
+   the best pick; 4th pair 12 turns > limit 10).
+9. Browser-checked (headless Chrome, CDP): onboarding -> main screen,
+   returning user skips onboarding, Tab/Tab/Enter/arrows, prefix filter,
+   pick click, undo, critique, settings drawer, info dialog; screenshots of
+   all four themes at 1180 px and 390 px.
+
+Bugs found and fixed on the way: `U2'` typed by users (and in the pro data)
+**hung the engine search** for the next step (the engine path only knows
+`U2`; now normalised); the scramble-change hook saved the empty editor over
+the restored text on reload (the editor now records which session it holds);
+the critique waited minutes on hidden multislot searches (now only for a
+multislot step); the page-wide lowercase reached the editor overlay.
+
+Open from this pass: the developer's copy (captions.js), real avatar art
+(`AVATAR_SHEET`), the bracket thresholds (skill-levels.js); the cube's
+hover preview is a jump to the final state (no animation); a line that
+merges cancelled turns across steps (`R2` written for `R` + `R`) is read as
+one merged step.
 
 **Thirty-fourth pass (2026-10-11).** Developer: pair planning off is for
 solvers who want the best pair now, without knowing why a step sets up a
@@ -320,11 +385,20 @@ every fast suite passed at the start.
 
 ```
 cube_tree_website/          the site (GitHub Pages root)
-  index.html, solver.html   configuration page, results page
+  index.html, solver.html   sign-in + onboarding, the solving screen
+  UI_references/            the developer's design references (blueprint)
+  js/profile.js             local profiles, per-profile keys, themes
+  js/onboarding.js, js/skill-levels.js   onboarding, brackets, answers -> settings
+  js/captions.js            every user-facing sentence (developer's copy)
+  js/avatars.js             placeholder buddy sprites (AVATAR_SHEET hook)
+  js/pixel-cube.js          pixel-art cube renderer + playback
+  js/solve-editor.js        solution bar: text -> steps by replay, prefix matches
+  js/suggest.js             the avatar's three picks and reasons
+  js/critique.js            whole-solution critique
   js/script.js              DAG pruning, criteria, MCC algSpeed, stepPenalty, naturalness model
   js/pro-steps.js           generated: the naturalness model's professional corpus
   js/solver-bridge.js       SolveSession, searchCurrentNode, post-processing, look-ahead, export
-  js/solver-ui.js           results page DOM, worker pools, IndexedDB prune-table cache
+  js/solver-ui.js           solving-screen DOM, worker pools, IndexedDB prune-table cache
   js/facelet-cube.js        facelet simulator (verified against magiccube), spellings
   js/facelet-flags.js       which pieces are solved (luck filter), pseudo masks, look/plan features
   js/spelling-search.js     complete search: every spelling of every face-turn solution, exact top N
@@ -348,6 +422,10 @@ Fast suites (run before and after any change, from the repo root;
 python3 cube_tree_website/tools/test_tree_gen.py
 for t in cube_tree_website/test/*.test.js; do node $t || echo FAIL $t; done
 ```
+
+UI suites among them: `profile`, `onboarding` (brackets, captions, sprites),
+`pixel-cube` (geometry vs MOVE_TABLE), `solve-editor` (segmentation vs the
+pro segmenter), `suggest` (avatar picks), `critique` (fake search).
 
 `test/spelling-search.test.js` checks the complete search's branch and
 bound against brute force (fast). Real-engine checks (slower; most set
@@ -377,9 +455,10 @@ identical batteries), `node-engine-pool.js`, `node-postprocess-pool.js`,
 
 ## State of the product
 
-Everything in the README is implemented except the visual redesign
-(waiting on the developer's blueprints). Solver, rankings and speed are
-done (developer-confirmed on an iPad Air 5, thirty-second pass).
+Everything in the README is implemented, including the UI overhaul
+(thirty-fifth pass; captions and avatar art are placeholders for the
+developer). Solver, rankings and speed are done (developer-confirmed on an
+iPad Air 5, thirty-second pass).
 
 - **Search loop:** DAG edges of the current node, deduplicated by target;
   later steps include every solved slot in their goal. Matched calls: the
@@ -391,10 +470,12 @@ done (developer-confirmed on an iPad Air 5, thirty-second pass).
 - **Spellings:** one grammar (spelling-search.js) replaces inspection
   variants, rotation spellings, side-cross inspections, cross optimisation
   and wide spellings for matched calls; pseudo calls keep the old ones.
-- **Results page:** progressive results, look-ahead (best-first), filters
-  (multislot, wide moves, hide awkward, simple pseudo), pair planning,
-  pagination, phone cards, Cubedb export, undo, reload persistence,
-  background searching with the active scramble first.
+- **Solving screen:** solution bar (free entry, steps by replay, top 5 by
+  prefix, Tab/comment completion), avatar picks with reasons, critique,
+  pixel cube with playback, settings drawer (look, filters, pair planning,
+  look-ahead, search settings, scrambles, profile), copy / copy all / Cubedb,
+  undo, reload persistence (rows and text), background searching with the
+  active scramble first.
 - **Engines:** prune tables shared between workers and kept in IndexedDB per
   `ENGINE_VERSION`; the cross engine worker sends solutions in batches
   (`ENGINE_GLUE_VERSION`, its own URL parameter so the table cache stays).
@@ -824,6 +905,10 @@ not look-ahead optimal).
 - zsh does not word-split `${X:+--flag $X}`: pass flags explicitly.
 - The dev machine has 2 physical cores: timings are noisy; alternate A/B
   runs, kill leftover headless Chromes.
+- Typed half turns `X2'` must reach the engine as `X2` (solve-editor.js
+  normTok): a postAlg with `U2'` hung the next step's search.
+- Headless Chrome caches solver.html and scripts even with new `?v=`:
+  drive it with `Network.setCacheDisabled`.
 - GitHub Pages: after `git push origin master:main`, check
   `api.github.com/repos/hamnerrc/cube-tree-search-engine/actions/runs` and
   compare live file hashes before judging live performance.
@@ -835,8 +920,9 @@ Done (developer, thirty-second pass): solver optimisation and speed
 and 6-8 below stay as the record of where those stood; no further work is
 planned on them unless the developer asks.
 
-0. **Visual redesign** (README): waiting on the developer's blueprints. Do
-   not start it without them.
+0. **Visual redesign** -- DONE (thirty-fifth pass, from UI_references/).
+   Waiting on the developer: captions.js copy, avatar art, bracket
+   thresholds. Last layer: not to be started until the developer asks.
 1. **Speed** -- DONE (user goal, thirtieth/thirty-first pass: ~10 s per step,
    optimality kept). Browser, this 2-core machine: xcross + xxcross every
    step <= 8.5 s; default settings (cross only) first steps <= 4.1 s, later
@@ -871,7 +957,7 @@ planned on them unless the developer asks.
    fetch <raw.json> "Name"`, then `convert`, `corpus`, `cpools`, `fit`).
    The naturalness model is strongly solver-specific (an LM trained on
    another solver: mean log10 rank 0.62 → 0.77).
-5. **Visual redesign**: see item 0.
+5. **Visual redesign**: done, see item 0.
 6. **Pair planning:** checked (twenty-ninth pass) on 80 reco.nz solves the
    tuning pools did not use, the app's full search at every pro node (best
    5 per pair choice, re-scored offline): the pro's pair choice ranks first

@@ -589,7 +589,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 }
 @media (max-width: 600px) {
     body { font-size: 20px; }
-    .main { gap: 22px; padding: 18px 12px 100px; }
+    .main { gap: 22px; padding: 18px 12px 96px; } /* room to scroll past the corner buddy */
     .brand h1 { font-size: 15px; }
     .play-row { gap: 6px; }
     .avatar-grid { grid-template-columns: repeat(3, 1fr); }

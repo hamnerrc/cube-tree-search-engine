@@ -1,6 +1,8 @@
 /**
  * solver-ui.js — DOM glue between solver.html's markup and solver-bridge.js's
- * SolveSession / searchCurrentNode logic.
+ * SolveSession / searchCurrentNode logic: the solution bar (solve-editor.js),
+ * the top 5, the avatar (suggest.js), the critique (critique.js), the cube
+ * (pixel-cube.js) and the settings drawer (README "The solving screen").
  *
  * One SolveSession per scramble (per README: "Multiple scrambles are solved
  * independently of one another... results are never merged or compared

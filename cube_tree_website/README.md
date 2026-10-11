@@ -23,13 +23,14 @@ pair at once, a multislot two pairs at once).
 1. The solver searches the DAG edges leaving the **current node** (at first,
    the unsolved node).
 2. Each result is **one DAG edge**: the next step, never a whole solution.
-3. The user clicks a result; it is committed, the cube advances, and the
-   solver searches again from the new node.
+3. The user picks a result (Tab, a click, the avatar) or types a step of
+   their own; it is committed, the cube advances, and the solver searches
+   again from the new node.
 4. This repeats until Cross + F2L is solved.
 
 ### Look-ahead
 
-An optional, per-step results-page setting ranks results by the best
+An optional setting ranks results by the best
 combined next *N* steps (N = 2 or 3; default off). Deeper look-aheads
 (4 or 5 steps) are not offered: they are no use for finding a human solution.
 
@@ -42,12 +43,14 @@ combined next *N* steps (N = 2 or 3; default off). Deeper look-aheads
    below. A sequence that finishes Cross + F2L early stops there; one with no
    continuation sinks to the bottom of the block.
 
-The single-step ranking is shown first; the block then re-ranks as each
-candidate's look-ahead finishes (best-ranked candidates first, unfinished
-ones show "…"). Each re-ranked row shows its combined TPP and follow-up
-steps. Only the clicked step is committed; changing the depth re-searches
-the step, reusing its single-step search. Depth 3 is marked as slow (tens
-of seconds per step or more).
+The single-step ranking is shown first; the list then re-ranks as each
+candidate's look-ahead finishes (best-ranked candidates first). Look-ahead
+adds no clutter: a suggestion shows a small `+TPP` marker with its combined
+TPP, its follow-up steps appear only in its hover card, and the avatar's
+third pick becomes the look-ahead's best. Only the chosen step is
+committed; changing the depth re-searches the step, reusing its
+single-step search. Depth 3 is marked as slow (tens of seconds per step or
+more).
 
 ## Orientation
 
@@ -202,7 +205,7 @@ the top result at every step, solves rotate less and solve the two front
 slots first less often (`tools/continuity.js`; numbers in
 PROJECT_STATUS.md).
 
-**Pair planning** is a results-page setting, on by default. Off, a step is
+**Pair planning** is a setting, on by default. Off, a step is
 ranked **by itself alone**: no pair-choice term at all (no look features, no
 EO, no open slots), so the list answers "what is the fastest way to solve a
 pair here", for solvers who want the best pair without a reason that only
@@ -220,7 +223,7 @@ A **distance-1** step starts from the unsolved node (the first step).
   one first step. **XXXXCross is not offered.**
 - **Single pair**: a later step that solves one pair.
 - **Multislot**: a later step that solves several pairs at once. Always
-  searched; a results-page filter (default hidden) shows them.
+  searched; a filter (default hidden) shows them.
 
 Configuration checkboxes **filter which edges are searched**; they never
 create separate ranking buckets or change scores.
@@ -230,7 +233,7 @@ create separate ranking buckets or change scores.
 Normally a pair counts only when its corner and edge match and are aligned
 with the D layer. **Pseudo F2L** (off by default) lets the search pass
 through states with mismatched pieces in a slot, fixed later. **Simple pseudo
-only** (results-page filter): after a mismatch, the next step may only repair
+only** (a filter): after a mismatch, the next step may only repair
 that mismatch. A lone corner or edge is never a target of its own.
 
 ### Luck filtering
@@ -308,7 +311,7 @@ in a spelling above; `tools/complete-coverage.js`). A single-pair limit of
 11 raises that to 92.8% but lists about five times as many solutions. A
 later goal with no solution within its limit is searched up to 3 turns
 deeper (its shortest solutions).
-The configuration page's per-type limits override both columns
+The settings drawer's per-type limits override both columns
 ("max solutions" is N, "move depth" the limit); blank keeps the default. A
 Single pair or Multislot override applies to every later step of that kind.
 
@@ -323,7 +326,7 @@ waits. **Done:** on the developer's iPad Air 5 searches take far less than
 these goals (the slower timings in PROJECT_STATUS.md are from an old
 development machine).
 
-Results-page filters, set per step. They only hide: every search includes
+Filters (settings drawer), set per step. They only hide: every search includes
 multislot, wide-move and awkward results, so changing a filter either way
 is instant and never searches again; the look-ahead follows them.
 
@@ -359,77 +362,169 @@ more than one mid-step rotation (only corpus candidates have them); slice-like c
 `r`/`l`; goal-no-op moves other than `U` turns (pruned by the engine); and
 steps longer than the move limits.
 
-## Configuration and results pages
+## Profiles
 
-The **configuration page** holds the search settings (colours, first-step
-types, pseudo F2L, per-type limits) and the scramble list. Generated scrambles are random-state (a uniformly random
-state solved with a two-phase search and inverted, as WCA scramblers do).
+There is no server: the site is static (GitHub Pages) and a **profile** is
+only a set of preferences in this browser's localStorage. Signing in means
+picking one of the profiles on this device; signing out goes back to the
+list. Several people can share a device. Every saved setting (search
+settings, filters, look, each scramble's progress and solution text) is
+kept per profile. A profile can be exported as a short code and imported
+on another device. The first profile created on a device takes over the
+settings saved before profiles existed.
 
-The **results page** holds the per-step settings in labelled groups: filter
-(multislot, wide moves, hide awkward F2L solutions, simple pseudo only),
-ranking (pair planning), look-ahead (depth, breadth), and results per
-page. Every setting applies to later steps until changed; a look-ahead or
-ranking setting re-searches the current step (reusing what it can), a
-filter only hides, and the status line says how many.
+## Onboarding
 
-The interface is lowercase and minimal (move notation keeps its case). No
-inline explanations: hovering shows a one-line hint and an info icon opens a
-short description of every option. Both pages work on phones, tablets and
-desktops.
+With no profile signed in, the site asks first (`index.html`), one question
+per screen: a name and a buddy (avatar), the solver's **average time** in
+seconds, **how far they plan in inspection** (cross / cross and the first
+pair / xcross / xxcross), whether they are an **efficiency** or a **TPS**
+solver, **what they want to learn next**, and their cross colours. A
+signed-in profile goes straight to the solving screen.
 
-### Results table
+The answers set the existing settings and nothing else: inspection planning
+picks the first-step types, the goals switch on what they need (xcross:
+xcross first steps; optimal crosses with wide moves: wide moves; pair
+influencing: pair planning; multislotting: multislot), the colours are the
+cross colours. The style only changes the avatar's picks (below); **it never
+changes the ranking**.
 
-Results appear **progressively** and re-rank as calls (and look-ahead)
-finish; the final list equals the one shown at the end. 25 rows per page by
-default; nothing is clipped (long algs wrap; narrow screens show cards).
+**Only what fits the solver's level is recommended.** The average time
+falls in a bracket (draft: 30 s+, 20–30, 15–20, 12–15, under 12;
+`js/skill-levels.js`, editable data), and each learning goal belongs to a
+range of brackets. The onboarding offers the goals of the solver's bracket;
+the others sit behind "show all", marked "later" or "basics". The avatar
+never suggests something above the solver's level (e.g. a multislot to a
+30-second solver) unless they chose to learn it.
 
-| rank | colour | type | rotation | edges | corners | alg | TPP | look-ahead |
-|---|---|---|---|---|---|---|---|---|
+## The solving screen
 
-Type notes pseudo pairs; rotation is the first step's inspection rotation;
-edges/corners are the slots this step solves. Two rows never show the same
-rotation and alg; the better-ranked copy is kept. Clicking a row commits it.
+`solver.html` is one screen: the cube with playback, the scramble, the
+solution bar with the top suggestions, and the avatar. Settings live in a
+drawer (look, filters, ranking, look-ahead, search: colours, first-step
+types, pseudo F2L, per-type limits, the scramble list; profile), the
+explanations behind the "i".
 
-The solution so far is shown one step per line, labelled like a
-reconstruction (`z y // inspection`, `… // xcross`, `… // 3rd/4th pairs`).
-Turns that **cancel** across a step boundary are written once, as a
-reconstruction writes them: a step ending `R` followed by `R U' R' …`
-reads `… R2 // 1st pair (cancels with 2nd pair)` then `U' R' … // 2nd
-pair` (`R` + `R'` is nothing, and the next pair of turns is tried; same
-layer only, rotations too). A result row whose first turns cancel with the
-end of the solution shows them struck through with the result (`R R → R2`).
-The copied text, the Cubedb link and the move counts use the cancelled
-solution. Ranking scores each step as found (the cube is the same).
-Its move count is shown in two metrics, as `25STM / 28ETM`: **STM** (slice
-turn metric) counts every turn of any layer once (face, wide and slice
-turns) and no rotations; **ETM** (execution turn metric, the WCA's
-definition) counts every turn and every rotation once. The first step's
-inspection rotation counts in neither.
-It can be copied (scramble first) or opened on [Cubedb](https://cubedb.net)
-(spaces as `_`, primes as `-`, the rest URL-encoded). **Copy all** copies
-every scramble of the list the same way, each with its solution so far, a
-blank line between them.
+### Solution entry and the top 5
+
+The solution is typed into the solution bar, one step per line, like a
+reconstruction (`// comments` allowed). **The text is the source of
+truth**, and anything may be typed; nothing is ever refused. At each line
+end the moves so far are replayed on the cube (`js/solve-editor.js`): once
+the cross is solved and the solved pairs are a strict superset of the
+current ones, those lines form the next step (a line that finishes nothing
+is merged into the next, the way professional reconstructions are
+segmented; the cut is the same as the tuning tools' segmenter on every
+reference solve). A committed step that the text still starts with keeps
+its search row; a step the user wrote is scored with the same formula as a
+search result. Half turns written `U2'` count as `U2`.
+
+The **top 5** are the current step's ranked list (every step type, after the
+filters) narrowed by a **strict token prefix** of what is typed after the
+last step: every complete token must match, and the token still being typed
+must start the next (`R` matches `R`, `R'` and `R2`). At the first step a
+suggestion reads as its inspection rotation, then its alg. The top match
+shows greyed after the caret; **Tab** fills it in, and Tab again writes the
+step's label as a comment (`// xcross`, `// 2nd pair`, `// 3rd/4th pairs`, as
+the solution labels) and goes to the next line, which commits it. ↑/↓
+choose another suggestion, Enter or a click commits it with its label.
+A suggestion whose first turns cancel with the end of the solution shows
+them struck through (`R R → R2`). Typed moves that match no suggestion
+dim the list until they finish a step. Undo removes the unfinished moves,
+then the last step.
+
+Copy, copy all and the Cubedb link write the solution as a reconstruction:
+the committed steps with turns that cancel across a step boundary written
+once (`… R2 // 1st pair (cancels with 2nd pair)`, then `U' R' … // 2nd pair`;
+same layer only, rotations too), then any unfinished moves. Its move count
+is shown as `25STM / 28ETM`: **STM** (slice turn metric) counts every turn
+of any layer once and no rotations; **ETM** (execution turn metric, the
+WCA's definition) counts every turn and every rotation once. The first
+step's inspection rotation counts in neither. The editor keeps each step as
+it was found or typed; ranking scores each step as found (the cube is the
+same).
+
+### The avatar
+
+The avatar (the profile's buddy) sits at the bottom right (on phones a
+corner icon that opens its bubble) and suggests **three options** from the
+same ranked list, each with a reason (`js/suggest.js`):
+
+1. the best TPP;
+2. by style, within 10% of the best TPP: the **shortest** step for an
+   efficiency solver, the one that **flows** best (least time per turn) for a
+   TPS solver;
+3. the step that **sets up** the next one: the best pair-choice view (free
+   pairs, oriented edges, the open slots in front) within 16% of the best,
+   or the look-ahead's best when look-ahead is on.
+
+Picks differ in family (not the same moves after an AUF or a rotation).
+Reasons are facts about the step: fastest, leaves a free pair, leaves the
+edges oriented, no rotation, an ergonomic wide move, N moves shorter, more
+moves that flow, solves N pairs at once, cancels into the last move, solves
+a back slot, best with what comes next. Each pick leads with a reason that
+fits its role; hovering a pick (or a suggestion) shows a card with its type,
+colour, TPP, move counts, reasons and look-ahead follow-ups, and previews it
+on the cube.
+
+### Critique
+
+Once a solution is typed (or finished), the avatar can **critique** it
+(`js/critique.js`): each committed step is compared with its node's search,
+unfiltered, among the results with the same goal: its rank, its TPP gap to
+the step the solver would play, and that step with the fact that makes it
+better. A step the search cannot contain (longer than the move limit,
+slices, a wide `b`, two rotations, a rotation inside the first step) is
+said to be outside it; one it can contain but that ranks below the kept
+results is said to be below them. Multislot searches run only for a
+multislot step. Clicking a line jumps playback there and shows the
+alternative on the cube.
+
+### The cube
+
+The cube is simulated and drawn on the site (`js/pixel-cube.js`, no
+libraries): a perspective view like Cubedb's, drawn as **pixel art** (a
+small software renderer: 3D quads, a z-buffer, nearest-neighbour scaling,
+one-pixel outlines and sticker bevels, as in `UI_references/cube_image.png`).
+Drag to turn it, double-click to reset. **Back faces** (on by default) float
+the hidden faces as panels behind the cube. Turns are animated (wide moves,
+slices and rotations too); the facelet simulator stays the only source of
+truth for the state, and the animation's geometry is checked against it
+for every move token. The playback bar plays the scramble, the solution and
+the moves being typed: scrub, start, back, play, forward, end, fullscreen;
+typed moves and committed suggestions animate as they are added.
+
+### Look
+
+The interface follows `UI_references/`: one-bit pixel frames with corner
+brackets, pixel buttons, pixel fonts, lowercase text (move notation keeps
+its case). Four **themes**, two dark and two light, each from a reference:
+ink (black and white), violet (purple and white, a green accent), paper
+(black ink on paper) and mint (a soft pixel palette); the cube is always
+full colour. **Pixels**: chunky (default), fine (the "reduce pixel art for
+visibility" setting: about 2.5× the resolution) or smooth (full screen
+resolution). Both pages work on phones, tablets and desktops.
+
+### Captions
+
+Every sentence the interface shows a user (onboarding, the avatar's
+reasons, the critique, the info dialog, empty and error states) is a key in
+`js/captions.js`. The current texts are placeholders: the developer writes
+them by hand; code never writes user-facing prose itself.
 
 ### Multiple scrambles, undo, persistence
 
 - Every scramble's search starts when the list loads; one search runs at a
   time behind the scenes. Switching to a finished scramble is instant, to a
   running one does not restart it. Each scramble shows searching / ready /
-  failed.
+  failed. `+` adds a random-state scramble.
 - **The scramble on screen comes first**: its next search jumps the queue,
   and a background search pauses at its next solver call.
-- **Undo** steps back one committed step and re-runs the search there, so
-  every alternative is available again.
-- **Reload** restores every scramble's committed steps. A new search from the
-  configuration page starts fresh.
+- Generated scrambles are random-state (a uniformly random state solved
+  with a two-phase search and inverted, as WCA scramblers do).
+- **Reload** restores every scramble's committed steps and solution text.
+  Applying new search settings starts fresh.
 - Scrambles are always solved independently; results are never merged.
-
-### Planned: visual redesign
-
-The current dark, monospace look is a placeholder. The **developer designs**
-the new visuals and layout (typography, colour, spacing, structure, table,
-controls, phone layouts); the **agent only implements** that design, invents
-no visual direction, and changes no behaviour.
 
 ## Out of scope (for now)
 
@@ -450,5 +545,10 @@ engines. Notices and the list of changes to vendored code are in
   changes described under Ranking.
 - Tuning data: reconstructions from [reco.nz](https://reco.nz), each
   credited by its solve id in `data/reco_solves.txt`.
-- Other code (DAG generator, UI, scoring plumbing) was written with AI
-  assistance.
+- Fonts: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) and
+  [VT323](https://fonts.google.com/specimen/VT323) (SIL Open Font License),
+  loaded from Google Fonts.
+- Interface references: `UI_references/` (screenshots and art the developer
+  collected as the design brief; not shipped as part of the site).
+- Other code (DAG generator, UI, cube renderer, scoring plumbing) was
+  written with AI assistance.
