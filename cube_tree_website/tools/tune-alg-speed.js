@@ -210,12 +210,12 @@ async function buildCompletePools() {
   const solves = all.filter((s, i) => i % shards === shard && !done.has(s.key));
   console.error(`${done.size} solves cached, ${solves.length} to go -> ${cacheFile}`);
   const look = (f) => {
-    const w = S.PAIR_PLANNING.look;
+    const { look: w, plan } = pairWeights();
     const x = pairLookFeatures(f);
     let v = 0;
     for (let k = 0; k < w.length; k++) v += w[k] * x[k];
     const pf = planFeatures(f);
-    for (let k = 0; k < S.PAIR_PLANNING.plan.length; k++) v += S.PAIR_PLANNING.plan[k] * pf[k];
+    for (let k = 0; k < plan.length; k++) v += plan[k] * pf[k];
     return v;
   };
   const t0 = Date.now();
@@ -226,8 +226,11 @@ async function buildCompletePools() {
     const color = segs[segs.length - 1].after.crossColor;
     const pruned = S.pruneGraph(tree, { advanced, colors: [color] });
     const session = new B.SolveSession(solve.scramble, pruned, [color], advanced);
+    session.planning = !PLANNING_OFF;
     session.topN = keepTop;
-    session.resultViews = [{ test: () => true, wide: true }];
+    // --wide off: the list the results page shows with wide moves off
+    session.resultViews = [WIDE_OFF ? { test: c => !B.isWideAlg(c.coreAlg), wide: false } : { test: () => true, wide: true }];
+    if (WIDE_OFF) session.wideMoves = false;
     const allEdges = session.outgoingEdges.bind(session);
     const out = [];
     let prior = [];
@@ -287,9 +290,9 @@ async function buildCompletePools() {
   await h.terminate?.();
 }
 
-function loadPools() {
+function loadPools(files = cacheFiles) {
   const out = [];
-  for (const f of cacheFiles) {
+  for (const f of files) {
     if (!fs.existsSync(f)) throw new Error(`no pools at ${f}; run: node tools/tune-alg-speed.js pools`);
     for (const l of fs.readFileSync(f, 'utf8').split('\n')) if (l) out.push(JSON.parse(l));
   }
@@ -307,10 +310,19 @@ const LM_KEYS = ['order', 'discount', 'proWeight'];
 // leaves. Complete pools store each alg's feature vector.
 const { LOOK_FEATURES, PLAN_FEATURES } = require(path.join(js, 'facelet-flags.js'));
 const PAIR_KEYS = [...LOOK_FEATURES.map(k => `look_${k}`), ...PLAN_FEATURES.map(k => `plan_${k}`)];
+// --planning off: the app's pair-choice weights with pair planning off
+// (PAIR_CHOICE_LOOK, no planning term): cpools builds the lists the app shows
+// then, eval / fit start from those weights.
+const PLANNING_OFF = opt('planning', 'on') === 'off';
+const WIDE_OFF = opt('wide', 'on') === 'off';
+function pairWeights() {
+  return PLANNING_OFF ? { look: S.PAIR_CHOICE_LOOK, plan: S.PAIR_PLANNING.plan.map(() => 0) } : S.PAIR_PLANNING;
+}
 function currentParams() {
   const pair = {};
-  LOOK_FEATURES.forEach((k, i) => { pair[`look_${k}`] = S.PAIR_PLANNING.look[i]; });
-  PLAN_FEATURES.forEach((k, i) => { pair[`plan_${k}`] = S.PAIR_PLANNING.plan[i]; });
+  const w = pairWeights();
+  LOOK_FEATURES.forEach((k, i) => { pair[`look_${k}`] = w.look[i]; });
+  PLAN_FEATURES.forEach((k, i) => { pair[`plan_${k}`] = w.plan[i]; });
   return { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, ...pair, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
 }
 
@@ -692,6 +704,121 @@ function fit() {
   console.log(`\nfitted (changed): ${Object.entries(params).filter(([k, v]) => v !== base[k]).map(([k, v]) => `${k}=${v}`).join(',')}`);
 }
 
+/**
+ * joint --set on=a.jsonl,b.jsonl --set off=c.jsonl,d.jsonl --set nowide=e.jsonl,f.jsonl
+ *       [--fit keys] [--lambda 0.1] [--fold k/K] [--eval-only] [--params k=v,...]
+ * One fit for every results-page setting: the shared parameters (MCC, step
+ * penalties, naturalness) against the summed loss of every setting's lists;
+ * the pair-choice weights per setting group -- planning on (PAIR_PLANNING,
+ * also used with wide moves off) and planning off (PAIR_CHOICE_LOOK, no
+ * planning term) -- as their own keys ("on.look_connected",
+ * "off.look_connected", "on.plan_openBackSlots"). A setting named off* is
+ * built with --planning off (cpools), the others with planning on.
+ */
+function settingsSpec() {
+  const out = [];
+  args.forEach((a, i) => {
+    if (a !== '--set') return;
+    const [name, files] = args[i + 1].split('=');
+    out.push({ name, group: name.startsWith('off') ? 'off' : 'on', files: files.split(',') });
+  });
+  if (!out.length) throw new Error('joint needs --set name=pools.jsonl[,more]');
+  return out;
+}
+function jointStartParams() {
+  const p = { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
+  LOOK_FEATURES.forEach((k, i) => { p[`on.look_${k}`] = S.PAIR_PLANNING.look[i]; p[`off.look_${k}`] = S.PAIR_CHOICE_LOOK[i]; });
+  PLAN_FEATURES.forEach((k, i) => { p[`on.plan_${k}`] = S.PAIR_PLANNING.plan[i]; });
+  return { ...p, ...parseParams(opt('params', '')) };
+}
+/** The flat parameters setting group `group` ranks with (its pair weights unprefixed, the other group's left out). */
+function paramsFor(params, group) {
+  const out = {};
+  for (const [k, v] of Object.entries(params)) {
+    const dot = k.indexOf('.');
+    if (dot === -1) out[k] = v;
+    else if (k.slice(0, dot) === group) out[k.slice(dot + 1)] = v;
+  }
+  for (const k of PAIR_KEYS) if (out[k] === undefined) out[k] = 0;
+  return out;
+}
+function joint() {
+  const t0 = Date.now();
+  const sample = Number(opt('sample', '300'));
+  const settings = settingsSpec();
+  const solves = loadSolves();
+  const solvesByKey = new Map(solves.map(x => [x.key, x]));
+  let params = jointStartParams();
+  let models = buildModels(solves, params);
+  for (const st of settings) {
+    const pools = loadPools(st.files);
+    st.train = buildCache(pools, solvesByKey, sample, isTrain);
+    st.held = buildCache(pools, solvesByKey, sample, x => !isTrain(x));
+    for (const c of [st.train, st.held]) { fillMcc(c, params); fillFeatures(c, models); }
+  }
+  console.error(`caches built for ${settings.map(st => `${st.name} (${st.train.length}+${st.held.length})`).join(', ')} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  const lambda = Number(opt('lambda', '0.1'));
+  const minGain = Number(opt('min-gain', '0.002'));
+  // --objective top10: the share of pro steps outside the top 10, smoothed
+  // (a logistic in log10 rank around rank 10) so near misses still count
+  const top10Loss = opt('objective', 'logrank') === 'top10';
+  const missOf = r => 1 / (1 + Math.exp(-(Math.log10(r.rank) - 1.02) / 0.08));
+  const objectiveOf = (res) => (top10Loss ? mean(res.map(missOf)) : mean(res.map(r => Math.log10(r.rank)))) + lambda * (moveFrequencies(res.filter(r => r.isRoot)).loss + moveFrequencies(res.filter(r => !r.isRoot)).loss);
+  const objective = p => settings.reduce((t, st) => t + objectiveOf(rankCache(st.train, paramsFor(p, st.group))), 0);
+  const pct = x => `${(100 * x).toFixed(1)}%`;
+  const report = (tag, best) => {
+    console.log(`${tag}: objective ${best.toFixed(4)}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
+    for (const st of settings) {
+      const p = paramsFor(params, st.group);
+      const tr = summarize(rankCache(st.train, p));
+      const sm = { ...summarize(rankCache(st.held, p)), train: tr.train, 'train first': tr['all first'], 'train later': tr['all later'] };
+      const groups = Object.keys(sm).filter(g => g === 'train' || g === 'pro_references' || g.endsWith('(fold)'));
+      console.log(`  ${st.name.padEnd(7)} ${groups.map(g => `${g} ${sm[g].logRank.toFixed(3)} top10 ${pct(sm[g].top10)} (first ${pct((sm[`${g} first`] || { top10: NaN }).top10)}, later ${pct((sm[`${g} later`] || { top10: NaN }).top10)})`).join(' | ')}`);
+    }
+  };
+  let best = objective(params);
+  report('start', best);
+  if (args.includes('--eval-only')) return;
+  const pairKeys = [...LOOK_FEATURES.flatMap(k => [`on.look_${k}`, `off.look_${k}`]), ...PLAN_FEATURES.map(k => `on.plan_${k}`)];
+  const keys = opt('fit', [...PEN_KEYS, ...MCC_KEYS, ...pairKeys].join(',')).split(',');
+  const rounds = Number(opt('rounds', '3'));
+  const mults = [0, 0.5, 0.7, 0.85, 0.93, 1.07, 1.15, 1.4, 2];
+  const refill = (p, which, onlyNatural) => {
+    for (const st of settings) for (const c of which(st)) {
+      if (onlyNatural === null) fillMcc(c, p); else fillFeatures(c, models, true);
+    }
+  };
+  for (let r = 0; r < rounds; r++) {
+    let improved = false;
+    for (const k of keys) {
+      const cur = params[k];
+      const isMcc = MCC_KEYS.includes(k);
+      const isLm = LM_KEYS.includes(k);
+      const isPair = k.includes('.');
+      const cands = isLm
+        ? (k === 'order' ? [2, 3, 4] : k === 'discount' ? [0.5, 0.6, 0.75, 0.85, 0.95] : [1, 3, 10])
+        : isPair ? [...new Set([0, ...[-2, -1, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5, 1, 2].map(x => +(cur + x).toPrecision(3))])]
+          : [...new Set([...mults.map(m => +(cur * m).toPrecision(3)), ...(cur === 0 ? [0.1, 0.3, 1, 2] : [])])].filter(v => isMcc ? v > 0 : v >= 0);
+      let bestV = cur;
+      for (const v of cands) {
+        if (v === cur) continue;
+        const p = { ...params, [k]: v };
+        if (isMcc) refill(p, st => [st.train], null);
+        if (isLm) { models = buildModels(solves, p); refill(p, st => [st.train], true); }
+        const sc = objective(p);
+        if (sc < best - (bestV === cur ? minGain : 1e-6)) { best = sc; bestV = v; }
+      }
+      params = { ...params, [k]: bestV };
+      if (isMcc) refill(params, st => (bestV !== cur ? [st.train, st.held] : [st.train]), null);
+      if (isLm) { models = buildModels(solves, params); refill(params, st => (bestV !== cur ? [st.train, st.held] : [st.train]), true); }
+      if (bestV !== cur) { improved = true; report(`round ${r + 1} ${k} ${cur} -> ${bestV}`, best); }
+    }
+    if (!improved) break;
+  }
+  const base = jointStartParams();
+  console.log(`\nfitted (changed): ${Object.entries(params).filter(([k, v]) => v !== base[k]).map(([k, v]) => `${k}=${v}`).join(',')}`);
+}
+
 /** Writes js/pro-steps.js: the naturalness model's professional corpus (every solve, pro_references.txt first). */
 function writeCorpus() {
   const solves = loadSolves().sort((a, b) => (a.key.startsWith('pro_references') ? 0 : 1) - (b.key.startsWith('pro_references') ? 0 : 1));
@@ -718,4 +845,5 @@ else if (cmd === 'cpools') buildCompletePools().then(() => process.exit(0), e =>
 else if (cmd === 'pools') buildPools().then(() => process.exit(0), e => { console.error(e); process.exit(2); });
 else if (cmd === 'eval') evaluate();
 else if (cmd === 'fit') fit();
+else if (cmd === 'joint') joint();
 else { console.error('usage: node tools/tune-alg-speed.js pools|eval|fit [options]  (see the header)'); process.exit(1); }

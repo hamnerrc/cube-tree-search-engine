@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-10 (thirty-second pass).*
+*Last updated 2026-10-11 (thirty-third pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,55 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-third pass (2026-10-11).** Tree clean at the start (prompt and
+metric notes untracked), every fast suite passing; every real-engine e2e
+suite re-run this pass and passing.
+
+1. **Cancellations across steps** (README "Results table"; developer's
+   example): a step ending `R` then `R U' R' U' L U L'` is written
+   `R' U R U R' U' R2 // 1st pair (cancels with 2nd pair)` then
+   `U' R' U' L U L' // 2nd pair`. `cancelBoundary` / `cancelledSteps` /
+   `candidateCancellation` (solver-bridge.js): same layer (or rotation axis)
+   only, quarter turns summed mod 4, a full cancel tries the next pair, a
+   step that cancels away entirely lets the next one meet the step before.
+   Copy, copy all, Cubedb and STM/ETM use the cancelled text. Result rows
+   whose first turns cancel with the solution's end show them struck through
+   with the result (`R R → R2`), recomputed on every render. Committed rows,
+   the engine's postAlg and the ranking keep the steps as found (same cube;
+   test: 2,000 random step triples replayed on facelets). Checked in
+   headless Chrome on the developer's scramble: the copied text is exactly
+   the developer's expected output; 390 px and 1180 px screenshots.
+   Not done: scoring the cancelled text (MCC prices `R R` 1.1 units below
+   `R2`); the complete search's bounds would need the merged first token in
+   the grammar to stay exact. Look-ahead chains are shown as found.
+2. **Planning-off ranking** (developer: "fails because it was trained with
+   planning on"). New tooling: `cpools --planning off` and `--wide off`
+   (the lists the app shows with those settings), and `joint --set
+   on=... --set off=... --set nowide=...` (shared parameters fitted once on
+   the summed loss of every setting; pair-choice weights per group, planning
+   on (also wide off) vs off; `--objective top10` = smoothed share outside
+   the top 10). Fresh pools of all three settings (319 solves each, current
+   code). Current app, pro top 10:
+
+   | setting | references (first / later) | reco.nz train (first / later) |
+   |---|---|---|
+   | planning on | 87.9% (63.2 / 97.9) | 76.5% (26.9 / 93.7) |
+   | planning off | 84.8% (52.6 / 97.9) | 76.1% (25.8 / 93.5) |
+   | wide moves off | 89.4% (68.4 / 97.9) | 79.0% (34.4 / 94.5) |
+
+   The browser's planning-off lists equal Node's (same scramble, worker
+   path). **No refit passes** the acceptance rule (pro top 10 as high as
+   possible in every setting): log-rank joint fit (2-fold CV: held-out top
+   10 down in on and off, both folds; full fit references 87.9 → 83.3% on,
+   84.8 → 81.8% off), smoothed top-10 joint fit (fold 0 down in all three;
+   full fit references on 87.9 → 83.3%), planning-off look weights alone on
+   planning-off lists (CV flat or worse) or on planning-on lists (same).
+   Parameters unchanged. Planning off's top result leads with a rotation
+   more often (24.0% of later steps vs pros 18.4%, planning on 21.7%).
+3. `test/pair-choice-e2e.js` failed at exactly 300/600 nonzero pair-choice
+   terms: the 300 multislots that finish F2L have term 0 by design; it now
+   counts rows that leave a pair open.
 
 **Thirty-second pass (2026-10-10).** The developer tested on an iPad Air 5:
 searches are far below the speed goals (this dev MacBook is old), and the
