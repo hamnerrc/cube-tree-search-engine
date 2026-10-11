@@ -499,7 +499,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function loadViewPrefs(crit) {
     let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) || 'null'); } catch (err) { saved = null; }
+    try { saved = JSON.parse(localStorage.getItem(scopedKey(VIEW_PREFS_KEY)) || 'null'); } catch (err) { saved = null; }
     Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
     view.lookaheadDepth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, parseInt(view.lookaheadDepth, 10) || 1));
     view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
@@ -513,7 +513,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function saveViewPrefs() {
-    try { localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(view)); } catch (err) { /* private mode: not remembered */ }
+    try { localStorage.setItem(scopedKey(VIEW_PREFS_KEY), JSON.stringify(view)); } catch (err) { /* private mode: not remembered */ }
   }
 
   const pseudoOn = () => !!(criteria && (criteria.advanced || []).includes('full_pseudo'));
@@ -923,7 +923,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       for (const [idx, session] of sessions.entries()) {
         if (session.committedRows.length) sessionsOut[idx] = session.committedRows;
       }
-      localStorage.setItem(SESSION_STATE_KEY, JSON.stringify({
+      localStorage.setItem(scopedKey(SESSION_STATE_KEY), JSON.stringify({
         scrambles: criteria ? criteria.scrambles : [],
         colors: criteria ? criteria.colors : [],
         advanced: criteria ? criteria.advanced : [],
@@ -942,7 +942,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function loadPersistedState(crit) {
     let raw;
     try {
-      raw = localStorage.getItem(SESSION_STATE_KEY);
+      raw = localStorage.getItem(scopedKey(SESSION_STATE_KEY));
     } catch (err) {
       return null;
     }

@@ -23,6 +23,9 @@ const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
 const RETIRED_OPTIONS = ['simplified_pseudo', 'multislotting'];
 // Saved-criteria format; 2: the time limit is null for none (was 60 by default).
 const CRITERIA_VERSION = 4;
+// README "Profiles": every saved setting is kept per profile (profile.js;
+// unscoped where profile.js is not loaded, e.g. Node tests).
+const scopedKey = (base) => (typeof profileKey === 'function' ? profileKey(base) : base);
 
 const sample = (array) => array[Math.floor(Math.random() * array.length)];
 const isRedundantMove = (curr, prev) => curr === prev || OPPOSITES[curr] === prev;
@@ -59,7 +62,7 @@ function populateScrambles() {
 
 function restoreTextareaState() {
     const textareaNode = document.getElementById('scramble-input');
-    const rawState = localStorage.getItem(STORAGE_KEY);
+    const rawState = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!textareaNode || !rawState) return;
 
     const { scrambles } = JSON.parse(rawState);
@@ -72,10 +75,10 @@ function clearScrambleData() {
     const textareaNode = document.getElementById('scramble-input');
     if (textareaNode) textareaNode.value = '';
 
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(scopedKey(STORAGE_KEY));
     // A fresh scramble list must not resurrect progress persisted against a
     // different (now-cleared) search criteria blob.
-    localStorage.removeItem(SESSION_STATE_KEY);
+    localStorage.removeItem(scopedKey(SESSION_STATE_KEY));
 }
 
 /** Reads the per-category search-limit overrides (README "Granular search
@@ -136,12 +139,12 @@ function persistAndNavigate() {
         scrambles
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeCriteria({ ...searchCriteria, version: CRITERIA_VERSION })));
+    localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify(normalizeCriteria({ ...searchCriteria, version: CRITERIA_VERSION })));
     window.location.href = 'solver.html';
 }
 
 function restoreCheckboxState() {
-    const rawState = localStorage.getItem(STORAGE_KEY);
+    const rawState = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!rawState) return;
 
     const { colors = [], advanced = [], searchConfig } = normalizeCriteria(JSON.parse(rawState));
@@ -184,28 +187,15 @@ function normalizeCriteria(criteria) {
 }
 
 function loadSearchCriteria() {
-    const rawState = localStorage.getItem(STORAGE_KEY);
+    const rawState = localStorage.getItem(scopedKey(STORAGE_KEY));
     return rawState ? normalizeCriteria(JSON.parse(rawState)) : null;
 }
 
 // ---------------------------------------------------------------------------
-// Info dialog (both pages): what each option does, behind the "i" next to
-// the logo instead of inline captions.
+// Info dialog (both pages): what each part does, behind the "i" in the top
+// bar instead of inline captions. Its sections are captions.js keys
+// (info.<key>.title / .text), written by hand (README "Captions").
 // ---------------------------------------------------------------------------
-const INFO_SECTIONS = [
-    ['how it works', 'each search lists the possible next steps of your solve, ranked by tpp (time per piece of the whole path so far; lower is faster). tpp also weighs what a step leaves for the next pairs, as look-ahead would: free pairs help, trapped pieces cost. click a result to commit it and search the next step.'],
-    ['colours', 'cross colours to search. the cross always ends on the bottom; a result may start with an inspection rotation.'],
-    ['steps', 'xcross / xxcross / xxxcross: first steps that also solve 1 / 2 / 3 pairs. pseudo f2l: allow mismatched corner/edge pairs (slower).'],
-    ['always on', 'pro move set (wide <span class="moves">r/l</span>, one mid-step <span class="moves">y</span> or <span class="moves">x</span> rotation, rotated spellings, side-cross inspections) and cross optimisation (wide-move rewrites of the cross).'],
-    ['per-type limits', 'max solutions (per solver call) and move depth per step type; blank = default (10000 solutions, the depths in the readme).'],
-    ['results', 'results appear as they are found and re-rank as the search continues. click a row to commit that step; undo steps back. hover an option or a column title for a short hint.'],
-    ['filters', 'set per step; they hide results without searching again (unticked or ticked, the change is instant) and apply to the step on screen and every later one until changed; the status line says how many are hidden. multislot: show later steps that solve several pairs at once. wide moves: show results with wide moves (<span class="moves">r l u d f</span>; never a wide <span class="moves">b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>. hide awkward f2l solutions: hide later steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, <span class="moves">R2</span> = +2 or -2, whichever stays closer to the start, so <span class="moves">R U R2 U\' R</span> is fine but <span class="moves">R U R U\' R\'</span> and a lone <span class="moves">R2</span> are not); first steps are never hidden. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
-    ['pair planning', 'on by default. the ranking also plans the rest of the solve as an experienced solver does: it prefers steps (and rotations) that leave the remaining pairs\' edges oriented, so they insert with <span class="moves">R U L</span> turns and no rotation later, and that solve the back slots first, keeping the open slots in view. learned from look-ahead outcomes, not fixed rules. off: each step is ranked by itself alone (its own speed, nothing about the pairs it leaves), with its own fitted speed constants: the fastest way to solve a pair now.'],
-    ['look-ahead', 're-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow.'],
-    ['solution', 'the committed steps, labelled like a reconstruction, with the move count in stm (slice turn metric: every turn of a layer, rotations free) and etm (execution turn metric: rotations counted too; the inspection never counts). copy puts the scramble and the solution on the clipboard, copy all every scramble with its solution; cubedb opens them on cubedb.net for playback.'],
-    ['background', 'every scramble keeps searching while you look at another one, or at another tab. browsers give background tabs less cpu, so searches there are slower (chrome\'s energy saver may pause them until you come back).'],
-];
-
 function installInfoDialog() {
     const button = document.getElementById('info-btn');
     if (!button || typeof document.createElement('dialog').showModal !== 'function') {
@@ -214,9 +204,17 @@ function installInfoDialog() {
     }
     const dialog = document.createElement('dialog');
     dialog.className = 'info-dialog';
-    dialog.setAttribute('aria-label', 'about the options');
-    const body = INFO_SECTIONS.map(([title, text]) => `<h3>${title}</h3><p>${text}</p>`).join('');
-    dialog.innerHTML = `<div class="info-head"><h2>cube⑂tree</h2><button type="button" class="close-btn" aria-label="close">×</button></div>${body}`;
+    dialog.setAttribute('aria-label', 'about');
+    const keys = typeof INFO_SECTION_KEYS !== 'undefined' ? INFO_SECTION_KEYS : [];
+    dialog.innerHTML = `<div class="info-head"><h2>cube⑂tree</h2><button type="button" class="px-btn icon quiet close-btn" aria-label="close">×</button></div>`;
+    for (const k of keys) {
+        const h = document.createElement('h3');
+        h.textContent = caption(`info.${k}.title`);
+        const p = document.createElement('p');
+        p.textContent = caption(`info.${k}.text`);
+        p.dataset.caption = `info.${k}.text`;
+        dialog.append(h, p);
+    }
     document.body.appendChild(dialog);
     button.addEventListener('click', () => dialog.showModal());
     dialog.querySelector('.close-btn').addEventListener('click', () => dialog.close());

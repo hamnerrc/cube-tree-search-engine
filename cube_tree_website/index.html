@@ -4,123 +4,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261011b">
+    <title>cube⑂tree</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=VT323&display=swap">
+    <link rel="stylesheet" href="styles.css?v=20261012a">
+    <script src="js/profile.js?v=20261012a"></script>
 </head>
 
 <body>
-    <header class="banner">
+    <header class="topbar">
         <div class="brand">
             <h1>cube⑂tree</h1>
-            <button type="button" class="info-btn" id="info-btn" aria-label="about the options" title="about the options">i</button>
+        </div>
+        <div class="topbar-actions">
+            <div class="theme-swatches" id="theme-swatches" role="group" aria-label="theme"></div>
+            <button type="button" class="px-btn icon" id="info-btn" aria-label="about" title="about">i</button>
         </div>
     </header>
 
-    <main class="container">
-        <div class="options-grid">
-            <fieldset class="card option-group" id="colors-group">
-                <legend>colours</legend>
-                <label><input type="checkbox" value="white" checked> white</label>
-                <label><input type="checkbox" value="yellow"> yellow</label>
-                <label><input type="checkbox" value="green"> green</label>
-                <label><input type="checkbox" value="blue"> blue</label>
-                <label><input type="checkbox" value="red"> red</label>
-                <label><input type="checkbox" value="orange"> orange</label>
-            </fieldset>
-
-            <fieldset class="card option-group" id="advanced-group">
-                <legend>steps</legend>
-                <label><input type="checkbox" value="xcross"> xcross</label>
-                <label><input type="checkbox" value="xxcross"> xxcross</label>
-                <label><input type="checkbox" value="xxxcross"> xxxcross</label>
-                <label><input type="checkbox" value="full_pseudo"> pseudo f2l</label>
-            </fieldset>
-
-        </div>
-
-        <details class="card search-config-details">
-            <summary>per-type limits</summary>
-            <div class="config-table-wrap">
-                <table class="search-config-table">
-                    <thead>
-                        <tr>
-                            <th>type</th>
-                            <th>max solutions</th>
-                            <th>move depth</th>
-                            <th>pseudo max solutions</th>
-                            <th>pseudo move depth</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>cross</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-cross-maxsol" min="1" max="20000" aria-label="cross max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-cross-maxlen" min="1" max="20" aria-label="cross move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-cross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo cross max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-cross-pseudo-maxlen" min="1" max="20" aria-label="pseudo cross move depth"></td>
-                        </tr>
-                        <tr>
-                            <td>xcross</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-xcross-maxsol" min="1" max="20000" aria-label="xcross max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-xcross-maxlen" min="1" max="20" aria-label="xcross move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xcross max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-xcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xcross move depth"></td>
-                        </tr>
-                        <tr>
-                            <td>xxcross</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-xxcross-maxsol" min="1" max="20000" aria-label="xxcross max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-xxcross-maxlen" min="1" max="20" aria-label="xxcross move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xxcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xxcross max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-xxcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xxcross move depth"></td>
-                        </tr>
-                        <tr>
-                            <td>xxxcross</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-xxxcross-maxsol" min="1" max="20000" aria-label="xxxcross max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-xxxcross-maxlen" min="1" max="20" aria-label="xxxcross move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-xxxcross-pseudo-maxsol" min="1" max="20000" aria-label="pseudo xxxcross max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-xxxcross-pseudo-maxlen" min="1" max="20" aria-label="pseudo xxxcross move depth"></td>
-                        </tr>
-                        <tr>
-                            <td>single pair</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-singlePair-maxsol" min="1" max="20000" aria-label="single pair max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-singlePair-maxlen" min="1" max="20" aria-label="single pair move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-singlePair-pseudo-maxsol" min="1" max="20000" aria-label="pseudo single pair max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-singlePair-pseudo-maxlen" min="1" max="20" aria-label="pseudo single pair move depth"></td>
-                        </tr>
-                        <tr>
-                            <td>multislot</td>
-                            <td data-label="max solutions"><input type="number" id="cfg-multislot-maxsol" min="1" max="20000" aria-label="multislot max solutions"></td>
-                            <td data-label="move depth"><input type="number" id="cfg-multislot-maxlen" min="1" max="20" aria-label="multislot move depth"></td>
-                            <td data-label="pseudo max solutions"><input type="number" id="cfg-multislot-pseudo-maxsol" min="1" max="20000" aria-label="pseudo multislot max solutions"></td>
-                            <td data-label="pseudo move depth"><input type="number" id="cfg-multislot-pseudo-maxlen" min="1" max="20" aria-label="pseudo multislot move depth"></td>
-                        </tr>
-                    </tbody>
-                </table>
+    <main class="onboard-wrap">
+        <section class="px-frame onboard" id="onboard" aria-live="polite">
+            <span class="px-title" id="onboard-title">cube⑂tree</span>
+            <div class="screen" id="screen"></div>
+            <div class="nav" id="onboard-nav" hidden>
+                <button type="button" class="px-btn" id="onboard-back">‹ back</button>
+                <div class="dots" id="onboard-dots" aria-hidden="true"></div>
+                <button type="button" class="px-btn primary" id="onboard-next">next ›</button>
             </div>
-        </details>
-
-        <fieldset class="card scramble-section">
-            <legend>scrambles</legend>
-            <textarea id="scramble-input" placeholder="one scramble per line" rows="5"></textarea>
-            <div class="scramble-controls">
-                <button type="button" onclick="populateScrambles()">generate</button>
-                <label class="count-field">
-                    <input type="number" id="scramble-count" value="1" min="1" max="50" aria-label="number of scrambles to generate">
-                    random-state scrambles
-                </label>
-                <button type="button" class="quiet-btn" onclick="clearScrambleData()">clear</button>
-            </div>
-        </fieldset>
-
-        <div class="search-section">
-            <button type="button" onclick="persistAndNavigate()" class="search-btn">search</button>
-        </div>
+        </section>
     </main>
 
-    <script src="js/facelet-cube.js?v=20261011b"></script>
-    <script src="js/random-state-scramble.js?v=20261011b"></script>
-    <script src="js/pro-steps.js?v=20261011b"></script>
-    <script src="js/script.js?v=20261011b"></script>
+    <script src="js/captions.js?v=20261012a"></script>
+    <script src="js/skill-levels.js?v=20261012a"></script>
+    <script src="js/avatars.js?v=20261012a"></script>
+    <script src="js/facelet-cube.js?v=20261012a"></script>
+    <script src="js/random-state-scramble.js?v=20261012a"></script>
+    <script src="js/pro-steps.js?v=20261012a"></script>
+    <script src="js/script.js?v=20261012a"></script>
+    <script src="js/onboarding.js?v=20261012a"></script>
 </body>
 
 </html>
