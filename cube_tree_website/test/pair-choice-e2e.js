@@ -27,8 +27,11 @@ async function test(name, fn) {
   try { await fn(); console.log(`PASS: ${name}`); } catch (err) { failures++; console.error(`FAIL: ${name}\n  ${err.stack}`); }
 }
 
+// Returns how many of the rows that leave a pair unsolved have a nonzero
+// pair-choice term (it is 0 once F2L is solved).
 function checkList(s, list, n) {
   let nonzero = 0;
+  let open = 0;
   for (const r of list.slice(0, n)) {
     const node = s.nodeMap.get(r.targetNodeId);
     const pieces = calculateSolvedPieces(s.rootNode, node);
@@ -37,11 +40,12 @@ function checkList(s, list, n) {
     let look = pairLookFeatures(f).reduce((t, x, k) => t + x * W[k], 0);
     // pair planning: the cube as the step leaves it held
     if (s.planning !== false) look += planFeatures(f).reduce((t, x, k) => t + x * PAIR_PLANNING.plan[k], 0);
-    if (look) nonzero++;
+    const fl = solvedFlags(f);
+    if (!(fl.BL && fl.BR && fl.FL && fl.FR)) { open++; if (look) nonzero++; }
     const want = (s.pathCost(r.coreAlg) + look) / pieces;
     assert.ok(Math.abs(r.tpp - want) < 1e-9, `${r.rotation} | ${r.coreAlg}: tpp ${r.tpp}, expected ${want}`);
   }
-  return nonzero;
+  return [nonzero, open];
 }
 
 (async () => {
@@ -63,14 +67,14 @@ function checkList(s, list, n) {
     fastLimits(s);
     const rootList = await searchWithLookahead(s, h, null, null, { depth: 1 });
     await test(`${label}: first-step TPPs include the pair-choice terms`, () => {
-      const nz = checkList(s, rootList, 400);
-      if (label.startsWith('test weights')) assert.ok(nz > 200, `${nz} of 400 with a nonzero term`);
+      const [nz, open] = checkList(s, rootList, 400);
+      if (label.startsWith('test weights')) assert.ok(nz > open / 2, `${nz} of ${open} with a nonzero term`);
     });
     s.commit(rootList.find(r => r.type === 'XCross'));
     const later = await searchWithLookahead(s, h, null, null, { depth: 1 });
     await test(`${label}: later-step TPPs include them, spellings included`, () => {
-      const nz = checkList(s, later, 600);
-      if (label.startsWith('test weights')) assert.ok(nz > 300, `${nz} of 600 with a nonzero term`);
+      const [nz, open] = checkList(s, later, 600);
+      if (label.startsWith('test weights')) assert.ok(open >= 200 && nz > open / 2, `${nz} of ${open} with a nonzero term`);
       assert.ok(later.slice(0, 600).some(r => /^[yu]|f|d/.test(r.coreAlg)), 'spellings among them');
     });
   }
