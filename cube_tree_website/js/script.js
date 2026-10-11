@@ -200,7 +200,7 @@ const INFO_SECTIONS = [
     ['per-type limits', 'max solutions (per solver call) and move depth per step type; blank = default (10000 solutions, the depths in the readme).'],
     ['results', 'results appear as they are found and re-rank as the search continues. click a row to commit that step; undo steps back. hover an option or a column title for a short hint.'],
     ['filters', 'set per step; they hide results without searching again (unticked or ticked, the change is instant) and apply to the step on screen and every later one until changed; the status line says how many are hidden. multislot: show later steps that solve several pairs at once. wide moves: show results with wide moves (<span class="moves">r l u d f</span>; never a wide <span class="moves">b</span>), e.g. <span class="moves">f R\' f\'</span> for <span class="moves">B U\' B\'</span> or <span class="moves">u R U\' R\'</span> for <span class="moves">D y R U\' R\'</span>. hide awkward f2l solutions: hide later steps that turn the <span class="moves">R</span> or <span class="moves">L</span> layer a half turn away from where the step started (<span class="moves">R</span> = +1, <span class="moves">R\'</span> = -1, <span class="moves">R2</span> = +2 or -2, whichever stays closer to the start, so <span class="moves">R U R2 U\' R</span> is fine but <span class="moves">R U R U\' R\'</span> and a lone <span class="moves">R2</span> are not); first steps are never hidden. simple pseudo only (with pseudo f2l): after a mismatch, only steps that repair it.'],
-    ['pair planning', 'on by default. the ranking also plans the rest of the solve as an experienced solver does: it prefers steps (and rotations) that leave the remaining pairs\' edges oriented, so they insert with <span class="moves">R U L</span> turns and no rotation later, and that solve the back slots first, keeping the open slots in view. off: steps are ranked by their own speed, plus free and trapped pairs. learned from look-ahead outcomes, not fixed rules.'],
+    ['pair planning', 'on by default. the ranking also plans the rest of the solve as an experienced solver does: it prefers steps (and rotations) that leave the remaining pairs\' edges oriented, so they insert with <span class="moves">R U L</span> turns and no rotation later, and that solve the back slots first, keeping the open slots in view. learned from look-ahead outcomes, not fixed rules. off: each step is ranked by itself alone (its own speed, nothing about the pairs it leaves), with its own fitted speed constants: the fastest way to solve a pair now.'],
     ['look-ahead', 're-rank the top results (breadth) by the best combined tpp of the next n steps; set per step, 3+ is slow.'],
     ['solution', 'the committed steps, labelled like a reconstruction, with the move count in stm (slice turn metric: every turn of a layer, rotations free) and etm (execution turn metric: rotations counted too; the inspection never counts). copy puts the scramble and the solution on the clipboard, copy all every scramble with its solution; cubedb opens them on cubedb.net for playback.'],
     ['background', 'every scramble keeps searching while you look at another one, or at another tab. browsers give background tabs less cpu, so searches there are slower (chrome\'s energy saver may pause them until you come back).'],
@@ -389,11 +389,26 @@ const ALG_SPEED_DEFAULTS = { wristMult: 0.836, pushMult: 1.2, ringMult: 1.72, de
 // unfamiliar); human execution speed depends on both.
 const STEP_PENALTIES = { D: 0, F: 2.41, B: 3.5, wideRL: 2.3, wideUDFB: 3.02, wideOther: 3.31, rotMidY: 0, natural: 1.68 };
 
+// Pair planning off (README "Pair planning"): the ranking a solver gets who
+// only wants the best step on its own -- no pair-choice term, and its own
+// MCC constants and penalties, fitted on professional solves scored with
+// that setting's lists (tools/tune-alg-speed.js fit --planning off).
+const PLANNING_OFF_SCORING = {
+    mcc: { ...ALG_SPEED_DEFAULTS },
+    pen: { ...STEP_PENALTIES },
+};
+const DEFAULT_SCORING = { mcc: ALG_SPEED_DEFAULTS, pen: STEP_PENALTIES };
+/** The MCC constants and step penalties (`{ mcc, pen }`) a session's settings rank with. */
+function scoringFor(settings) {
+    return settings && settings.planning === false ? PLANNING_OFF_SCORING : DEFAULT_SCORING;
+}
+
 /**
- * Extra cost of one step's alg (see STEP_PENALTIES); score a path as the sum
- * over its steps. The same at every step.
+ * Extra cost of one step's alg (see STEP_PENALTIES; `P`: another setting's,
+ * see scoringFor); score a path as the sum over its steps. The same at every
+ * step.
  */
-function stepPenalty(alg) {
+function stepPenalty(alg, P = STEP_PENALTIES) {
     let total = 0;
     // (A plain loop: this runs for every candidate of every search.)
     const text = String(alg || '');
@@ -403,16 +418,16 @@ function stepPenalty(alg) {
     for (const t of tokens) {
         if (!t) continue;
         const c = t[0];
-        if (c === 'D') total += STEP_PENALTIES.D;
-        else if (c === 'F') total += STEP_PENALTIES.F;
-        else if (c === 'B') total += STEP_PENALTIES.B;
-        else if (c === 'r' || c === 'l') total += STEP_PENALTIES.wideRL;
-        else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += STEP_PENALTIES.wideUDFB;
-        else if (c === 'M' || c === 'E' || c === 'S') total += STEP_PENALTIES.wideOther;
-        else if (c === 'y' && i > 0) total += STEP_PENALTIES.rotMidY;
+        if (c === 'D') total += P.D;
+        else if (c === 'F') total += P.F;
+        else if (c === 'B') total += P.B;
+        else if (c === 'r' || c === 'l') total += P.wideRL;
+        else if (c === 'u' || c === 'd' || c === 'f' || c === 'b') total += P.wideUDFB;
+        else if (c === 'M' || c === 'E' || c === 'S') total += P.wideOther;
+        else if (c === 'y' && i > 0) total += P.rotMidY;
         i++;
     }
-    if (i && STEP_PENALTIES.natural) total += STEP_PENALTIES.natural * algSurprise(tokens);
+    if (i && P.natural) total += P.natural * algSurprise(tokens);
     return total;
 }
 
@@ -774,6 +789,8 @@ function f2lCorpusAlgs() {
 // the state the path leaves, not summed per step, and 0 once F2L is solved,
 // so a complete solution's cost is unchanged. Fitted so the single-step
 // ranking anticipates the 2-step look-ahead (tools/pair-choice.js).
+// (Not used by the ranking any more: pair planning off has no pair-choice
+// term, and on uses PAIR_PLANNING's look weights. Kept for tools/pair-choice.js.)
 const PAIR_CHOICE_LOOK = [0.54, 0.78, 0.45, -1.43, -5.66];
 // Pair planning (README "Pair planning", on by default; the results page can
 // turn it off): the pair-choice term also weighs the edge orientation of the
@@ -1576,22 +1593,24 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
  * algSpeed of `prefix + ' ' + suffix` for many suffixes after one prefix
  * (every candidate of a search follows the same committed path): the grip
  * search over the prefix is done once, up to the last point the suffix
- * cannot influence, and each suffix resumes from there. Default constants,
- * no ignoreErrors/ignoreauf (how SolveSession.pathCost scores). Exact: the
- * same number algSpeed(prefix + ' ' + suffix) returns.
+ * cannot influence, and each suffix resumes from there. Constants `A`
+ * (ALG_SPEED_DEFAULTS or another setting's, see scoringFor; the checkpoint
+ * keeps them), no ignoreErrors/ignoreauf (how SolveSession.pathCost
+ * scores). Exact: the same number algSpeed(prefix + ' ' + suffix) returns.
  */
-function algSpeedPrefix(prefix) {
+function algSpeedPrefix(prefix, A = ALG_SPEED_DEFAULTS) {
     const tokens = String(prefix || '').split(" ").filter(t => t !== "");
-    if (!tokens.length) return { tokens, state: null };
-    const state = algSpeed(tokens, false, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, null, tokens.length);
+    if (!tokens.length) return { tokens, state: null, A };
+    const state = algSpeed(tokens, false, false, A.wristMult, A.pushMult, A.ringMult, A.destabilize, A.addRegrip, A.double, A.sesliceMult, A.overWorkMult, A.moveblock, A.rotation, null, tokens.length);
     // Rounds never look behind their own start, so only the tail is kept.
-    return { tokens: tokens.slice(state.offset), state: { offset: 0, starts: state.starts } };
+    return { tokens: tokens.slice(state.offset), state: { offset: 0, starts: state.starts }, A };
 }
 
 function algSpeedResume(checkpoint, suffix) {
     let tokens = String(suffix || '').split(" ");
     if (tokens.indexOf("") !== -1) tokens = tokens.filter(t => t !== "");
-    return algSpeed(checkpoint.tokens.concat(tokens), false, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, checkpoint.state);
+    const A = checkpoint.A || ALG_SPEED_DEFAULTS;
+    return algSpeed(checkpoint.tokens.concat(tokens), false, false, A.wristMult, A.pushMult, A.ringMult, A.destabilize, A.addRegrip, A.double, A.sesliceMult, A.overWorkMult, A.moveblock, A.rotation, checkpoint.state);
 }
 
 function cleanScramble(str) {
@@ -1629,6 +1648,9 @@ if (typeof module !== 'undefined' && module.exports) {
         algSpeedResume,
         ALG_SPEED_DEFAULTS,
         STEP_PENALTIES,
+        PLANNING_OFF_SCORING,
+        DEFAULT_SCORING,
+        scoringFor,
         stepPenalty,
         PAIR_CHOICE_LOOK,
         PAIR_PLANNING,

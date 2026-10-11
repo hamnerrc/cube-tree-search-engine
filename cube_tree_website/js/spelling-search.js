@@ -129,12 +129,11 @@ const SpellingSearch = (() => {
    * restarts from before the first, so the first may add nothing -- the
    * caller counts a token only once the next one is known not to pair with it.
    */
-  let MCC = null;
-  function mccMinimum() {
+  const MCC = new Map(); // JSON of the constants -> min
+  function mccMinimum(A = ALG_SPEED_DEFAULTS) {
     const t = tables();
-    const A = ALG_SPEED_DEFAULTS;
     const key = JSON.stringify(A);
-    if (MCC && MCC.key === key) return MCC.min;
+    if (MCC.has(key)) return MCC.get(key);
     const q = {
       R: A.wristMult, L: A.wristMult,
       U: Math.min(1, A.pushMult, 1.15 * A.pushMult),
@@ -151,15 +150,20 @@ const SpellingSearch = (() => {
       if (t.IS_ROT[k]) min[k] = tok.endsWith('2') ? A.rotation * A.double : A.rotation;
       else min[k] = Math.max(0, tok.endsWith('2') ? h[tok[0].toUpperCase()] : q[tok[0].toUpperCase()]);
     });
-    MCC = { key, min };
+    if (MCC.size > 8) MCC.clear();
+    MCC.set(key, min);
     return min;
   }
 
-  /** stepPenalty's per-token penalties (a token at index 0 pays none of them for a rotation). */
-  function penalties() {
+  /**
+   * stepPenalty's per-token penalties (a token at index 0 pays none of them
+   * for a rotation), then (at index NT) the naturalness weight; `P` another
+   * setting's penalties (script.js scoringFor).
+   */
+  function penalties(P = STEP_PENALTIES) {
     const t = tables();
-    const P = STEP_PENALTIES;
-    return Float64Array.from(t.TOK, (tok) => {
+    return Float64Array.from([...t.TOK, null], (tok) => {
+      if (tok === null) return P.natural;
       const c = tok[0];
       if (c === 'D') return P.D;
       if (c === 'F') return P.F;
@@ -375,7 +379,7 @@ const SpellingSearch = (() => {
     const WL = wideLanding();
     const NM = MID_T.length;
     const ru = later ? 0 : 1;
-    const lam = STEP_PENALTIES.natural;
+    const lam = pen[NT]; // the naturalness weight (penalties)
     const { MIN2, MIN1, NT1, AFTER } = L;
     const TRI = later ? L.TRIL : L.TRI;
     const n = face.length;
@@ -614,7 +618,7 @@ const SpellingSearch = (() => {
     const WL = wideLanding();
     const NM = MID_T.length;
     const ru = later ? 0 : 1;
-    const lam = STEP_PENALTIES.natural;
+    const lam = pen[NT]; // the naturalness weight (penalties)
     const { MIN2, MIN1, NT1, AFTER } = L;
     const TRI = later ? L.TRIL : L.TRI;
     const n = face.length;
@@ -882,7 +886,7 @@ const SpellingSearch = (() => {
     const { O0, OK, OT1, OT2, OT3, OD, LS0, LSV } = exactOptions(!later);
     const { MID_T, MID_D } = rowOptions(!later);
     if (OS.length < OK.length) { OS = new Float64Array(OK.length); OX = new Int32Array(OK.length); }
-    const lam = STEP_PENALTIES.natural;
+    const lam = pen[NT]; // the naturalness weight (penalties)
     const { NT1, TRI } = L;
     const n = face.length;
     const NT2 = NT1 * NT1;
@@ -1073,10 +1077,11 @@ const SpellingSearch = (() => {
   function* enumerateSteps(sols, opts) {
     const t = tables();
     const L = lmTables();
-    const mccMin = mccMinimum();
-    const pen = penalties();
+    // the settings' constants (script.js scoringFor; the defaults without)
+    const mccMin = mccMinimum(opts.scoring ? opts.scoring.mcc : undefined);
+    const pen = penalties(opts.scoring ? opts.scoring.pen : undefined);
     const { NR, NT, CONJ, WIDES, MIDS, MUL, YF, IS_ROT, IS_RL, QUARTERS, FACE_UD, R_QUARTER, UD_QUARTER } = t;
-    const lam = STEP_PENALTIES.natural;
+    const lam = pen[NT]; // the naturalness weight (penalties)
     const lm = L.lm;
     const NT1 = L.NT1;
     const RS = NR * NT1 * NT1;
@@ -1640,6 +1645,7 @@ const SpellingSearch = (() => {
       maxRL: o.maxRL,
       maxUDF: o.maxUDF,
       exact: o.exact,
+      scoring: o.scoring,
       // the budgets only change when a candidate is kept
       budget: (wide) => {
         if (!budgets) budgets = [limitTpp(false) * o.pieces - o.floor + BUDGET_EPS, limitTpp(true) * o.pieces - o.floor + BUDGET_EPS, limitTpp(false)];
@@ -1669,15 +1675,15 @@ const SpellingSearch = (() => {
   /**
    * enumerate's cheap estimate of a solution's plain spelling (face-turn
    * tokens), without its pair-choice cost: for choosing which solutions a
-   * seed-only search (topSpellings seedOnly) scores. plainEstimator(root)
+   * seed-only search (topSpellings seedOnly) scores. plainEstimator(root, scoring)
    * returns the estimate as a function (tables looked up once).
    */
-  function plainEstimator(root) {
+  function plainEstimator(root, scoring = null) {
     const t = tables();
     const L = lmTables();
-    const mccMin = mccMinimum();
-    const pen = penalties();
-    const lam = STEP_PENALTIES.natural;
+    const mccMin = mccMinimum(scoring ? scoring.mcc : undefined);
+    const pen = penalties(scoring ? scoring.pen : undefined);
+    const lam = pen[t.NT];
     const lm = L.lm;
     const leads = (root ? t.LEAD_ROOT : t.LEAD_LATER).filter(([, ld]) => t.YF[ld]);
     return (faceTokens) => {

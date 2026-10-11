@@ -266,8 +266,8 @@ test('algSurprise (PROJECT_STATUS §4.47): human F2L sequences are natural, mach
 test('stepPenalty (PROJECT_STATUS §4.46): one function for every step', () => {
   const { stepPenalty, STEP_PENALTIES: P } = require('../js/script.js');
   assert.ok(!('wideRLFirst' in P), 'no first-step values');
-  assert.strictEqual(stepPenalty("r U r'", true), stepPenalty("r U r'", false));
-  assert.strictEqual(stepPenalty("f R' f'", true), stepPenalty("f R' f'"));
+  assert.strictEqual(stepPenalty("r U r'", P), stepPenalty("r U r'"));
+  assert.strictEqual(stepPenalty("f R' f'", P), stepPenalty("f R' f'"));
   // SolveSession.pathCost: every step, first or later, the same penalty.
   const scriptExports = require('../js/script.js');
   for (const k of ['algSpeed', 'algSpeedPrefix', 'algSpeedResume', 'stepPenalty']) global[k] = scriptExports[k]; // browser globals
@@ -276,6 +276,27 @@ test('stepPenalty (PROJECT_STATUS §4.46): one function for every step', () => {
   const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
   near(stepsPathCost({}, [], "r U R'"), algSpeed("r U R'") + stepPenalty("r U R'"));
   near(stepsPathCost({}, ["r U R'"], "l U' L'"), algSpeed("r U R' l U' L'") + stepPenalty("r U R'") + stepPenalty("l U' L'"));
+});
+
+test('scoringFor: pair planning off ranks with its own constants, everywhere a path is scored', () => {
+  const S = require('../js/script.js');
+  for (const k of ['algSpeed', 'algSpeedPrefix', 'algSpeedResume', 'stepPenalty', 'scoringFor']) global[k] = S[k];
+  const { stepsPathCost } = require('../js/solver-bridge.js');
+  assert.strictEqual(S.scoringFor({ planning: true }), S.DEFAULT_SCORING);
+  assert.strictEqual(S.scoringFor({}), S.DEFAULT_SCORING);
+  assert.strictEqual(S.scoringFor({ planning: false }), S.PLANNING_OFF_SCORING);
+  assert.deepStrictEqual(Object.keys(S.PLANNING_OFF_SCORING.mcc).sort(), Object.keys(S.ALG_SPEED_DEFAULTS).sort());
+  assert.deepStrictEqual(Object.keys(S.PLANNING_OFF_SCORING.pen).sort(), Object.keys(S.STEP_PENALTIES).sort());
+  // any constants: the path cost is algSpeed with them plus the penalties with them
+  const scoring = { mcc: { ...S.ALG_SPEED_DEFAULTS, rotation: 7, double: 2.5 }, pen: { ...S.STEP_PENALTIES, F: 5, natural: 1 } };
+  const A = Object.keys(S.ALG_SPEED_DEFAULTS).map(k => scoring.mcc[k]);
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
+  const holder = { scoring };
+  near(stepsPathCost(holder, ["y R U R'", "F U F'"], "U2 y' R' F R2"), S.algSpeed("y R U R' F U F' U2 y' R' F R2".split(' '), false, false, ...A)
+    + S.stepPenalty("y R U R'", scoring.pen) + S.stepPenalty("F U F'", scoring.pen) + S.stepPenalty("U2 y' R' F R2", scoring.pen));
+  // the cached committed path follows a change of constants
+  holder.scoring = S.DEFAULT_SCORING;
+  near(stepsPathCost(holder, ["y R U R'", "F U F'"], "U2 y' R' F R2"), S.algSpeed("y R U R' F U F' U2 y' R' F R2") + S.stepPenalty("y R U R'") + S.stepPenalty("F U F'") + S.stepPenalty("U2 y' R' F R2"));
 });
 
 test('normalizeCriteria: pro move set + cross optimisation always on, retired options moved to view settings', () => {

@@ -150,8 +150,10 @@ without working out the next one. It is learned, not a hand-written rule:
   once F2L is solved, so the cost of a complete solution is unchanged. Like
   the rest of `alg_speed`, it is the same at every step.
 
-Learned weights (time units, per counted pair or piece; pair planning off,
-see below for on): connected pair −5.7, both pieces in the top layer −1.4,
+Learned weights of the look features fitted alone (`PAIR_CHOICE_LOOK`;
+time units, per counted pair or piece; the app now uses look features only
+with pair planning on, fitted together with the planning features, see
+below): connected pair −5.7, both pieces in the top layer −1.4,
 edge stuck +0.78, corner stuck +0.54, lone piece home +0.45. (Refining these
 on professional solves gained too little to keep: the reference solves
 ranked worse.) On held-out scrambles the candidate ranked
@@ -200,9 +202,14 @@ the top result at every step, solves rotate less and solve the two front
 slots first less often (`tools/continuity.js`; numbers in
 PROJECT_STATUS.md).
 
-**Pair planning** is a results-page setting, on by default. Off, steps are
-ranked by their own speed plus the look features (`PAIR_CHOICE_LOOK`), for
-solvers who want the plain solution of each pair, not a plan.
+**Pair planning** is a results-page setting, on by default. Off, a step is
+ranked **by itself alone**: no pair-choice term at all (no look features, no
+EO, no open slots), so the list answers "what is the fastest way to solve a
+pair here", for solvers who want the best pair without a reason that only
+shows later ("it makes EO better"). It ranks with its own `alg_speed`
+constants and penalties (`PLANNING_OFF_SCORING`), fitted separately on the
+lists the app shows with planning off: a professional's step can rank lower
+there, when they chose it for what it sets up.
 
 ## What the DAG edges mean
 

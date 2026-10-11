@@ -310,20 +310,21 @@ const LM_KEYS = ['order', 'discount', 'proWeight'];
 // leaves. Complete pools store each alg's feature vector.
 const { LOOK_FEATURES, PLAN_FEATURES } = require(path.join(js, 'facelet-flags.js'));
 const PAIR_KEYS = [...LOOK_FEATURES.map(k => `look_${k}`), ...PLAN_FEATURES.map(k => `plan_${k}`)];
-// --planning off: the app's pair-choice weights with pair planning off
-// (PAIR_CHOICE_LOOK, no planning term): cpools builds the lists the app shows
-// then, eval / fit start from those weights.
+// --planning off: the app's ranking with pair planning off (no pair-choice
+// term at all: a step is ranked by itself alone): cpools builds the lists
+// the app shows then, eval / fit score with that setting's parameters.
 const PLANNING_OFF = opt('planning', 'on') === 'off';
 const WIDE_OFF = opt('wide', 'on') === 'off';
 function pairWeights() {
-  return PLANNING_OFF ? { look: S.PAIR_CHOICE_LOOK, plan: S.PAIR_PLANNING.plan.map(() => 0) } : S.PAIR_PLANNING;
+  return PLANNING_OFF ? { look: S.PAIR_PLANNING.look.map(() => 0), plan: S.PAIR_PLANNING.plan.map(() => 0) } : S.PAIR_PLANNING;
 }
 function currentParams() {
   const pair = {};
   const w = pairWeights();
   LOOK_FEATURES.forEach((k, i) => { pair[`look_${k}`] = w.look[i]; });
   PLAN_FEATURES.forEach((k, i) => { pair[`plan_${k}`] = w.plan[i]; });
-  return { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, ...pair, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
+  const scoring = S.scoringFor({ planning: !PLANNING_OFF });
+  return { ...scoring.mcc, ...scoring.pen, turns: 0, midXZ: 0, ...pair, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
 }
 
 /** Naturalness models: per training fold, and one for the held-out groups. */
@@ -375,6 +376,10 @@ function buildCache(pools, solvesByKey, sample, filter) {
     if (!solve || !filter(solve)) continue;
     for (const seg of p.segs) {
       if (EXCLUDED_LABEL.test(seg.labels) || !seg.size) continue;
+      // --wide off: a professional step with a wide move is in no list the
+      // results page shows then (ranking it would only reward pricing the
+      // turns it replaces up)
+      if (WIDE_OFF && /(^| )[rludfb]/.test(seg.pro)) continue;
       // Longer than any step the app searches (a 4-pair multislot is 16 turns).
       if (seg.pro.split(' ').filter(t => !/^[xyz]/.test(t)).length > 16) continue;
       const rest = seg.rest.length > sample ? seg.rest.slice(0, sample) : seg.rest;
@@ -710,8 +715,8 @@ function fit() {
  * One fit for every results-page setting: the shared parameters (MCC, step
  * penalties, naturalness) against the summed loss of every setting's lists;
  * the pair-choice weights per setting group -- planning on (PAIR_PLANNING,
- * also used with wide moves off) and planning off (PAIR_CHOICE_LOOK, no
- * planning term) -- as their own keys ("on.look_connected",
+ * also used with wide moves off) and planning off (none: no pair-choice
+ * term) -- as their own keys ("on.look_connected",
  * "off.look_connected", "on.plan_openBackSlots"). A setting named off* is
  * built with --planning off (cpools), the others with planning on.
  */
@@ -727,7 +732,7 @@ function settingsSpec() {
 }
 function jointStartParams() {
   const p = { ...S.ALG_SPEED_DEFAULTS, ...S.STEP_PENALTIES, turns: 0, midXZ: 0, order: S.NATURALNESS.order, discount: S.NATURALNESS.discount, proWeight: S.NATURALNESS.proWeight };
-  LOOK_FEATURES.forEach((k, i) => { p[`on.look_${k}`] = S.PAIR_PLANNING.look[i]; p[`off.look_${k}`] = S.PAIR_CHOICE_LOOK[i]; });
+  LOOK_FEATURES.forEach((k, i) => { p[`on.look_${k}`] = S.PAIR_PLANNING.look[i]; p[`off.look_${k}`] = 0; });
   PLAN_FEATURES.forEach((k, i) => { p[`on.plan_${k}`] = S.PAIR_PLANNING.plan[i]; });
   return { ...p, ...parseParams(opt('params', '')) };
 }
@@ -779,7 +784,8 @@ function joint() {
   let best = objective(params);
   report('start', best);
   if (args.includes('--eval-only')) return;
-  const pairKeys = [...LOOK_FEATURES.flatMap(k => [`on.look_${k}`, `off.look_${k}`]), ...PLAN_FEATURES.map(k => `on.plan_${k}`)];
+  // (planning off has no pair-choice term: its weights stay 0)
+  const pairKeys = [...LOOK_FEATURES.map(k => `on.look_${k}`), ...PLAN_FEATURES.map(k => `on.plan_${k}`)];
   const keys = opt('fit', [...PEN_KEYS, ...MCC_KEYS, ...pairKeys].join(',')).split(',');
   const rounds = Number(opt('rounds', '3'));
   const mults = [0, 0.5, 0.7, 0.85, 0.93, 1.07, 1.15, 1.4, 2];

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
  * Pair choice (README "Pair choice") against the real WASM engine (about a
- * minute, not part of the fast suite): every candidate's TPP is
- *   (path cost + PAIR_CHOICE_LOOK . features) / pieces
+ * minute, not part of the fast suite): with pair planning on, every
+ * candidate's TPP is
+ *   (path cost + PAIR_PLANNING look . features + plan . planning features) / pieces
  * with the features recomputed from an independent facelet replay of
- * scramble + inspection + path + alg; spellings of one alg share the features. Root and later steps, with test
- * weights and with the app's.
+ * scramble + inspection + path + alg; spellings of one alg share the look
+ * features. Root and later steps, with test weights and with the app's.
+ * With planning off there is no such term: TPP = path cost (with that
+ * setting's constants) / pieces.
  *
  * Usage: node test/pair-choice-e2e.js
  */
@@ -36,10 +39,13 @@ function checkList(s, list, n) {
     const node = s.nodeMap.get(r.targetNodeId);
     const pieces = calculateSolvedPieces(s.rootNode, node);
     const f = applyAlgorithm(SOLVED_FACELETS, [s.scramble, s.isAtRoot ? r.rotation : s.rotation, s.scoredPath, r.coreAlg].filter(Boolean).join(' '));
-    const W = s.planning === false ? PAIR_CHOICE_LOOK : PAIR_PLANNING.look;
-    let look = pairLookFeatures(f).reduce((t, x, k) => t + x * W[k], 0);
-    // pair planning: the cube as the step leaves it held
-    if (s.planning !== false) look += planFeatures(f).reduce((t, x, k) => t + x * PAIR_PLANNING.plan[k], 0);
+    // pair planning off: a step ranked by itself alone
+    let look = 0;
+    if (s.planning !== false) {
+      look += pairLookFeatures(f).reduce((t, x, k) => t + x * PAIR_PLANNING.look[k], 0);
+      // the cube as the step leaves it held
+      look += planFeatures(f).reduce((t, x, k) => t + x * PAIR_PLANNING.plan[k], 0);
+    }
     const fl = solvedFlags(f);
     if (!(fl.BL && fl.BR && fl.FL && fl.FR)) { open++; if (look) nonzero++; }
     const want = (s.pathCost(r.coreAlg) + look) / pieces;
@@ -53,12 +59,12 @@ function checkList(s, list, n) {
   const h = await createEnginePool('cross', 2);
   const advanced = ['xcross', 'xxcross', 'cross_opt', 'pro_moves'];
   const pruned = pruneGraph(tree, { advanced: [...advanced, 'multislotting'], colors: ['white'] });
-  const appLook = PAIR_CHOICE_LOOK.slice();
-  const setWeights = (w) => { w.forEach((x, i) => { PAIR_CHOICE_LOOK[i] = x; }); };
+  const appLook = PAIR_PLANNING.look.slice();
+  const setWeights = (w) => { w.forEach((x, i) => { PAIR_PLANNING.look[i] = x; }); };
   for (const [label, w, planning] of [
-    ['test weights, planning off', [0.3, 0.5, 0.7, -1.1, -1.3], false],
-    ['app weights, planning off', appLook, false],
+    ['test weights, planning on', [0.3, 0.5, 0.7, -1.1, -1.3], true],
     ['app weights, planning on', appLook, true],
+    ['planning off', appLook, false],
   ]) {
     setWeights(w);
     const s = new SolveSession(SCRAMBLE, pruned, ['white'], advanced);
@@ -69,12 +75,14 @@ function checkList(s, list, n) {
     await test(`${label}: first-step TPPs include the pair-choice terms`, () => {
       const [nz, open] = checkList(s, rootList, 400);
       if (label.startsWith('test weights')) assert.ok(nz > open / 2, `${nz} of ${open} with a nonzero term`);
+      if (!planning) assert.strictEqual(nz, 0);
     });
     s.commit(rootList.find(r => r.type === 'XCross'));
     const later = await searchWithLookahead(s, h, null, null, { depth: 1 });
     await test(`${label}: later-step TPPs include them, spellings included`, () => {
       const [nz, open] = checkList(s, later, 600);
       if (label.startsWith('test weights')) assert.ok(open >= 200 && nz > open / 2, `${nz} of ${open} with a nonzero term`);
+      if (!planning) assert.strictEqual(nz, 0);
       assert.ok(later.slice(0, 600).some(r => /^[yu]|f|d/.test(r.coreAlg)), 'spellings among them');
     });
   }

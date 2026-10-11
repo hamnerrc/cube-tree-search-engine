@@ -561,20 +561,25 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
  * a search: its MCC grip search (algSpeedPrefix) and step penalties are
  * computed once per path (cached on `holder`), and each candidate only
  * resumes from there. Exact: equal to algSpeed of the whole path
- * (test/script.test.js).
+ * (test/script.test.js). The constants are the holder's `scoring` (its
+ * settings', script.js scoringFor; the defaults without one).
  */
 function costBase(holder, stepAlgs) {
   let base = holder._costBase;
+  const scoring = holder.scoring || null;
   // (called for every scored spelling: skip the key when nothing changed)
-  if (base && base.ref === stepAlgs && base.len === stepAlgs.length && base.last === stepAlgs[stepAlgs.length - 1]) return base;
+  if (base && base.ref === stepAlgs && base.len === stepAlgs.length && base.last === stepAlgs[stepAlgs.length - 1] && base.scoring === scoring) return base;
   const key = stepAlgs.join('|');
-  if (!base || base.key !== key) {
+  if (!base || base.key !== key || base.scoring !== scoring) {
     const scoredPath = stepAlgs.join(' ').trim();
+    const pen = scoring ? scoring.pen : undefined;
     base = holder._costBase = {
       key,
+      scoring,
+      pen,
       scoredPath,
-      mcc: typeof algSpeedPrefix === 'function' ? algSpeedPrefix(scoredPath) : null,
-      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a) => sum + stepPenalty(a), 0) : 0,
+      mcc: typeof algSpeedPrefix === 'function' ? algSpeedPrefix(scoredPath, scoring ? scoring.mcc : undefined) : null,
+      penalty: typeof stepPenalty === 'function' ? stepAlgs.reduce((sum, a) => sum + stepPenalty(a, pen), 0) : 0,
     };
   }
   base.ref = stepAlgs;
@@ -584,7 +589,7 @@ function costBase(holder, stepAlgs) {
 }
 function stepsPathCost(holder, stepAlgs, alg) {
   const base = costBase(holder, stepAlgs);
-  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg) : 0;
+  const penalty = typeof stepPenalty === 'function' ? base.penalty + stepPenalty(alg, base.pen) : 0;
   if (base.mcc) return algSpeedResume(base.mcc, alg) + penalty;
   const path = base.scoredPath ? `${base.scoredPath} ${alg}` : alg;
   return algSpeed(path, false, false) + penalty;
@@ -845,6 +850,8 @@ class SolveSession {
   pathCost(alg) {
     return stepsPathCost(this, this.stepAlgs, alg);
   }
+  /** The MCC constants and step penalties this session's settings rank with (script.js scoringFor). */
+  get scoring() { return typeof scoringFor === 'function' ? scoringFor(this) : null; }
   /**
    * The committed path as the engine needs it: { rotation, moves } with
    * `moves` face turns only, in the frame the cube is physically in now.
@@ -1594,15 +1601,19 @@ function postProcessContext(session, isRoot) {
     firstColor: session.committedRows[0] ? session.committedRows[0].color : '',
     nodeIndex: nodeByLabelsIndex.get(session.tree),
     rootTargets: isRoot ? session._rootTargetsByLabels : null,
+    scoring: session.scoring,
     lookWeights: lookWeightsFor(session),
     planWeights: session.planning !== false && typeof PAIR_PLANNING !== 'undefined' && PAIR_PLANNING.plan.some(w => w) ? PAIR_PLANNING.plan.slice() : null,
   };
 }
 
-/** The pair-choice look weights: fitted with the planning features when planning is on. */
+/**
+ * The pair-choice look weights: only with pair planning on. Off, a step is
+ * ranked by itself alone -- nothing about the pairs it leaves (README "Pair
+ * planning").
+ */
 function lookWeightsFor(session) {
-  const planning = session.planning !== false && typeof PAIR_PLANNING !== 'undefined';
-  const w = planning ? PAIR_PLANNING.look : (typeof PAIR_CHOICE_LOOK !== 'undefined' ? PAIR_CHOICE_LOOK : null);
+  const w = session.planning !== false && typeof PAIR_PLANNING !== 'undefined' ? PAIR_PLANNING.look : null;
   return w && w.some(x => x) ? w.slice() : null;
 }
 
@@ -2018,7 +2029,7 @@ async function postProcessComplete(ctx, p, cores, live = null) {
   // solutions that look best, scored exactly, as real candidates
   if (p.seedOnly) {
     const keyed = [];
-    const estimate = SPELLING.plainEstimator(isRoot);
+    const estimate = SPELLING.plainEstimator(isRoot, ctx.scoring);
     for (const core of cores || []) if (core && !seen.has(core)) { seen.add(core); keyed.push([estimate(core.split(' ')), core]); }
     keyed.sort((x, y) => x[0] - y[0]);
     cores = keyed.slice(0, 4 * p.topN).map(x => x[1]);
@@ -2154,6 +2165,7 @@ async function postProcessComplete(ctx, p, cores, live = null) {
     floor,
     costOf: alg => pathCostFor(ctx, alg),
     mccOf: alg => stepsPathMcc(ctx, ctx.stepAlgs, alg),
+    scoring: ctx.scoring,
     views: p.views || RESULT_VIEWS,
     size: p.topN,
     initial: p.limits,

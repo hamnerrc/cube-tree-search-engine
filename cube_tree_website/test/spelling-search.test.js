@@ -42,8 +42,8 @@ const VIEWS = [
   { test: c => !c.wide && !c.unorthodox, wide: false },
 ];
 
-function run(stepAlgs, root, faces, size, brute) {
-  const holder = {};
+function run(stepAlgs, root, faces, size, brute, scoring = null) {
+  const holder = scoring ? { scoring } : {};
   const costOf = alg => stepsPathCost(holder, stepAlgs, alg);
   costOf('R');
   const floor = SpellingSearch.mccFloor(holder._costBase.mcc) + holder._costBase.penalty;
@@ -54,7 +54,7 @@ function run(stepAlgs, root, faces, size, brute) {
   };
   const big = 1e9;
   return SpellingSearch.topSpellings({
-    sols, root, pieces: 5, floor: brute ? -big : floor, costOf, views: VIEWS, size: brute ? big : size, make,
+    sols, root, pieces: 5, floor: brute ? -big : floor, costOf, views: VIEWS, size: brute ? big : size, make, scoring,
   });
 }
 
@@ -62,15 +62,23 @@ function topOf(list, view, size) {
   return list.filter(VIEWS[view].test).sort((a, b) => a.tpp - b.tpp).slice(0, size);
 }
 
-for (const [label, stepAlgs, root, len, count, size] of [
+// Another setting's constants (script.js scoringFor), far from the defaults:
+// the bound tables must follow them.
+const OTHER_SCORING = {
+  mcc: { ...ALG_SPEED_DEFAULTS, wristMult: 0.7, pushMult: 1.5, ringMult: 2.2, double: 2.4, rotation: 7.5, destabilize: 0.1 },
+  pen: { ...STEP_PENALTIES, D: 1.2, F: 0.8, B: 5, wideRL: 0.5, wideUDFB: 4, rotMidY: 1.5, natural: 0.9 },
+};
+for (const [label, stepAlgs, root, len, count, size, scoring] of [
   ['first step', [], true, 5, 6, 30],
   ['later step', ["D R' F R D'", "U' R U R'"], false, 6, 8, 40],
   ['later step, small N', ["R U R' U2 F' U F"], false, 7, 6, 5],
+  ['first step, other constants', [], true, 5, 6, 30, OTHER_SCORING],
+  ['later step, other constants', ["D R' F R D'", "U' R U R'"], false, 6, 8, 40, OTHER_SCORING],
 ]) {
   test(`${label}: the best ${size} of every view equal brute force`, () => {
     const faces = Array.from({ length: count }, () => randomFace(len));
-    const fast = run(stepAlgs, root, faces, size, false);
-    const all = run(stepAlgs, root, faces, size, true);
+    const fast = run(stepAlgs, root, faces, size, false, scoring);
+    const all = run(stepAlgs, root, faces, size, true, scoring);
     assert.ok(fast.stats.exact < all.stats.exact, `pruned something (${fast.stats.exact} of ${all.stats.exact} scored)`);
     for (let v = 0; v < VIEWS.length; v++) {
       const want = topOf(all.list, v, size);

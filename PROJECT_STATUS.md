@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-11 (thirty-third pass).*
+*Last updated 2026-10-11 (thirty-fourth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,50 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-fourth pass (2026-10-11).** Developer: pair planning off is for
+solvers who want the best pair now, without knowing why a step sets up a
+later pair; it must get no information about EO, the remaining pairs or
+the slots, and its ranking is fitted to it -- a pro's step may rank lower
+there. Every setting combination may be tuned separately.
+
+1. **Planning off = a step ranked by itself alone**: no pair-choice term at
+   all (`lookWeightsFor` returns null off; `PAIR_CHOICE_LOOK` is no longer
+   used by the app, kept for tools/pair-choice.js). README "Pair planning",
+   the info dialog and the checkbox hint say so.
+2. **Per-setting scoring constants**: `scoringFor(settings)` (script.js)
+   gives `{ mcc, pen }` -- `DEFAULT_SCORING` (= ALG_SPEED_DEFAULTS,
+   STEP_PENALTIES) or `PLANNING_OFF_SCORING`. Threaded explicitly, no
+   global switching (searches of both settings can interleave): session
+   `scoring` getter -> costBase (cached per scoring) -> `algSpeedPrefix(prefix,
+   A)` (the checkpoint keeps A) / `stepPenalty(alg, P)`; ctx.scoring (workers)
+   -> complete search spec -> `mccMinimum(A)` (cached per constants),
+   `penalties(P)` (naturalness weight now stored at index NT; the tables
+   read `lam = pen[NT]`), `plainEstimator(root, scoring)`. Tests: brute
+   force equals the branch and bound with constants far from the defaults
+   (first and later step); stepsPathCost with any constants equals algSpeed
+   + stepPenalty with them; the cached path follows a change of constants.
+   Wide moves off has no slot of its own: its list is the wide search's
+   minus wide rows (wideTwin), which needs the same constants.
+3. **Fits, one setting at a time** (fresh pools of each combination under
+   the new planning off, 319 solves; 2-fold CV + full fit; train Yiheng
+   Wang + Xuanyi Geng, held out folds + pro_references). Pro top 10:
+
+   | setting | references | reco.nz train | separate fit (held out) |
+   |---|---|---|---|
+   | planning on | 87.9% | 76.5% | (fitted on these lists already, 33rd pass) |
+   | planning off, no pair term | 81.8% (was 84.8 with look terms) | 75.8% (was 76.1) | log rank + gap, top-10, pure log rank: folds pick different constants; held-out top 10 down or flat |
+   | wide off, planning on | 96.5% | 87.0% | rotation 4.8 -> 2.4-3.4, B 3.5 -> 7 in every run; references down (fold 0 93.0 -> 91.2), one solver up, the other down |
+   | wide off, planning off | 94.7% | 87.0% | same direction; references down (full 94.7 -> 93.0, fold 1 91.2 -> 89.5) |
+
+   Wide-off rows count only professional steps without a wide move
+   (`fit --wide off` now drops the others: ranking them only rewarded
+   pricing B/F up, B went to 14-28). **No separate constants pass** the
+   acceptance rule; `PLANNING_OFF_SCORING` holds the default values. The
+   drop in planning off (references 84.8 -> 81.8%) is the information the
+   developer asked to take away: steps pros chose for what they set up.
+   The one consistent signal (wide off: cheaper rotations) is worth
+   re-testing with more data (a third solver).
 
 **Thirty-third pass (2026-10-11).** Tree clean at the start (prompt and
 metric notes untracked), every fast suite passing; every real-engine e2e
