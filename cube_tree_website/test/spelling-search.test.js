@@ -5,7 +5,8 @@
  * committed path before it), the best N spellings of every view equal the
  * best N of ALL spellings scored with the real path cost. Also: every
  * spelling is physically "the face turns, then a y-family rotation", never
- * has a wide b, a mid-step y2 or two mid-step rotations, and the bound never
+ * has a wide b, a mid-step y2, two mid-step rotations or a y after only U/D
+ * turns (written first instead), and the bound never
  * exceeds the real cost.
  */
 'use strict';
@@ -112,6 +113,8 @@ test('every spelling is the face turns then a y-family rotation; no b, no mid y2
       const firstTurn = toks.findIndex(t => !/^[xyz]/.test(t));
       const mid = toks.slice(firstTurn).filter(t => /^[xyz]/.test(t));
       assert.ok(mid.length <= 1 && !mid.includes('y2'), c.alg);
+      const yAt = toks.findIndex((t, q) => q >= firstTurn && /^y/.test(t));
+      assert.ok(yAt < 0 || toks.slice(firstTurn, yAt).some(t => !/^[UDud]/.test(t)), `y after only U/D turns: ${c.alg}`);
       if (root) assert.ok(!toks.some(t => /^[xyz]/.test(t)), `first step rotates: ${c.alg}`);
       const face = faces[c.sol].join(' ');
       const got = applyAlgorithm(SOLVED_FACELETS, [c.rotation, c.alg].filter(Boolean).join(' '));
@@ -132,8 +135,14 @@ test('known spellings are generated: wide u/f, rotations, side-cross inspections
     return out;
   };
   const later = all("D B U' B'", false);
-  for (const sp of ["u R U' R'", "D y R U' R'", "y D R U' R'", "D f R' f'"]) assert.ok(later.has(sp), sp);
-  assert.ok(all("U' B U B'", false).has("y U' R U R'"), 'rotation spelling');
+  for (const sp of ["u R U' R'", "y D R U' R'", "D f R' f'"]) assert.ok(later.has(sp), sp);
+  const rotated = all("U' B U B'", false);
+  assert.ok(rotated.has("y U' R U R'"), 'rotation spelling');
+  // a y after only U/D turns is written first
+  assert.ok(!later.has("D y R U' R'") && !rotated.has("U' y R U R'"), 'rotation after an AUF');
+  assert.ok(all("R U' B U B'", false).has("R U' y R U R'"), 'rotation after a non-U/D turn');
+  const splitRot = all("U2 B U B'", false);
+  assert.ok(!splitRot.has("U y U R U R'") && splitRot.has("y U2 R U R'"), 'split half turn after nothing but U/D turns');
   const split = all("U2 L' U L", false);
   assert.ok([...split].some(x => /^(d' U'|U' d'|d U|U d) /.test(x)), 'U2 as a plain and a wide quarter');
   assert.ok([...all("L U L'", false)].some(x => /(^| )r/.test(x)), 'L as r');

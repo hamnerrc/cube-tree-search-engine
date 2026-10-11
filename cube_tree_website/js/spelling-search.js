@@ -6,7 +6,8 @@
  * (uncapped). A human may write each of them in many ways: a free leading
  * rotation (the inspection at the first step; y, y' or y2 at a later one),
  * at most one mid-step y, y', x or x' (later steps only: a first step never
- * rotates inside its alg), any turn as a wide turn (r l, and at
+ * rotates inside its alg; a y or y' never right after only U/D turns, where
+ * it is written first), any turn as a wide turn (r l, and at
  * most SPELLING_MAX_UDF of u d f; never a wide b), as long as the cross ends
  * on the bottom. Every spelling is physically "the face-turn solution, then
  * a y-family rotation", so it solves the same pieces.
@@ -1216,6 +1217,11 @@ const SpellingSearch = (() => {
       const V = X.V;
       const U = X.U;
       let lead = 0;
+      // A y or y' after nothing but U/D turns is written first instead (it
+      // commutes with them: "y U R U' R'", never "U y R U' R'"): the moves
+      // before i are all U/D turns while i <= ud.
+      let ud = 0;
+      while (ud < n && FACE_UD[face[ud]]) ud++;
       // ps: penalties + bits so far; mcc: least MCC of the tokens before the
       // last; pend: the last token's own least MCC (counted once the next
       // token is known not to pair with it). The exact table is read at the
@@ -1247,7 +1253,7 @@ const SpellingSearch = (() => {
           return;
         }
         if (!r && i > 0) {
-          for (let k2 = 0; k2 < MIDS.length; k2++) {
+          for (let k2 = i <= ud ? 2 : 0; k2 < MIDS.length; k2++) {
             write(MIDS[k2][0], len, ps, a, b, mcc, pend, anyTurn, false);
             rec(i, MUL[d][MIDS[k2][1]], 1, 0, nRL, nUDF, wa, wb, wps, wmcc, wown, len + 1, anyTurn, wide, true);
           }
@@ -1269,7 +1275,7 @@ const SpellingSearch = (() => {
           for (let qk = 0; qk < quarters.length; qk++) {
             const qf = quarters[qk];
             const q = CONJ[d][qf];
-            for (let k2 = 0; k2 < MIDS.length; k2++) {
+            for (let k2 = i < ud ? 2 : 0; k2 < MIDS.length; k2++) {
               const dm = MUL[d][MIDS[k2][1]];
               write(q, len, ps, a, b, mcc, pend, anyTurn, true);
               const ps1 = wps; const a1 = wa; const b1 = wb; const m1 = wmcc; const o1 = wown;

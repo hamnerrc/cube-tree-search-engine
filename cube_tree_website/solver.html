@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree solver</title>
-    <link rel="stylesheet" href="styles.css?v=20261010j">
+    <link rel="stylesheet" href="styles.css?v=20261010l">
 </head>
 
 <body>
@@ -31,9 +31,13 @@
 
         <section class="card solution-box" aria-label="solution so far">
             <div class="card-head">
-                <h2>solution</h2>
+                <div class="solution-title">
+                    <h2>solution</h2>
+                    <span id="move-count" class="move-count" title="move count: slice turn metric (rotations not counted) / execution turn metric (rotations counted); the inspection is not counted" hidden></span>
+                </div>
                 <div class="solution-actions">
-                    <button type="button" id="copy-btn" class="small-btn" disabled>copy</button>
+                    <button type="button" id="copy-btn" class="small-btn" title="copy this scramble and its solution" disabled>copy</button>
+                    <button type="button" id="copy-all-btn" class="small-btn" title="copy every scramble with its solution" disabled>copy all</button>
                     <a id="cubedb-link" class="small-btn link-btn" href="#" target="_blank" rel="noopener" aria-disabled="true"
                         title="open this scramble and solution on cubedb.net">cubedb ↗</a>
                     <button type="button" id="undo-btn" class="small-btn" onclick="handleUndoClick()" disabled>undo</button>
@@ -112,17 +116,17 @@
         <nav class="pagination" id="pagination" aria-label="result pages"></nav>
     </main>
 
-    <script src="js/pro-steps.js?v=20261010j"></script>
-    <script src="js/script.js?v=20261010j"></script>
-    <script src="js/facelet-cube.js?v=20261010j"></script>
-    <script src="js/facelet-flags.js?v=20261010j"></script>
-    <script src="js/cross-optimization.js?v=20261010j"></script>
-    <script src="js/spelling-search.js?v=20261010j"></script>
-    <script src="crossSolver/solver-helper.js?v=20261010j"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=20261010j"></script>
-    <script src="js/search-scheduler.js?v=20261010j"></script>
-    <script src="js/solver-bridge.js?v=20261010j"></script>
-    <script src="js/solver-ui.js?v=20261010j"></script>
+    <script src="js/pro-steps.js?v=20261010l"></script>
+    <script src="js/script.js?v=20261010l"></script>
+    <script src="js/facelet-cube.js?v=20261010l"></script>
+    <script src="js/facelet-flags.js?v=20261010l"></script>
+    <script src="js/cross-optimization.js?v=20261010l"></script>
+    <script src="js/spelling-search.js?v=20261010l"></script>
+    <script src="crossSolver/solver-helper.js?v=20261010l"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=20261010l"></script>
+    <script src="js/search-scheduler.js?v=20261010l"></script>
+    <script src="js/solver-bridge.js?v=20261010l"></script>
+    <script src="js/solver-ui.js?v=20261010l"></script>
 </body>
 
 </html>

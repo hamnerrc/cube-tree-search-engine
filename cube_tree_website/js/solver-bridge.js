@@ -717,6 +717,7 @@ function corpusSolutions(session, plan) {
         alg = [merged, alg.slice(lead[0].length).trim()].filter(Boolean).join(' ');
         if (merged.includes(' ')) continue; // not a single rotation (z or x combined with y)
       }
+      alg = rotationFirst(alg); // "U y R U R'" as "y U R U R'"
       const key = `${p.allCorners}|${alg}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1798,9 +1799,12 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       // A pseudo result is only solved up to a free D-layer offset; make
       // it physically exact (see alignPseudoAlg). A matched result never
       // needs this.
-      const finalCoreAlg = isPseudo
+      // A later step's y after only U/D turns is written first
+      // (rotationFirst: "y U R U' R'", not "U y R U' R'").
+      const alignedAlg = isPseudo
         ? alignPseudoAlg(ctx.scramble, fullRotation, ctx.scoredPath, variantAlg)
         : variantAlg;
+      const finalCoreAlg = alignedAlg && !isRoot ? rotationFirst(alignedAlg) : alignedAlg;
       if (finalCoreAlg === null) {
         console.warn('Discarding pseudo candidate: cross is not solved up to a D turn', { coreAlg: variantAlg, rotation: fullRotation });
         continue;
@@ -1929,6 +1933,7 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       if (ctx.proMoves && !isPseudo && typeof rotationSpellingParts === 'function'
         && !finalCoreAlg.split(' ').some(t => /^[xyz]/.test(t))) {
         for (const { alg: spelling, rotation: rot } of rotationSpellingParts(finalCoreAlg, !isRoot)) {
+          if (rotationFirst(spelling) !== spelling) continue; // its leading spelling is generated too
           const nodeId = nodeAfter(rot);
           if (!nodeId) continue;
           const spTpp = pathCostFor(ctx, spelling)
@@ -2575,6 +2580,30 @@ function solutionLines(session) {
 }
 
 /**
+ * Move counts of the committed solve (the inspection rotation excluded):
+ * STM counts every turn of any layer once (face, wide and slice turns),
+ * rotations not at all; ETM (the WCA's definition) counts every turn and
+ * every rotation once. { stm, etm, text: "25STM / 28ETM" }.
+ */
+function moveCounts(session) {
+  let stm = 0;
+  let etm = 0;
+  for (const row of session.committedRows) {
+    for (const tok of String(row.coreAlg || '').split(/\s+/)) {
+      if (!tok) continue;
+      etm++;
+      if (!/^[xyz]/.test(tok)) stm++;
+    }
+  }
+  return { stm, etm, text: `${stm}STM / ${etm}ETM` };
+}
+
+/** The text the copy buttons copy: the scramble, then one line per step. */
+function solutionText(session) {
+  return [session.scramble, ...solutionLines(session)].join('\n');
+}
+
+/**
  * A Cubedb (cubedb.net) link that replays `lines` on `scramble`. Cubedb keeps
  * the whole solve in the URL: spaces as "_", primes as "-", the rest
  * URL-encoded ("//" comments, one line per step), as in the reference link
@@ -2601,6 +2630,6 @@ if (typeof module !== 'undefined' && module.exports) {
     postProcessCall, postProcessContext, stepsPathCost, lookaheadFork,
     isWideAlg, hasWideB, isUnorthodox, withoutWide, dedupeSolutions, mergeRanked, searchMemoKey, splitByFirstMove,
     SEARCH_ENGINE_SHARE, LOOKAHEAD_FIRST_SHARE, budgetDeadline, callCostRank, MOVE_RESTRICT, PRO_MOVE_RESTRICT,
-    solutionLines, cubedbUrl, corpusSolutions,
+    solutionLines, solutionText, moveCounts, cubedbUrl, corpusSolutions,
   };
 }

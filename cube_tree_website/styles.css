@@ -428,6 +428,20 @@ button:disabled {
     gap: 1rem;
 }
 
+.solution-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.8rem;
+}
+
+.move-count {
+    color: var(--muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    text-transform: none; /* metric names keep their case: 25STM / 28ETM */
+}
+
 .solution-actions {
     display: flex;
     gap: 0.4rem;

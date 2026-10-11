@@ -393,35 +393,57 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (link) link.href = cubedbUrl(session.scramble, lines);
     const copy = document.getElementById('copy-btn');
     if (copy) copy.disabled = !lines.length;
+    const copyAll = document.getElementById('copy-all-btn');
+    if (copyAll) copyAll.disabled = ![...sessions.values()].some(s => s.committedRows.length);
+    const count = document.getElementById('move-count');
+    if (count) {
+      count.hidden = !lines.length;
+      count.textContent = lines.length ? moveCounts(session).text : '';
+    }
+  }
+
+  // Every scramble of the list, each as the copy button copies it (a
+  // scramble with no committed step is just its scramble), a blank line
+  // between them.
+  function allSolutionsText() {
+    return scrambleController.sequenceList.map((raw, idx) => {
+      const session = sessions.get(idx);
+      return session ? solutionText(session) : cleanScramble(raw || '');
+    }).join('\n\n');
   }
 
   function bindSolutionActions() {
     const copy = document.getElementById('copy-btn');
-    if (!copy) return;
-    copy.addEventListener('click', async () => {
-      const session = sessions.get(activeIndex);
-      if (!session) return;
-      const text = [session.scramble, ...solutionLines(session)].join('\n');
-      let ok = false;
-      try {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      } catch (err) {
-        // No clipboard API (http, old browser): the classic textarea fallback.
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-        ta.remove();
-      }
-      copy.textContent = ok ? 'copied' : 'copy failed';
-      clearTimeout(copy._reset);
-      copy._reset = setTimeout(() => { copy.textContent = 'copy'; }, 1500);
-    });
+    if (copy) {
+      copy.addEventListener('click', () => {
+        const session = sessions.get(activeIndex);
+        if (session) copyToClipboard(copy, 'copy', solutionText(session));
+      });
+    }
+    const copyAll = document.getElementById('copy-all-btn');
+    if (copyAll) copyAll.addEventListener('click', () => copyToClipboard(copyAll, 'copy all', allSolutionsText()));
+  }
+
+  async function copyToClipboard(btn, label, text) {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch (err) {
+      // No clipboard API (http, old browser): the classic textarea fallback.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+    }
+    btn.textContent = ok ? 'copied' : 'copy failed';
+    clearTimeout(btn._reset);
+    btn._reset = setTimeout(() => { btn.textContent = label; }, 1500);
   }
 
   function renderUndoButton(session) {

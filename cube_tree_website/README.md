@@ -82,6 +82,10 @@ based on Triangium's **MCC** hand-movement model, with these rules:
   rotate mid-step, after an AUF, about as often as at the start; with the
   rotation free, the top results rotated at the start far more often).
   A first step's inspection is not part of its alg.
+- **Rotations come first.** A later step never writes a `y` or `y'` after
+  nothing but `U`/`D` turns: it commutes with them, and solvers rotate
+  first for a smooth solve, so `y U L' U L` is listed, never
+  `U y L' U L`.
 - **One scoring function for every step.** The same alg costs the same
   whether it is a cross, a first-step xcross, a later pair or a multislot.
   This is arguably the most important part of the site: ranking by
@@ -247,13 +251,15 @@ an engine happens to list solutions in; the speed-ups below are exact.
      brought down by a wide turn, e.g. `x' y2 | l' U r ...`); `y`, `y'` or
      `y2` at a later step;
    - at most **one mid-step rotation**, `y`, `y'`, `x` or `x'` (never `y2`),
-     anywhere in a later step; **never in a first step** (wide moves only);
+     anywhere in a later step except after nothing but `U`/`D` turns (a `y`
+     there is written as the leading rotation: `y U R U' R'`, not
+     `U y R U' R'`); **never in a first step** (wide moves only);
    - any turn as a **wide turn** (`r` `l`, and at most three of `u` `d`
      `f`; **never a wide `b`**), e.g. `D y R U' R'` as `u R U' R'`,
      `B U' B'` as `f R' f'`, `L x` as `r`;
    - a half turn as one plain and one wide quarter turn (`U2` + `y` as
      `d' U'`), or (later steps) as two quarter turns around the mid-step
-     rotation (`U y' U R' U' R`);
+     rotation (`R U R' U y' U L' U' L`);
    - the cross always ends on the bottom;
    - never more turns than the solution has: spellings whose turns cancel
      (`L' l r` for `R`) are not generated.
@@ -304,9 +310,11 @@ only and mostly quick (a later step's multislot call, the slow one, is
 split by its first move, so engine workers share it and other searches can
 run between its parts); ranking the spellings runs on a worker pool, big
 edges split across workers. Measured times are in PROJECT_STATUS.md; the
-goal stays one step in **under 1 minute** with every option on, and about
+goal was one step in **under 1 minute** with every option on, and about
 **10 seconds per step** with the default settings, so a solver hardly
-waits.
+waits. **Done:** on the developer's iPad Air 5 searches take far less than
+these goals (the slower timings in PROJECT_STATUS.md are from an old
+development machine).
 
 Results-page filters, set per step. They only hide: every search includes
 multislot, wide-move and awkward results, so changing a filter either way
@@ -377,8 +385,15 @@ rotation and alg; the better-ranked copy is kept. Clicking a row commits it.
 
 The solution so far is shown one step per line, labelled like a
 reconstruction (`z y // inspection`, `… // xcross`, `… // 3rd/4th pairs`).
+Its move count is shown in two metrics, as `25STM / 28ETM`: **STM** (slice
+turn metric) counts every turn of any layer once (face, wide and slice
+turns) and no rotations; **ETM** (execution turn metric, the WCA's
+definition) counts every turn and every rotation once. The first step's
+inspection rotation counts in neither.
 It can be copied (scramble first) or opened on [Cubedb](https://cubedb.net)
-(spaces as `_`, primes as `-`, the rest URL-encoded).
+(spaces as `_`, primes as `-`, the rest URL-encoded). **Copy all** copies
+every scramble of the list the same way, each with its solution so far, a
+blank line between them.
 
 ### Multiple scrambles, undo, persistence
 

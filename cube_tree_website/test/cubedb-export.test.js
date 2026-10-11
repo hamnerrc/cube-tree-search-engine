@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const jsRoot = path.join(__dirname, '..', 'js');
 for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'cross-optimization.js']) Object.assign(global, require(path.join(jsRoot, f)));
-const { SolveSession, solutionLines, cubedbUrl } = require(path.join(jsRoot, 'solver-bridge.js'));
+const { SolveSession, solutionLines, solutionText, moveCounts, cubedbUrl } = require(path.join(jsRoot, 'solver-bridge.js'));
 
 let failures = 0;
 function test(name, fn) {
@@ -77,6 +77,17 @@ test('solutionLines: no inspection line without a rotation; plain cross; pseudo 
   ]);
   assert.deepStrictEqual(solutionLines(s), ['F R D // cross', "R U R' // 1st pair (pseudo)"]);
   assert.deepStrictEqual(solutionLines(session([])), []);
+});
+
+test('moveCounts: STM counts turns (wide and slice too), ETM rotations as well, never the inspection', () => {
+  const s = session([
+    { type: 'XCross', coreAlg: "D' L D R2 D U' r2 U r", targetNodeId: nodeWith(['FR'], ['FR']) },
+    { type: 'Single pair', coreAlg: "y U L' U L", targetNodeId: nodeWith(['FR', 'FL'], ['FR', 'FL']) },
+    { type: 'Multislot', coreAlg: "y' M U R x' U' R'", targetNodeId: nodeWith(['FR', 'FL', 'BR', 'BL'], ['FR', 'FL', 'BR', 'BL']) },
+  ], 'z y');
+  assert.deepStrictEqual(moveCounts(s), { stm: 9 + 4 + 5, etm: 9 + 5 + 7, text: '18STM / 21ETM' });
+  assert.strictEqual(moveCounts(session([])).text, '0STM / 0ETM');
+  assert.strictEqual(solutionText(s), ['R U F', ...solutionLines(s)].join('\n'));
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-10 (thirty-first pass).*
+*Last updated 2026-10-10 (thirty-second pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,37 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-second pass (2026-10-10).** The developer tested on an iPad Air 5:
+searches are far below the speed goals (this dev MacBook is old), and the
+solver and rankings are right. **Solver optimisation and speed are DONE**;
+what is left is minor details and the visual redesign (waiting on the
+developer's blueprints; not started). Tree clean at the start, every fast
+suite passing.
+
+1. **Rotations first** (README "Ranking", "Complete search"): a later step
+   never writes a `y`/`y'` after nothing but `U`/`D` turns (it commutes with
+   them); the leading-rotation spelling is listed instead. Complete search:
+   the walk skips those mid-step rotations (`ud`, the solution's leading
+   U/D face turns: no mid y at move i <= ud, no split half turn around a y
+   at i < ud); the bound tables are unchanged (still lower bounds of a
+   smaller grammar), brute-force tests pass with the rule asserted.
+   Corpus candidates and the old capped path go through `rotationFirst`
+   (facelet-cube.js; physically identical, checked on facelets). The
+   developer's scramble (`F2 D' F2 L2 ...`, `z y` + `D' L D R2 D U' r2 U r`):
+   2nd pair was `U y L' U L` first with `y U L' U L` not in the top 300;
+   now `y U L' U L` is first and no row has a y after only U/D turns; 3rd
+   pair `y U L' U2 L R' U' R` ranks 2nd. 143 of 2,999 reco.nz later steps
+   (4.8%) are written with a y after an AUF: the complete search still
+   has them, but only rotated first (the "exactly as written" coverage
+   below counts them as missing; not re-measured, nor the tuning numbers).
+2. **Move count** in the solution card, `25STM / 28ETM` (`moveCounts`:
+   STM every non-rotation token, ETM every token, inspection excluded;
+   metric definitions from the developer's metric notes, ETM as the WCA defines it).
+3. **Copy all** next to copy: every scramble of the list as copy writes it
+   (scramble, then its steps), a blank line between them; a scramble with
+   no committed step is only its scramble line. Checked in headless Chrome
+   (390 px and 1180 px screenshots, clipboard text captured).
 
 **Thirty-first pass (2026-10-10).** Same user tasks as the thirtieth
 (speed with optimality kept, ~10 s per step; the two rules -- no rotation
@@ -254,7 +285,8 @@ identical batteries), `node-engine-pool.js`, `node-postprocess-pool.js`,
 ## State of the product
 
 Everything in the README is implemented except the visual redesign
-(waiting on the developer's design) and the gaps listed under "Open".
+(waiting on the developer's blueprints). Solver, rankings and speed are
+done (developer-confirmed on an iPad Air 5, thirty-second pass).
 
 - **Search loop:** DAG edges of the current node, deduplicated by target;
   later steps include every solved slot in their goal. Matched calls: the
@@ -705,7 +737,14 @@ not look-ahead optimal).
 
 ## Open
 
-1. **Speed** (user goal, thirtieth/thirty-first pass: ~10 s per step,
+Done (developer, thirty-second pass): solver optimisation and speed
+(searches far below the goals on an iPad Air 5), and the rankings. Items 1-4
+and 6-8 below stay as the record of where those stood; no further work is
+planned on them unless the developer asks.
+
+0. **Visual redesign** (README): waiting on the developer's blueprints. Do
+   not start it without them.
+1. **Speed** -- DONE (user goal, thirtieth/thirty-first pass: ~10 s per step,
    optimality kept). Browser, this 2-core machine: xcross + xxcross every
    step <= 8.5 s; default settings (cross only) first steps <= 4.1 s, later
    pairs <= 12.9 s, the first pair after the cross 6.9-26.3 s (the slow case
@@ -739,7 +778,7 @@ not look-ahead optimal).
    fetch <raw.json> "Name"`, then `convert`, `corpus`, `cpools`, `fit`).
    The naturalness model is strongly solver-specific (an LM trained on
    another solver: mean log10 rank 0.62 → 0.77).
-5. **Visual redesign** (README): waiting on the developer's design.
+5. **Visual redesign**: see item 0.
 6. **Pair planning:** checked (twenty-ninth pass) on 80 reco.nz solves the
    tuning pools did not use, the app's full search at every pro node (best
    5 per pair choice, re-scored offline): the pro's pair choice ranks first
@@ -753,7 +792,7 @@ not look-ahead optimal).
    ~1 min per solve; data in scratch).
 7. A later step searched as the first call of a fresh browser worker once
    showed fewer results than Node (tenth pass, never reproduced).
-8. **Worst case** (every option on): measured with
+8. **Worst case** -- DONE (every option on): measured with
    `worst-case-bench.js --depth 1 --budget 0 --post 2 --workers 1`: all 6
    colours, xcross / xxcross / xxxcross, pseudo F2L, multislots, first
    step 44.4 s cold (thirty-first pass; 57.9 s in the twenty-ninth; prune

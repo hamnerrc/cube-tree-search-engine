@@ -495,6 +495,31 @@ function netRotation(alg) {
     return ROT_NAMES[q];
 }
 
+/**
+ * `alg` with every y-family rotation that comes after nothing but U/D-layer
+ * turns moved to the front (merged with a leading y-family rotation):
+ * "U y R U' R'" -> "y U R U' R'". Physically the same (y commutes with U, D,
+ * u, d); solvers rotate first. Unchanged when there is no such rotation or a
+ * leading rotation is not in the y family.
+ */
+function rotationFirst(alg) {
+    const t = String(alg).split(' ').filter(Boolean);
+    let lead = 0;
+    while (lead < t.length && /^[xyz]/.test(t[lead])) lead++;
+    if (t.slice(0, lead).some(r => r[0] !== 'y')) return alg;
+    const moved = [];
+    const ud = [];
+    let q = lead;
+    for (; q < t.length; q++) {
+        if (t[q][0] === 'y') moved.push(t[q]);
+        else if ('UDud'.includes(t[q][0])) ud.push(t[q]);
+        else break;
+    }
+    if (!moved.length || !ud.length) return alg;
+    const r = rotationName([...t.slice(0, lead), ...moved].join(' '));
+    return [r, ...ud, ...t.slice(q)].filter(Boolean).join(' ');
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         FACE_ORDER,
@@ -513,6 +538,7 @@ if (typeof module !== 'undefined' && module.exports) {
         commuteNormalize,
         rotationSpellings,
         rotationSpellingParts,
+        rotationFirst,
         inspectionWideVariants,
         wideSpellingParts,
         rotationName,
