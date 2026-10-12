@@ -45,7 +45,7 @@
       theme: (profile && profile.prefs && profile.prefs.theme) || document.documentElement.dataset.theme || PROFILE_THEMES[0],
       answers: {
         speed: a.speed || '',
-        inspection: a.inspection || 'cross',
+        inspection: inspectionOption(a.inspection).id,
         style: a.style || 'tps',
         goals: (a.goals || []).slice(),
         colours: (a.colours && a.colours.length ? a.colours : ['white']).slice(),
@@ -181,13 +181,16 @@
     speed(body) {
       const input = el('input', { class: 'px-input', type: 'number', min: 3, max: 600, step: 0.1, inputmode: 'decimal', 'aria-label': 'average in seconds', value: draft.answers.speed });
       const readout = el('span', { class: 'level-readout' });
+      const note = el('p', { class: 'level-note' });
       const update = () => {
         draft.answers.speed = input.value ? Number(input.value) : '';
-        readout.textContent = draft.answers.speed ? caption(SKILL_LEVELS[levelFor(draft.answers.speed)].caption) : '';
+        const level = draft.answers.speed ? SKILL_LEVELS[levelFor(draft.answers.speed)] : null;
+        readout.textContent = level ? caption(level.caption) : '';
+        note.textContent = level ? caption(`${level.caption}.note`) : '';
       };
       input.addEventListener('input', update);
       update();
-      body.append(...heading('speed'), el('div', { class: 'speed-row' }, input, el('span', { text: 's' }), readout));
+      body.append(...heading('speed'), el('div', { class: 'speed-row' }, input, el('span', { text: 's' }), readout), note);
       setTimeout(() => input.focus(), 0);
     },
     inspection(body) {
@@ -212,6 +215,7 @@
         if (showAllGoals) body.append(choiceList('goals-more', extra, draft.answers.goals, true, toggle));
         else body.append(el('button', { type: 'button', class: 'link-btn', onclick: () => { showAllGoals = true; renderOnboarding(); } }, caption('onboard.goals.showAll')));
       }
+      body.append(el('p', { class: 'sub', text: caption('onboard.goals.settings') }));
     },
     colours(body) {
       const row = el('div', { class: 'colour-row', role: 'group', 'aria-label': 'cross colours' });

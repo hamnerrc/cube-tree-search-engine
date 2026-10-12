@@ -8,7 +8,8 @@
  * with the theme's ink colour.
  *
  * Sprite rows: '#' ink, 'x' a cut-out (drawn in the background colour, e.g.
- * eyes), '.' transparent.
+ * eyes), '.' transparent. `blink`: the cells [row, col, char] that change
+ * while the buddy blinks (the eyes shut).
  */
 'use strict';
 
@@ -25,7 +26,7 @@ function cubeBuddyRows() {
 }
 
 const AVATAR_SPRITES = [
-  { id: 'ghost', rows: [
+  { id: 'ghost', blink: [[5, 4, '#'], [5, 5, '#'], [5, 10, '#'], [5, 11, '#']], rows: [
     '................',
     '.....######.....',
     '...##########...',
@@ -43,7 +44,7 @@ const AVATAR_SPRITES = [
     '.#...##..##...#.',
     '................',
   ] },
-  { id: 'cat', rows: [
+  { id: 'cat', blink: [[6, 4, '#'], [6, 5, '#'], [6, 10, '#'], [6, 11, '#']], rows: [
     '................',
     '.##..........##.',
     '.###........###.',
@@ -61,7 +62,7 @@ const AVATAR_SPRITES = [
     '....##....##....',
     '................',
   ] },
-  { id: 'robot', rows: [
+  { id: 'robot', blink: [[5, 4, 'x'], [5, 5, 'x'], [5, 10, 'x'], [5, 11, 'x']], rows: [
     '.......##.......',
     '.......##.......',
     '......####......',
@@ -79,7 +80,7 @@ const AVATAR_SPRITES = [
     '..##.######.##..',
     '................',
   ] },
-  { id: 'blob', rows: [
+  { id: 'blob', blink: [[5, 4, '#'], [5, 5, '#'], [5, 10, '#'], [5, 11, '#']], rows: [
     '................',
     '.....######.....',
     '...##########...',
@@ -97,7 +98,7 @@ const AVATAR_SPRITES = [
     '.....######.....',
     '................',
   ] },
-  { id: 'frog', rows: [
+  { id: 'frog', blink: [[3, 3, '#'], [3, 4, '#'], [3, 11, '#'], [3, 12, '#']], rows: [
     '................',
     '................',
     '..###......###..',
@@ -115,7 +116,7 @@ const AVATAR_SPRITES = [
     '................',
     '................',
   ] },
-  { id: 'cube', rows: cubeBuddyRows() },
+  { id: 'cube', blink: [[7, 6, '#'], [7, 9, '#']], rows: cubeBuddyRows() },
 ];
 
 const AVATAR_COUNT = () => (AVATAR_SHEET && AVATAR_SHEET.names ? AVATAR_SHEET.names.length : AVATAR_SPRITES.length);
@@ -131,8 +132,13 @@ function loadAvatarSheet() {
 /**
  * Draws avatar `index` into `canvas` (sized to a multiple of 16 by the
  * caller; drawn pixel-crisp), in `ink` with cut-outs in `paper`.
+ * opts (the buddy's animations): blink -- the cut-outs in the top half (the
+ * eyes) drawn shut; shine: { band, colour } -- the ink pixels on the
+ * diagonal band (row + column in [band, band + SHINE_WIDTH)) drawn in
+ * `colour`, so a shine runs pixel by pixel across the sprite as band grows.
  */
-function drawAvatar(canvas, index, ink, paper) {
+const SHINE_WIDTH = 3;
+function drawAvatar(canvas, index, ink, paper, opts = {}) {
   const ctx = canvas.getContext('2d');
   const n = AVATAR_COUNT();
   const i = ((Number(index) || 0) % n + n) % n;
@@ -147,18 +153,32 @@ function drawAvatar(canvas, index, ink, paper) {
       ctx.globalCompositeOperation = 'source-in';
       ctx.fillStyle = ink;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (opts.shine) {
+        // the band over the sheet's own pixels (source-atop keeps its shape)
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.fillStyle = opts.shine.colour;
+        const px = canvas.width / cell;
+        for (let r = 0; r < cell; r++) {
+          for (let c = 0; c < cell; c++) {
+            const d = r + c - opts.shine.band;
+            if (d >= 0 && d < SHINE_WIDTH) ctx.fillRect(Math.round(c * px), Math.round(r * px), Math.ceil(px), Math.ceil(px));
+          }
+        }
+      }
       ctx.globalCompositeOperation = 'source-over';
     };
     if (img.complete && img.naturalWidth) draw(); else img.addEventListener('load', draw, { once: true });
     return;
   }
-  const rows = AVATAR_SPRITES[i].rows;
+  const rows = AVATAR_SPRITES[i].rows.map(r => r.split(''));
+  if (opts.blink) for (const [r, c, ch] of AVATAR_SPRITES[i].blink || []) rows[r][c] = ch;
   const px = canvas.width / 16;
   for (let r = 0; r < 16; r++) {
     for (let c = 0; c < 16; c++) {
       const ch = rows[r][c];
       if (ch === '.') continue;
-      ctx.fillStyle = ch === '#' ? ink : paper;
+      const d = r + c - (opts.shine ? opts.shine.band : -99);
+      ctx.fillStyle = ch === '#' ? (opts.shine && d >= 0 && d < SHINE_WIDTH ? opts.shine.colour : ink) : paper;
       ctx.fillRect(Math.round(c * px), Math.round(r * px), Math.ceil(px), Math.ceil(px));
     }
   }

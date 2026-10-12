@@ -10,13 +10,16 @@
 'use strict';
 
 // Brackets by average solve time in seconds, slowest first: a time t falls in
-// the first bracket with t >= minSeconds.
+// the first bracket with t >= minSeconds. Each has a note (captions.js
+// `<caption>.note`) the onboarding shows with it. Developer's brackets
+// (2026-10-11): 10 s and up: xcrosses and optimal crosses with wide moves;
+// 8-10 intermediate: no multislotting; 6-8 advanced: no xxcross; under 6
+// professional: everything, pseudo f2l included.
 const SKILL_LEVELS = [
-  { id: 'learning', minSeconds: 30, caption: 'level.learning' },
-  { id: 'improving', minSeconds: 20, caption: 'level.improving' },
-  { id: 'intermediate', minSeconds: 15, caption: 'level.intermediate' },
-  { id: 'advanced', minSeconds: 12, caption: 'level.advanced' },
-  { id: 'expert', minSeconds: 0, caption: 'level.expert' },
+  { id: 'building', minSeconds: 10, caption: 'level.building' },
+  { id: 'intermediate', minSeconds: 8, caption: 'level.intermediate' },
+  { id: 'advanced', minSeconds: 6, caption: 'level.advanced' },
+  { id: 'professional', minSeconds: 0, caption: 'level.professional' },
 ];
 
 // What a solver might learn next. A goal is recommended for brackets
@@ -24,22 +27,26 @@ const SKILL_LEVELS = [
 // "show all" as a basic, slower ones as "later". `settings` are what picking
 // it switches on: first-step types (advanced) and results settings (view).
 const LEARNING_GOALS = [
-  { id: 'cross_planning', from: 0, to: 1, caption: 'goal.cross_planning', settings: {} },
-  { id: 'fewer_rotations', from: 1, to: 2, caption: 'goal.fewer_rotations', settings: { view: { planning: true } } },
-  { id: 'xcross', from: 2, to: 4, caption: 'goal.xcross', settings: { advanced: ['xcross'] } },
-  { id: 'wide_cross', from: 2, to: 4, caption: 'goal.wide_cross', settings: { view: { wideMoves: true } } },
-  { id: 'pair_influencing', from: 2, to: 4, caption: 'goal.pair_influencing', settings: { view: { planning: true } } },
-  { id: 'multislot', from: 3, to: 4, caption: 'goal.multislot', settings: { view: { multislot: true } } },
-  { id: 'xxcross', from: 4, to: 4, caption: 'goal.xxcross', settings: { advanced: ['xcross', 'xxcross'] } },
+  { id: 'xcross', from: 0, to: 3, caption: 'goal.xcross', settings: { advanced: ['xcross'] } },
+  { id: 'wide_cross', from: 0, to: 3, caption: 'goal.wide_cross', settings: { view: { wideMoves: true } } },
+  { id: 'pair_influencing', from: 1, to: 3, caption: 'goal.pair_influencing', settings: { view: { planning: true } } },
+  { id: 'multislot', from: 2, to: 3, caption: 'goal.multislot', settings: { view: { multislot: true } } },
+  { id: 'xxcross', from: 3, to: 3, caption: 'goal.xxcross', settings: { advanced: ['xcross', 'xxcross'] } },
+  { id: 'pseudo_f2l', from: 3, to: 3, caption: 'goal.pseudo_f2l', settings: { advanced: ['full_pseudo'] } },
 ];
 
-// How far a solver plans in inspection -> the first-step types searched.
+// How far a solver plans in inspection -> the first-step types searched (a
+// type above the solver's level only when they chose that goal).
+// `aliases`: ids saved by earlier versions of the questions.
 const INSPECTION_OPTIONS = [
   { id: 'cross', caption: 'inspection.cross', advanced: [] },
   { id: 'cross_pair', caption: 'inspection.cross_pair', advanced: [] },
-  { id: 'xcross', caption: 'inspection.xcross', advanced: ['xcross'] },
-  { id: 'xxcross', caption: 'inspection.xxcross', advanced: ['xcross', 'xxcross'] },
+  { id: 'pair_some_xcross', caption: 'inspection.pair_some_xcross', advanced: ['xcross'], aliases: ['xcross'] },
+  { id: 'multi_pairs', caption: 'inspection.multi_pairs', advanced: ['xcross', 'xxcross'], aliases: ['xxcross'] },
 ];
+const inspectionOption = id => INSPECTION_OPTIONS.find(o => o.id === id || (o.aliases || []).includes(id)) || INSPECTION_OPTIONS[0];
+// The goal a first-step type belongs to (for gating it by level).
+const ADVANCED_GOAL = { xcross: 'xcross', xxcross: 'xxcross', full_pseudo: 'pseudo_f2l' };
 
 const STYLE_OPTIONS = [
   { id: 'efficiency', caption: 'style.efficiency' },
@@ -48,10 +55,10 @@ const STYLE_OPTIONS = [
 
 const CROSS_COLOURS = ['white', 'yellow', 'green', 'blue', 'red', 'orange'];
 
-/** Index into SKILL_LEVELS for an average time (seconds); unknown -> the middle bracket. */
+/** Index into SKILL_LEVELS for an average time (seconds); unknown -> the intermediate bracket. */
 function levelFor(seconds) {
   const t = Number(seconds);
-  if (!Number.isFinite(t) || t <= 0) return 2;
+  if (!Number.isFinite(t) || t <= 0) return 1;
   const i = SKILL_LEVELS.findIndex(l => t >= l.minSeconds);
   return i < 0 ? SKILL_LEVELS.length - 1 : i;
 }
@@ -83,7 +90,7 @@ function goalAllowed(id, answers) {
  */
 function settingsFromAnswers(answers) {
   const a = answers || {};
-  const advanced = new Set((INSPECTION_OPTIONS.find(o => o.id === a.inspection) || INSPECTION_OPTIONS[0]).advanced);
+  const advanced = new Set(inspectionOption(a.inspection).advanced.filter(x => goalAllowed(ADVANCED_GOAL[x], a)));
   const view = {};
   for (const id of a.goals || []) {
     const g = LEARNING_GOALS.find(x => x.id === id);
@@ -92,7 +99,7 @@ function settingsFromAnswers(answers) {
     Object.assign(view, g.settings.view || {});
   }
   const colors = (a.colours || []).filter(c => CROSS_COLOURS.includes(c));
-  const order = ['xcross', 'xxcross', 'xxxcross'];
+  const order = ['xcross', 'xxcross', 'xxxcross', 'full_pseudo'];
   return {
     colors: colors.length ? colors : ['white'],
     advanced: order.filter(x => advanced.has(x)),
@@ -103,6 +110,6 @@ function settingsFromAnswers(answers) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, CROSS_COLOURS,
-    levelFor, goalsFor, goalAllowed, settingsFromAnswers,
+    inspectionOption, levelFor, goalsFor, goalAllowed, settingsFromAnswers,
   };
 }

@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-11 (thirty-fifth pass).*
+*Last updated 2026-10-11 (thirty-sixth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,64 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-sixth pass (2026-10-11): bug fixes, polish, solver input.** Tree
+clean at the start (the 35th pass committed), every fast suite passing.
+The developer's list, in order:
+
+1. **Onboarding** (`js/skill-levels.js`, `js/onboarding.js`, captions):
+   four inspection answers (the cross / the cross + spot the first pair /
+   the first pair, sometimes an xcross / several pairs and/or xcross often;
+   old saved ids map over); the developer's brackets -- 10 s+ xcrosses and
+   wide-move crosses only, 8-10 no multislotting, 6-8 no xxcross, under 6
+   everything with pseudo F2L -- each with a kind note (sub-10 with plain
+   CFOP, Max Park), and a "more in settings later" line. The brief gave
+   "8-12" and "10+"; read as 8-10 and 10+ (the Max Park line is about
+   sub-10). A first-step type above the bracket is not switched on by the
+   inspection answer unless its goal was chosen.
+2. **De-cluttering** (`solver.html`, `styles.css`): the top-5 list is gone
+   (autocomplete is the ghost after the caret; ↑/↓ cycle it); the buddy
+   sits in its place under the bar; no stat cards, no result counts, no
+   engine progress text, **no TPP anywhere a user sees** (info captions
+   rewritten); the Cubedb button removed. Frames: only the cube stage and
+   the bar, as corner brackets; the cube on a transparent background with a
+   dithered floor shadow (`PixelCube` `clear`, `floorShadow`); text buttons.
+3. **Cube**: zoom (wheel, pinch, +/−; reset on double-click); playback
+   starts from the scrambled cube (the scramble is not played); the cube
+   follows the caret while the bar has it, back to the end on blur unless
+   the controls or the cube were used. "Cursor in the scramble bar" in the
+   brief read as the solution bar (the scramble is not editable).
+4. **Tab bug**: Tab used to fill the moves and leave them greyed and
+   uncommitted (the buddy then said "finish the step"); now Tab writes the
+   step with its label and a newline, so it commits at once. A tail typed
+   by hand that finishes a step is drawn as a step and the buddy says so
+   (the last pair: "press tab to finish").
+5. **Continuation search** (solver-ui.js `runContinuation`): complete typed
+   moves that start no listed step are searched onward (later steps: a fork
+   with the moves as an extra path piece; first step: the moves moved into
+   the scramble as face turns before the inspection rotation, checked
+   physically, one colour, fresh memos since memo keys hold no scramble);
+   each continuation = typed + rest, rescored by userStepRow; rests that
+   cancel into the typed moves are dropped. Browser: after a cross, typed
+   `R2 ` gave `R2 U' R' U R U' R U L' U' L` as the ghost.
+6. **Avatar picks** (`js/suggest.js`): fastest; a style pick only when
+   quantified (TPS: top three, > 2 moves above the goal's move-optimal and
+   longer than the fastest; efficiency: >= 2 moves shorter within 10%); the
+   free pair setup (fastest within 16% leaving more connected pairs; none
+   when the fastest does). No arbitrary fallbacks. Shine (pixel diagonal,
+   `--shine` per theme), blink cells per sprite, idle bob, thinking dots.
+7. **Critique** (`js/critique.js`): no numbers; why in words
+   (`critique.why.*`, `critique.outside.*`); the alternative is the same
+   goal, longest shared start, then fastest; "best of its kind" when another
+   goal was faster. Browser: a solve of weaker picks got "1st pair: it takes
+   the long way round. try R' U R: it starts the same way."
+
+Tests updated (onboarding, suggest, critique); all fast suites pass.
+Browser-checked in headless Chrome: onboarding screens, Tab commits, the
+continuation ghost, caret following, blur to the end, the start button,
+zoom, a full Tab solve, both critiques, paper theme, the shine frame, phone
+width. Open: the developer's avatars and info page (they will make them);
+the copy in captions.js is still the agent's draft.
 
 **Thirty-fifth pass (2026-10-11): the UI overhaul.** The developer's
 blueprint arrived as `cube_tree_website/UI_references/` (local only and

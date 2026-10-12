@@ -120,6 +120,8 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+const PC_ZOOM = [0.55, 2.6]; // the zoom range
+
 class PixelCube {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
@@ -129,6 +131,7 @@ class PixelCube {
     this.backFaces = opts.backFaces !== false;
     this.yaw = PixelCube.DEFAULT_YAW;
     this.pitch = PixelCube.DEFAULT_PITCH;
+    this.zoom = 1;
     this.anim = null; // { axis, layers, angle }
     this.theme = { bg: [22, 22, 24], line: [241, 241, 238], floor: [255, 255, 255, 15] };
     this.palette = {};
@@ -141,13 +144,21 @@ class PixelCube {
   setFacelets(f) { this.facelets = f; this.draw(); }
   setResolution(mode) { this.resolution = PC_RESOLUTIONS[mode] !== undefined ? mode : 'chunky'; this.resize(); }
   setBackFaces(on) { this.backFaces = !!on; this.draw(); }
-  setTheme({ bg, line, floor }) {
+  setTheme({ bg, line, floor, clear, floorShadow }) {
     if (bg) this.theme.bg = hexToRgb(bg);
     if (line) this.theme.line = hexToRgb(line);
     if (floor) this.theme.floor = floor;
+    if (clear !== undefined) this.theme.clear = !!clear;
+    if (floorShadow !== undefined) this.theme.floorShadow = !!floorShadow;
     this.draw();
   }
-  resetView() { this.yaw = PixelCube.DEFAULT_YAW; this.pitch = PixelCube.DEFAULT_PITCH; this.draw(); }
+  resetView() { this.yaw = PixelCube.DEFAULT_YAW; this.pitch = PixelCube.DEFAULT_PITCH; this.zoom = 1; this.draw(); }
+  /** Zooms by a factor (pinch, wheel, the +/- buttons), within PC_ZOOM. */
+  zoomBy(factor) {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    this.zoom = Math.max(PC_ZOOM[0], Math.min(PC_ZOOM[1], this.zoom * factor));
+    this.draw();
+  }
   orbit(dYaw, dPitch) {
     this.yaw += dYaw;
     this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch + dPitch));
@@ -215,7 +226,7 @@ class PixelCube {
     // perspective; the scale fits the cube and its back-face panels in the
     // smaller of the stage's two sides
     const D = 11;
-    const f = Math.min(this.W, this.H) * 1.32;
+    const f = Math.min(this.W, this.H) * 1.32 * this.zoom;
     const depth = D - v[2];
     return [this.W / 2 + v[0] * f / depth, this.H * 0.5 - v[1] * f / depth, depth];
   }
@@ -283,13 +294,23 @@ class PixelCube {
     const bg = this.theme.bg;
     const line = this.theme.line;
     const N = W * H;
+    // a transparent background lets the page show around the cube; a
+    // dithered shadow on the floor under it (the one-bit art's shading)
+    const bgAlpha = this.theme.clear ? 0 : 255;
+    const floor = this._floorMask();
     const kinds = new Int8Array(quads.length);
     const tones = quads.map((q, i) => { kinds[i] = q.kind; return q.kind ? (this.palette[q.colour] || this.palette.W) : null; });
     const bodyRgb = this.bodyRgb[1];
     for (let p = 0; p < N; p++) {
       const o = p * 4;
       const qi = ib[p];
-      if (qi < 0) { data[o] = bg[0]; data[o + 1] = bg[1]; data[o + 2] = bg[2]; data[o + 3] = 255; continue; }
+      if (qi < 0) {
+        const x = p % W;
+        const y = (p / W) | 0;
+        if (floor && floor[p] && !((x + y) & 1) && !(y & 1)) { data[o] = line[0]; data[o + 1] = line[1]; data[o + 2] = line[2]; data[o + 3] = 255; continue; }
+        data[o] = bg[0]; data[o + 1] = bg[1]; data[o + 2] = bg[2]; data[o + 3] = bgAlpha;
+        continue;
+      }
       const kind = kinds[qi];
       if (kind === 0) { data[o] = bodyRgb[0]; data[o + 1] = bodyRgb[1]; data[o + 2] = bodyRgb[2]; data[o + 3] = 255; continue; }
       const x = p % W;
@@ -311,10 +332,40 @@ class PixelCube {
       const x = p % W;
       if ((p >= W && solid(p - W)) || (p + W < N && solid(p + W)) || (x > 0 && solid(p - 1)) || (x < W - 1 && solid(p + 1))) {
         const o = p * 4;
-        data[o] = line[0]; data[o + 1] = line[1]; data[o + 2] = line[2];
+        data[o] = line[0]; data[o + 1] = line[1]; data[o + 2] = line[2]; data[o + 3] = 255;
       }
     }
     this.ctx.putImageData(this.img, 0, 0);
+  }
+
+  /** Pixels of the floor shadow (a disc under the cube, seen from above only), or null. */
+  _floorMask() {
+    if (!this.theme.floorShadow || this.pitch <= 0.05) return null;
+    const { W, H } = this;
+    const pts = [];
+    for (let k = 0; k < 28; k++) {
+      const a = (k / 28) * Math.PI * 2;
+      pts.push(this._project(this._view([Math.cos(a) * 2.05, -1.62, Math.sin(a) * 2.05])));
+    }
+    const mask = this._floor && this._floor.length === W * H ? this._floor : (this._floor = new Uint8Array(W * H));
+    mask.fill(0);
+    let minX = W, maxX = 0, minY = H, maxY = 0;
+    for (const p of pts) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+    minX = Math.max(0, Math.floor(minX)); maxX = Math.min(W - 1, Math.ceil(maxX));
+    minY = Math.max(0, Math.floor(minY)); maxY = Math.min(H - 1, Math.ceil(maxY));
+    for (let y = minY; y <= maxY; y++) {
+      // the disc's row span: crossings of the polygon's edges with this row
+      const py = y + 0.5;
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        if ((a[1] <= py) === (b[1] <= py)) continue;
+        const x = a[0] + (py - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+        lo = Math.min(lo, x); hi = Math.max(hi, x);
+      }
+      for (let x = Math.max(minX, Math.ceil(lo - 0.5)); x <= Math.min(maxX, Math.floor(hi - 0.5)); x++) mask[y * W + x] = 1;
+    }
+    return mask;
   }
 
   _viewDirWorld() {
@@ -397,7 +448,7 @@ PixelCube.DEFAULT_YAW = -0.62;
 PixelCube.DEFAULT_PITCH = 0.5;
 
 // ---------------------------------------------------------------------------
-// Playback: a sequence of moves (scramble, then the solution) and a position
+// Playback: a sequence of moves from a start state (the scrambled cube) and a position
 // ---------------------------------------------------------------------------
 
 /** Move tokens of an alg text ('//' comments and unknown tokens dropped). */
@@ -413,17 +464,19 @@ class CubePlayer {
     this.tokens = [];
     this.marks = [];   // [{ at, label }] step starts, for the scrub bar
     this.pos = 0;      // moves applied
+    this.start = SOLVED_FACELETS; // the cube before the first move (the scrambled cube)
     this.states = [SOLVED_FACELETS];
     this.playing = false;
     this.speed = 1;
     this._run = 0;
   }
 
-  /** A new sequence; jumps to `pos` (default: the end) without animating. */
-  setSequence(tokens, marks = [], pos = tokens.length) {
-    const same = tokens.length >= this.tokens.length && this.tokens.every((t, i) => t === tokens[i]);
+  /** A new sequence from `start` (default: solved); jumps to `pos` (default: the end) without animating. */
+  setSequence(tokens, marks = [], pos = tokens.length, start = SOLVED_FACELETS) {
+    const same = start === this.start && tokens.length >= this.tokens.length && this.tokens.every((t, i) => t === tokens[i]);
     if (!same) {
-      this.states = [SOLVED_FACELETS];
+      this.start = start;
+      this.states = [start];
     }
     this.tokens = tokens.slice();
     this.marks = marks;

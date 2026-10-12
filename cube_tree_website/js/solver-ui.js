@@ -1,7 +1,7 @@
 /**
  * solver-ui.js — DOM glue between solver.html's markup and solver-bridge.js's
- * SolveSession / searchCurrentNode logic: the solution bar (solve-editor.js),
- * the top 5, the avatar (suggest.js), the critique (critique.js), the cube
+ * SolveSession / searchCurrentNode logic: the solution bar (solve-editor.js)
+ * with its inline autocomplete, the avatar (suggest.js), the critique (critique.js), the cube
  * (pixel-cube.js) and the settings drawer (README "The solving screen").
  *
  * One SolveSession per scramble (per README: "Multiple scrambles are solved
@@ -377,7 +377,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   // ---------------------------------------------------------------------
   // The solution as text: committed steps written back (rowsText), copy,
-  // copy all, Cubedb, move count (README "Solution entry").
+  // copy all, move count (README "Solution entry").
   // ---------------------------------------------------------------------
 
   /** The committed steps as editor text, one per line (as found: the editor keeps steps uncancelled). */
@@ -404,12 +404,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function renderPath(session) {
     const lines = solutionLines(session);
-    const link = $('cubedb-link');
-    if (link) {
-      const tail = sessions.get(activeIndex) === session ? tailText() : '';
-      link.href = cubedbUrl(session.scramble, tail ? [...lines, tail] : lines);
-      link.setAttribute('aria-disabled', String(!lines.length && !tail));
-    }
     const copy = $('copy-btn');
     if (copy) copy.disabled = !lines.length && !tailText();
     const copyAll = $('copy-all-btn');
@@ -500,6 +494,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // longer current must never be committed at another node.
   let shownOwner = null;
   let shownPartial = false;
+  let shownFinal = false; // the list on screen will not change any more (what is still searched is hidden)
   function activeStepKey() {
     const s = sessions.get(activeIndex);
     return s ? `${activeIndex}|${s.rotation}|${s.stepAlgs.join(' | ')}` : null;
@@ -559,8 +554,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
   }
 
-  const formatTpp = (tpp) => (Number.isFinite(tpp) ? tpp.toFixed(2) : '-');
-  const count = (n) => n.toLocaleString('en-US');
 
   function setStatus(msg, kind = 'busy') {
     const el = $('search-status');
@@ -568,6 +561,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       el.textContent = msg || '';
       el.dataset.state = kind;
     }
+    const buddy = $('buddy');
+    if (buddy) buddy.classList.toggle('thinking', kind === 'busy');
   }
 
   function renderActiveResults(results, partial = false) {
@@ -576,18 +571,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     shownResults = results;
     shownOwner = activeStepKey();
     shownPartial = partial;
-    const cut = results.truncatedCalls || results.lookaheadTruncated ? ' · time limit reached, best found shown' : '';
-    const failed = results.failedCalls ? ` · ${results.failedCalls} solver call${results.failedCalls > 1 ? 's' : ''} failed (undo and redo to retry)` : '';
-    let msg;
-    if (partial && results.lookaheadPending) msg = `${count(results.length)} results · looking ahead (${results.lookaheadPending} left)…`;
-    else if (partial && results.onlyMultislotPending && !view.multislot) msg = `${count(results.length)} results · final`;
-    else if (partial) msg = `${count(results.length)} results so far · searching…`;
-    else msg = results.length ? `${count(results.length)} results` : caption('solve.noResults');
-    const hidden = results.hiddenCount ? ` · ${count(results.hiddenCount)} hidden by filters` : '';
+    // No counts or other numbers on screen (developer, 2026-10-11): the
+    // buddy says when it is thinking; the line only speaks up when it must.
     const final = !partial || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
-    setStatus(msg + hidden + cut + failed, !final ? 'busy' : results.failedCalls ? 'error' : 'done');
+    shownFinal = final;
+    if (results.failedCalls) setStatus(caption('solve.someFailed'), 'error');
+    else if (final && !results.length) setStatus(caption('solve.noResults'), 'done');
+    else setStatus('', final ? 'done' : 'busy');
     renderSuggestions();
     renderBuddy();
+    if (final) maybeContinuationSearch();
   }
 
   // ---------------------------------------------------------------------
@@ -635,8 +628,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const cache = { key, live: null };
       session.resultsCache = cache;
       const isShown = () => sessions.get(activeIndex) === session && session.resultsCache === cache;
-      const onStatus = (msg) => { if (isShown() && !cache.live) setStatus(msg); };
-      onStatus(priority === ACTIVE ? caption('solve.searching') : 'queued behind the active search…');
+      // the engine's progress messages are technical: only 'busy' reaches the screen
+      const onStatus = () => { if (isShown() && !cache.live) setStatus('', 'busy'); };
+      onStatus();
       const onUpdate = (list) => {
         if (session.resultsCache !== cache) return;
         cache.live = list;
@@ -710,7 +704,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (session.isComplete) {
       shownResults = null;
       shownOwner = null;
-      setStatus(caption('solve.solved'), 'done');
+      setStatus('', 'done');
       renderSuggestions();
       renderBuddy();
       return;
@@ -720,13 +714,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       shownOwner = null;
       renderSuggestions();
       renderBuddy();
-      setStatus('loading the solver…');
+      setStatus('', 'busy');
     }
     let h;
     try {
       h = await ensureHelper();
     } catch (err) {
-      setStatus(caption('solve.loadFailed') + ' (' + err.message + ')', 'error');
+      setStatus(caption('solve.loadFailed'), 'error');
       return;
     }
     if (myToken !== searchToken) return;
@@ -738,7 +732,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     try {
       results = await activePromise;
     } catch (err) {
-      if (myToken === searchToken) setStatus(caption('solve.searchFailed') + ' (' + err.message + ')', 'error');
+      if (myToken === searchToken) setStatus(caption('solve.searchFailed'), 'error');
       return;
     }
     if (myToken !== searchToken) return;
@@ -752,8 +746,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   let editor = null;
   let editorSession = null; // the session whose text the editor holds
   let reading = null;      // readSolution of the active session's text
-  let activeIdx = -1;      // keyboard-selected suggestion
+  let activeIdx = -1;      // keyboard-selected suggestion (shown as the ghost)
   let suggestions = [];    // [{ kind: 'alg'|'comment', r?, toks?, text }]
+  let tailStep = null;     // the typed tail as a finished step ({ label, row }), or null
   let syncTimer = 0;
 
   function syncEditor() {
@@ -775,12 +770,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     } else {
       persistSessionState();
     }
-    renderEditor();
     renderSuggestions();
     renderBuddy();
     renderPath(session);
     renderUndoButton(session);
     updatePlayer();
+    maybeContinuationSearch();
   }
 
   function scheduleSync() {
@@ -800,7 +795,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     reading.parsed.forEach((line, li) => {
       const kind = reading.lines[li].kind;
       let pos = line.start;
-      const cls = kind === 'tail' ? 'tok-pending' : 'tok-step';
+      // a tail that already finishes a step reads as one (it commits at the line end)
+      const cls = kind === 'tail' && !tailStep ? 'tok-pending' : 'tok-step';
       for (const t of line.tokens) {
         html += esc(text.slice(pos, t.start));
         html += `<span class="${cls}${t.valid ? '' : ' tok-bad'}">${esc(t.tok)}</span>`;
@@ -821,7 +817,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     sizer.textContent = text + (ghost ? ghost + '     ' : '') + '\n';
   }
 
-  /** The rest of the top suggestion after what is typed (shown greyed after the caret). */
+  /** The rest of the top (or chosen) suggestion after what is typed (shown greyed after the caret). */
   function ghostText() {
     const top = suggestions[activeIdx >= 0 ? activeIdx : 0];
     if (!top || !reading) return '';
@@ -863,10 +859,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     syncEditor();
   }
 
+  /** A candidate the solution bar may commit: from the step's list or the continuation search. */
+  const committable = r => !!r && ((currentList() || []).includes(r) || !!(continuation && continuation.list && continuation.list.includes(r)));
+
   /** Writes candidate `r` as the next step (with its label) and commits it. */
   function commitSuggestion(r) {
     const session = getOrCreateSession(activeIndex);
-    if (!currentList() || !currentList().includes(r)) return;
+    if (!committable(r)) return;
     const label = labelFor(session, r);
     const lines = session.isAtRoot && r.rotation
       ? `${r.rotation} // inspection\n${r.coreAlg} // ${label}\n`
@@ -877,7 +876,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     editor.focus();
   }
 
-  /** Tab: fill the top (or selected) suggestion, or write the step's comment and go to the next line. */
+  /**
+   * Tab: commit the top (or chosen) suggestion with its label, or write the
+   * label of a typed step that is finished; either way the caret goes to the
+   * next line, which commits the step (developer, 2026-10-11: a filled step
+   * is committed at once, never left greyed out).
+   */
   function acceptSuggestion() {
     const s = suggestions[activeIdx >= 0 ? activeIdx : 0];
     if (!s) return false;
@@ -887,99 +891,157 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       setEditorText(`${text} ${s.text}\n`);
       return true;
     }
-    const before = textBeforeTail();
-    animateFrom = player ? player.length : 0;
-    setEditorText(before + s.toks.join(' '));
+    commitSuggestion(s.r);
     return true;
   }
 
+  /** The suggestions after what is typed (the ghost, Tab and ↑/↓ use them; nothing is listed on screen). */
   function renderSuggestions() {
-    const listEl = $('suggest-list');
-    const box = $('suggest');
-    if (!listEl || !box) return;
     const session = sessions.get(activeIndex);
     suggestions = [];
-    let empty = '';
-    if (!session || !reading) empty = caption('solve.searching');
-    else if (session.isComplete) empty = caption('solve.solved');
-    else {
+    tailStep = null;
+    if (session && reading && !session.isComplete) {
       const tail = reading.tail;
       const list = currentList();
       // a tail that finishes a step: suggest its comment (CubeDB-style)
       const done = tail.tokens.length && !tail.onNewLine ? stepFromTail(session, tail.tokens, list) : null;
+      tailStep = done;
       const line = reading.parsed[tail.line];
-      if (done && line && line.commentStart < 0) {
-        suggestions.push({ kind: 'comment', text: `// ${done.label}` });
-      }
-      if (list) {
-        const matches = prefixMatches(list, tail.tokens, tail.partial, session.isAtRoot);
-        for (const m of matches) {
+      if (done && line && line.commentStart < 0) suggestions.push({ kind: 'comment', text: `// ${done.label}` });
+      const pools = [list, continuationFor(tail)].filter(Boolean);
+      for (const pool of pools) {
+        for (const m of prefixMatches(pool, tail.tokens, tail.partial, session.isAtRoot)) {
           if (suggestions.length >= 5) break;
           if (done && m.toks.length === tail.tokens.length) continue; // that one is typed already
+          if (suggestions.some(x => x.kind === 'alg' && x.toks.join(' ') === m.toks.join(' '))) continue;
           suggestions.push({ kind: 'alg', r: m.r, toks: m.toks });
         }
-        if (!suggestions.length) empty = tail.tokens.length ? caption('solve.noMatch') : (shownPartial ? caption('solve.searching') : caption('solve.noResults'));
-      } else if (!suggestions.length) empty = caption('solve.searching');
+        if (suggestions.some(x => x.kind === 'alg')) break; // the step's own list first
+      }
     }
     if (activeIdx >= suggestions.length) activeIdx = -1;
-    box.classList.toggle('dim', !!empty && !!reading && reading.tail.tokens.length > 0);
-    const session2 = sessions.get(activeIndex);
-    const stepAlgs = session2 && !session2.isAtRoot ? session2.stepAlgs : [];
-    listEl.innerHTML = '';
-    if (!suggestions.length) {
-      const li = document.createElement('li');
-      li.className = 'empty';
-      li.textContent = empty;
-      listEl.appendChild(li);
-    }
-    const typedCount = reading ? reading.tail.tokens.length - (reading.tail.partial ? 1 : 0) : 0;
-    suggestions.forEach((s, i) => {
-      const li = document.createElement('li');
-      li.setAttribute('role', 'option');
-      li.id = `sugg-${i}`;
-      if (i === activeIdx || (activeIdx < 0 && i === 0)) li.classList.add('active');
-      if (s.kind === 'comment') {
-        li.innerHTML = `<span class="badge">note</span><span></span><span class="alg">${esc(s.text)}</span><span class="meta"></span>`;
-        li.addEventListener('mousedown', (e) => { e.preventDefault(); activeIdx = i; acceptSuggestion(); });
-      } else {
-        const r = s.r;
-        const rotToks = session2 && session2.isAtRoot ? String(r.rotation || '').split(/\s+/).filter(Boolean).length : 0;
-        const c = stepAlgs.length ? candidateCancellation(stepAlgs, r.coreAlg) : null;
-        let algHtml = s.toks.map((t, k) => {
-          const cls = [k < typedCount ? 'typed' : '', k < rotToks ? 'rot' : ''].filter(Boolean).join(' ');
-          return cls ? `<span class="${cls}">${esc(t)}</span>` : esc(t);
-        }).join(' ');
-        if (c) algHtml += ` <s title="cancels with the end of the solution">${esc(c.before)} ${esc(c.cancelled)}</s>${c.after ? ' → ' + esc(c.after) : ''}`;
-        const la = Number.isFinite(r.lookaheadTpp) ? `<span class="la" title="look-ahead: best combined tpp">+${formatTpp(r.lookaheadTpp)}</span>` : (r.lookaheadPending ? '<span class="la">…</span>' : '');
-        li.innerHTML = `<span class="badge">${esc(shortType(r.type))}</span><span class="chip" style="background:${COLOUR_HEX[r.color] || 'transparent'}" title="${esc(r.color || '')}"></span><span class="alg">${algHtml}</span><span class="meta">${formatTpp(r.tpp)}${la}</span>`;
-        li.addEventListener('mousedown', (e) => { e.preventDefault(); commitSuggestion(r); });
-        li.addEventListener('mouseenter', () => { showStatCard(li, r, null); previewCandidate(r); });
-        li.addEventListener('mouseleave', () => { hideStatCard(); endPreview(); });
-      }
-      listEl.appendChild(li);
-    });
-    if (editor) {
-      editor.setAttribute('aria-activedescendant', suggestions.length ? `sugg-${activeIdx >= 0 ? activeIdx : 0}` : '');
-    }
     renderEditor();
   }
 
-  const COLOUR_HEX = { white: '#f4f4f4', yellow: '#ffd500', green: '#13c447', blue: '#1e5bff', red: '#e8231c', orange: '#ff8a00' };
-  function shortType(type) {
-    const t = String(type || '').toLowerCase();
-    if (t === 'single pair') return 'pair';
-    return t.replace(' (pseudo)', '*');
-  }
-
-  /** The tail as a finished step: { label } (a listed candidate or the user's own), or null. */
+  /** The tail as a finished step: { label, row, last } (a listed candidate or the user's own), or null. */
   function stepFromTail(session, tokens, list) {
     const cand = (list || []).find((c) => {
       const want = rowTokens(c, session.isAtRoot);
-      return want.length === tokens.length && want.every((t, j) => t === tokens[j]);
+      return want.length === tokens.length && want.every((t, j) => t === normTok(tokens[j]));
     });
-    if (cand) return { label: labelFor(session, cand), row: cand };
-    const row = userStepRow(session, tokens);
-    return row ? { label: labelFor(session, row), row } : null;
+    const row = cand || userStepRow(session, tokens);
+    if (!row) return null;
+    const node = session.nodeMap.get(row.targetNodeId);
+    return { label: labelFor(session, row), row, last: !!node && (node.state.corners || []).length >= 4 };
+  }
+
+  // ---------------------------------------------------------------------
+  // The continuation search (developer, 2026-10-11): moves typed that start
+  // no listed step are searched onward -- the step's search again from the
+  // cube after those moves -- so the ghost can still finish the step the
+  // solver has in mind. Each continuation is the typed moves plus a found
+  // rest, scored as a step the user wrote (userStepRow: replayed on the
+  // real cube, so a wrong frame can only drop rows, never mis-score them).
+  // ---------------------------------------------------------------------
+  let continuation = null; // { key, list (null while searching), job }
+  let continuationTimer = 0;
+  const CONTINUATION_DELAY = 350; // ms after the last keystroke
+  const CONTINUATION_ROWS = 400;  // rescored found rests (best first)
+  const COLOUR_OF_FACELET = { W: 'white', Y: 'yellow', G: 'green', B: 'blue', R: 'red', O: 'orange' };
+
+  /** The complete typed moves a continuation is searched for (the token still being typed filters it). */
+  const continuationTyped = tail => (tail.partial ? tail.tokens.slice(0, -1) : tail.tokens).map(normTok);
+  const continuationKey = typed => `${activeStepKey()}|${typed.join(' ')}`;
+
+  /** The continuation list for this tail, if it was searched. */
+  function continuationFor(tail) {
+    if (!continuation || !continuation.list) return null;
+    return continuation.key === continuationKey(continuationTyped(tail)) ? continuation.list : null;
+  }
+  const continuationPending = () => !!(continuation && !continuation.list && reading
+    && continuation.key === continuationKey(continuationTyped(reading.tail)));
+
+  function maybeContinuationSearch() {
+    clearTimeout(continuationTimer);
+    const session = sessions.get(activeIndex);
+    const list = currentList();
+    if (!session || !reading || session.isComplete || !list || !shownFinal) return;
+    const typed = continuationTyped(reading.tail);
+    if (!typed.length || typed.some(t => !isMoveToken(t))) return;
+    if (prefixMatches(list, typed, '', session.isAtRoot).length) return; // the step's list has it
+    if (stepFromTail(session, typed, list)) return; // already a finished step
+    const key = continuationKey(typed);
+    if (continuation && continuation.key === key) return;
+    if (continuation && continuation.job) scheduler.setStale(continuation.job);
+    const mine = { key, list: null, job: null };
+    continuation = mine; // pending from now on: the buddy says it is following
+    renderBuddy();
+    continuationTimer = setTimeout(() => {
+      runContinuation(session, typed, mine).catch(() => { if (continuation === mine) { mine.list = []; renderBuddy(); } });
+    }, CONTINUATION_DELAY);
+  }
+
+  async function runContinuation(session, typed, mine) {
+    if (continuation !== mine) return;
+    const h = await ensureHelper();
+    const ph = await ensurePseudoHelper();
+    if (continuation !== mine) return;
+    const isRoot = session.isAtRoot;
+    let fork;
+    let rotToks = [];
+    let algToks = typed;
+    let wantRotation = -1;
+    if (isRoot) {
+      // the typed rotation and moves, moved into the scramble: "scramble F'"
+      // then the rotation Q is the cube as typed (Q F == rotation + moves)
+      let k = 0;
+      while (k < typed.length && SE_ROTATION.test(typed[k])) k++;
+      rotToks = typed.slice(0, k);
+      algToks = typed.slice(k);
+      if (!algToks.length) { mine.list = []; return; }
+      const frame = canonicalizeForEngine(rotToks.join(' '), algToks.join(' '));
+      const early = frame.moves ? relabelAlgForRotation(frame.moves, inverseRotation(frame.rotation)) : '';
+      const scramble = [session.scramble, early].filter(Boolean).join(' ');
+      const asTyped = applyAlgorithm(SOLVED_FACELETS, [session.scramble, ...typed].join(' '));
+      if (applyAlgorithm(SOLVED_FACELETS, [scramble, frame.rotation].filter(Boolean).join(' ')) !== asTyped) { mine.list = []; return; }
+      wantRotation = rotationIndex(frame.rotation || '');
+      fork = Object.assign(Object.create(SolveSession.prototype), session, {
+        scramble,
+        colors: [COLOUR_OF_FACELET[asTyped[31]]].filter(Boolean), // the cross on D, as typed
+        stepAlgs: [], committedRows: [], resultsCache: null,
+        searchMemo: new Map(), engineMemo: new Map(), // their keys do not hold the scramble
+      });
+    } else {
+      fork = session.fork();
+      fork.stepAlgs = [...session.stepAlgs, typed.join(' ')];
+    }
+    const job = scheduler.submit(wrap => searchWithLookahead(fork, wrap(h), () => {}, wrap(ph), {
+      ...searchOptions(ACTIVE), depth: 1, isCancelled: () => continuation !== mine,
+    }), ACTIVE);
+    mine.job = job;
+    let results = [];
+    try { results = (await job.promise) || []; } catch (err) { results = []; }
+    if (continuation !== mine) return;
+    const out = [];
+    const seen = new Set();
+    for (const r of results) {
+      if (out.length >= CONTINUATION_ROWS) break;
+      if (isRoot && rotationIndex(r.rotation || '') !== wantRotation) continue;
+      const rest = String(r.coreAlg || '').split(/\s+/).filter(Boolean);
+      // a rest that cancels into the typed moves is another spelling of what was typed: skip it
+      if (cancelBoundary(algToks, rest).merged) continue;
+      const toks = [...typed, ...rest];
+      const k = toks.join(' ');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      let row = null;
+      try { row = userStepRow(session, toks); } catch (err) { row = null; }
+      if (row) out.push(row);
+    }
+    out.sort((a, b) => a.tpp - b.tpp);
+    mine.list = out;
+    renderSuggestions();
+    renderBuddy();
   }
 
   function bindEditor() {
@@ -992,35 +1054,53 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return;
       }
       const atEnd = editor.selectionStart === editor.value.length;
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggestions.length && atEnd) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggestions.length > 1 && atEnd) {
         e.preventDefault();
         const n = suggestions.length;
         activeIdx = e.key === 'ArrowDown' ? (activeIdx + 1) % n : (activeIdx <= 0 ? n - 1 : activeIdx - 1);
-        renderSuggestions();
+        renderEditor();
         return;
       }
       if (e.key === 'Enter' && activeIdx >= 0 && suggestions[activeIdx]) {
         e.preventDefault();
-        const s = suggestions[activeIdx];
-        if (s.kind === 'comment') acceptSuggestion(); else commitSuggestion(s.r);
+        acceptSuggestion();
         return;
       }
-      if (e.key === 'Escape') { activeIdx = -1; renderSuggestions(); }
+      if (e.key === 'Escape') { activeIdx = -1; renderEditor(); }
     });
     for (const ev of ['click', 'keyup', 'focus', 'blur']) editor.addEventListener(ev, () => renderEditor());
+    // the cube follows the caret while the solution bar has it, and goes
+    // back to the end of the solution when it leaves (unless the playback
+    // controls or the cube took it)
+    for (const ev of ['click', 'keyup', 'focus', 'select']) editor.addEventListener(ev, followCaret);
+    document.addEventListener('selectionchange', () => { if (document.activeElement === editor) followCaret(); });
+    editor.addEventListener('focus', () => { manualPlayback = false; });
+    editor.addEventListener('blur', () => {
+      if (manualPlayback || !player || previewing) return;
+      player.pause();
+      player.seek(player.length, false);
+    });
   }
 
   // ---------------------------------------------------------------------
-  // The cube (pixel-cube.js) and playback of scramble + solution + typed moves
+  // The cube (pixel-cube.js) and playback of the solution and the typed
+  // moves, from the scrambled cube (the scramble itself is not played)
   // ---------------------------------------------------------------------
   let pixelCube = null;
   let player = null;
   let animateFrom = null; // the playback position to animate from after the next change
   let previewing = false;
+  let manualPlayback = false; // the playback controls or the cube were used since the bar lost the caret
+  const scrambledMemo = new Map();
 
   function cubeTheme() {
     if (!pixelCube) return;
-    pixelCube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee' });
+    pixelCube.setTheme({ bg: cssVar('--bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true });
+  }
+
+  function scrambledState(scramble) {
+    if (!scrambledMemo.has(scramble)) scrambledMemo.set(scramble, applyAlgorithm(SOLVED_FACELETS, playbackTokens(scramble).join(' ')));
+    return scrambledMemo.get(scramble);
   }
 
   function solutionTokens(session) {
@@ -1029,23 +1109,39 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return toks;
   }
 
+  /** Moves of the text before the caret (the playback position the caret stands for). */
+  function caretMoveIndex() {
+    if (!reading || !editor) return Infinity;
+    const caret = editor.selectionEnd;
+    let n = 0;
+    for (const line of reading.parsed) for (const t of line.tokens) if (t.valid && t.start < caret) n++;
+    return n;
+  }
+  const caretInBar = () => !!editor && document.activeElement === editor;
+
+  function followCaret() {
+    if (!player || previewing || player.playing || !caretInBar()) return;
+    const k = Math.min(player.length, caretMoveIndex());
+    if (k !== player.pos) player.seek(k, Math.abs(k - player.pos) === 1 && prefs().animSpeed > 0);
+  }
+
   function updatePlayer() {
     if (!player || previewing) return;
     const session = sessions.get(activeIndex);
     if (!session) return;
-    const scr = playbackTokens(session.scramble);
     const sol = solutionTokens(session);
     const tail = reading ? reading.tail.tokens.filter(t => isMoveToken(t)) : [];
-    const tokens = [...scr, ...sol, ...tail];
-    const marks = [{ at: scr.length, label: 'solve' }];
+    const tokens = [...sol, ...tail];
+    const target = caretInBar() ? Math.min(tokens.length, caretMoveIndex()) : tokens.length;
     const from = animateFrom;
     animateFrom = null;
-    const animate = from !== null && from < tokens.length && tokens.length - from <= 24 && prefs().animSpeed > 0
-      && player.tokens.length === from && player.pos === from && tokens.slice(0, from).every((t, i) => t === player.tokens[i]);
+    const start = scrambledState(session.scramble);
+    const animate = from !== null && from < tokens.length && target === tokens.length && tokens.length - from <= 24 && prefs().animSpeed > 0
+      && player.start === start && player.tokens.length === from && player.pos === from && tokens.slice(0, from).every((t, i) => t === player.tokens[i]);
     if (animate) {
-      player.setSequence(tokens, marks, from);
+      player.setSequence(tokens, [], from, start);
       player.playTo(tokens.length);
-    } else player.setSequence(tokens, marks, tokens.length);
+    } else player.setSequence(tokens, [], target, start);
   }
 
   function renderPlayback() {
@@ -1055,11 +1151,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       scrub.value = String(player.pos);
     }
     const label = $('cube-step');
-    const session = sessions.get(activeIndex);
-    if (label && player && session) {
-      const scr = playbackTokens(session.scramble).length;
-      label.textContent = player.pos <= scr ? `scramble ${player.pos}/${scr}` : `move ${player.pos - scr}/${player.length - scr}`;
-    }
+    if (label && player) label.textContent = player.length ? `${player.pos}/${player.length}` : '';
     const play = $('pb-play');
     if (play && player) play.textContent = player.playing ? '||' : '>>';
   }
@@ -1093,20 +1185,43 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     player = new CubePlayer(pixelCube, renderPlayback);
     player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
     const stage = $('cube-stage');
-    let drag = null;
-    stage.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; stage.setPointerCapture(e.pointerId); });
-    stage.addEventListener('pointermove', (e) => {
-      if (!drag) return;
-      const dx = e.clientX - drag.x;
-      const dy = e.clientY - drag.y;
-      drag = { x: e.clientX, y: e.clientY };
-      pixelCube.orbit(dx * 0.012, dy * 0.012);
+    const panel = stage.closest('.cube-panel') || stage;
+    // using the cube or its controls keeps the playback where the user put it
+    panel.addEventListener('pointerdown', () => { manualPlayback = true; });
+    // drag to orbit; two fingers pinch to zoom; the wheel zooms
+    const pointers = new Map();
+    let pinch = 0;
+    const spread = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      stage.setPointerCapture(e.pointerId);
+      if (pointers.size === 2) pinch = spread();
     });
-    const end = () => { drag = null; };
+    stage.addEventListener('pointermove', (e) => {
+      const last = pointers.get(e.pointerId);
+      if (!last) return;
+      const now = { x: e.clientX, y: e.clientY };
+      pointers.set(e.pointerId, now);
+      if (pointers.size === 2) {
+        const d = spread();
+        if (pinch > 0) pixelCube.zoomBy(d / pinch);
+        pinch = d;
+        return;
+      }
+      pixelCube.orbit((now.x - last.x) * 0.012, (now.y - last.y) * 0.012);
+    });
+    const end = (e) => { pointers.delete(e.pointerId); pinch = 0; };
     stage.addEventListener('pointerup', end);
     stage.addEventListener('pointercancel', end);
-    stage.addEventListener('dblclick', () => pixelCube.resetView());
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      pixelCube.zoomBy(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
+    }, { passive: false });
+    stage.addEventListener('dblclick', (e) => { if (!e.target.closest('button')) pixelCube.resetView(); });
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('zoom-in', () => pixelCube.zoomBy(1.2));
+    on('zoom-out', () => pixelCube.zoomBy(1 / 1.2));
     on('pb-start', () => { player.pause(); player.seek(0, false); });
     on('pb-end', () => { player.pause(); player.seek(player.length, false); });
     on('pb-back', () => { player.pause(); player.step(-1); });
@@ -1124,7 +1239,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // The buddy (suggest.js): three picks with reasons, or the critique
+  // The buddy (suggest.js): its picks with reasons, or the critique
   // ---------------------------------------------------------------------
   let critiqueShown = null; // { key, items } while the critique is on screen
   const viewMemo = new Map();
@@ -1156,13 +1271,59 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function drawBuddySprites() {
     const p = profile();
     const sprite = $('buddy-sprite');
-    if (sprite) drawAvatar(sprite.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--panel'));
+    if (sprite) buddyAnimator.redraw();
     const chip = $('profile-chip');
     if (chip) {
       drawAvatar(chip.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--bg'));
       const name = $('profile-name');
       if (name) name.textContent = p ? p.name : '';
     }
+  }
+
+  /**
+   * The buddy's minimal life (developer, 2026-10-11): a pixel shine that
+   * runs diagonally across it now and then, a blink when idle, a faster bob
+   * and thinking dots while it searches (CSS, .thinking). Off with reduced
+   * motion.
+   */
+  const buddyAnimator = (() => {
+    let timer = 0;
+    let frame = null; // { shine, blink }
+    const still = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function redraw() {
+      const sprite = $('buddy-sprite');
+      if (!sprite) return;
+      const p = profile();
+      drawAvatar(sprite.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--panel'), {
+        blink: !!(frame && frame.blink),
+        shine: frame && frame.shine !== undefined ? { band: frame.shine, colour: cssVar('--shine') || '#7dff9a' } : null,
+      });
+    }
+    function play(frames, ms) {
+      let i = 0;
+      const next = () => {
+        frame = frames[i++] || null;
+        redraw();
+        if (frame) timer = setTimeout(next, ms);
+        else schedule();
+      };
+      next();
+    }
+    function schedule() {
+      clearTimeout(timer);
+      if (still()) return;
+      timer = setTimeout(() => {
+        if (document.hidden) { schedule(); return; }
+        if (Math.random() < 0.45) play(Array.from({ length: 36 }, (_, k) => ({ shine: k - 4 })), 40);
+        else play([{ blink: true }], 140);
+      }, 2600 + Math.random() * 3600);
+    }
+    return { redraw, start: () => { redraw(); schedule(); } };
+  })();
+
+  function setThinking(on) {
+    const buddy = $('buddy');
+    if (buddy) buddy.classList.toggle('thinking', !!on);
   }
 
   function renderBuddy() {
@@ -1176,7 +1337,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     critiqueShown = null;
     picksEl.innerHTML = '';
     actions.innerHTML = '';
-    title.textContent = 'options';
+    title.textContent = '';
+    const list = currentList();
+    const statusBusy = ($('search-status') || {}).dataset ? $('search-status').dataset.state === 'busy' : false;
+    setThinking(!session || (!session.isComplete && (!list || statusBusy)) || continuationPending());
     if (!session) { say.textContent = caption('avatar.thinking'); return; }
     if (session.isComplete) {
       say.textContent = caption('avatar.solved');
@@ -1188,74 +1352,38 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       actions.appendChild(b);
       return;
     }
-    const list = currentList();
-    if (reading && reading.tail.tokens.length && !suggestions.some(s => s.kind === 'alg')) {
-      say.textContent = caption('avatar.offNode');
-      return;
+    let pickList = list;
+    if (reading && reading.tail.tokens.length) {
+      if (tailStep) {
+        say.textContent = caption(tailStep.last ? 'avatar.lastDone' : 'avatar.stepDone', { label: tailStep.label });
+        return;
+      }
+      if (!suggestions.some(s => s.kind === 'alg')) {
+        say.textContent = caption(continuationPending() || !shownFinal ? 'avatar.following' : 'avatar.offNode');
+        return;
+      }
+      // picks that carry on what is typed, when only the continuation has it
+      const cont = continuationFor(reading.tail);
+      if (cont && list && !prefixMatches(list, reading.tail.tokens, reading.tail.partial, session.isAtRoot).length) pickList = cont;
     }
-    if (!list || !list.length) { say.textContent = caption('avatar.thinking'); return; }
-    const picks = avatarPicks(list, pickContext(session));
-    say.textContent = caption('avatar.greeting');
-    picks.forEach((p, i) => {
+    if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'avatar.thinking'); return; }
+    let picks = avatarPicks(pickList, pickContext(session));
+    if (reading && reading.tail.tokens.length) {
+      // only picks that start like what is typed
+      picks = picks.filter(p => prefixMatches([p.r], reading.tail.tokens, reading.tail.partial, session.isAtRoot).length);
+    }
+    say.textContent = caption(!picks.length ? 'avatar.keepGoing' : picks.length > 1 ? 'avatar.greeting' : 'avatar.greetingOne');
+    picks.forEach((p) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'px-btn pick';
+      b.className = 'pick';
       const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
-      b.innerHTML = `<span class="n">${i + 1}</span><span class="alg">${esc(tokens)}</span><span class="why"><span class="tag">${esc(caption(`avatar.pick.${p.role}`))}</span>${esc(why)}</span>`;
+      b.innerHTML = `<span class="tag">${esc(caption(`avatar.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
-      b.addEventListener('mouseenter', () => { showStatCard(b, p.r, p.reasons); previewCandidate(p.r); });
-      b.addEventListener('mouseleave', () => { hideStatCard(); endPreview(); });
-      b.addEventListener('focus', () => showStatCard(b, p.r, p.reasons));
-      b.addEventListener('blur', hideStatCard);
+      b.addEventListener('mouseenter', () => previewCandidate(p.r));
+      b.addEventListener('mouseleave', endPreview);
       picksEl.appendChild(b);
-    });
-  }
-
-  function stepCounts(alg) {
-    const toks = String(alg || '').split(/\s+/).filter(Boolean);
-    return `${toks.filter(t => !/^[xyz]/.test(t)).length}stm / ${toks.length}etm`;
-  }
-
-  function showStatCard(anchor, r, reasons) {
-    const card = $('stat-card');
-    if (!card || matchMedia('(hover: none)').matches) return;
-    const session = sessions.get(activeIndex);
-    if (!session) return;
-    const rs = reasons || avatarPicksReasons(session, r);
-    const rows = [
-      ['type', shortType(r.type)],
-      ['colour', r.color || '-'],
-      ['tpp', formatTpp(r.tpp)],
-      ['moves', stepCounts(r.coreAlg)],
-    ];
-    if (Number.isFinite(r.lookaheadTpp)) rows.push(['look-ahead', formatTpp(r.lookaheadTpp)]);
-    card.innerHTML = `<div class="alg">${esc(rowTokens(r, session.isAtRoot).join(' '))}</div>`
-      + `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
-      + (rs.length ? `<ul class="reasons">${rs.map(x => `<li>${esc(caption(`reason.${x.key}`, x.vars))}</li>`).join('')}</ul>` : '')
-      + (r.lookaheadAlgs && r.lookaheadAlgs.length ? `<div class="next">then ${esc(r.lookaheadAlgs.join(' | '))}</div>` : '');
-    card.hidden = false;
-    const a = anchor.getBoundingClientRect();
-    const w = card.offsetWidth;
-    const h = card.offsetHeight;
-    let x = a.left - w - 12;
-    if (x < 8) x = Math.min(window.innerWidth - w - 8, a.right + 12);
-    let y = Math.min(window.innerHeight - h - 8, Math.max(8, a.top));
-    card.style.left = `${x}px`;
-    card.style.top = `${y}px`;
-  }
-
-  function hideStatCard() {
-    const card = $('stat-card');
-    if (card) card.hidden = true;
-  }
-
-  function avatarPicksReasons(session, r) {
-    const list = currentList() || [];
-    const ctx = pickContext(session);
-    return reasonsFor(r, {
-      best: list[0], rank: list.indexOf(r), before: ctx.before, after: ctx.viewOf(r), stepAlgs: ctx.stepAlgs,
-      answers: ctx.answers, lookahead: ctx.lookahead, isRoot: ctx.isRoot,
     });
   }
 
@@ -1269,6 +1397,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       sprite.setAttribute('aria-expanded', String(!collapsed));
     });
     drawBuddySprites();
+    buddyAnimator.start();
   }
 
   // ---------------------------------------------------------------------
@@ -1287,8 +1416,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     critiqueShown = { key: `${activeIndex}|${session.scoredPath}`, items: null };
     if (!session.committedRows.length) { say.textContent = caption('critique.needSolve'); return; }
     say.textContent = caption('critique.working');
+    setThinking(true);
     let h;
-    try { h = await ensureHelper(); } catch (err) { say.textContent = caption('solve.loadFailed'); return; }
+    try { h = await ensureHelper(); } catch (err) { say.textContent = caption('solve.loadFailed'); setThinking(false); return; }
     const ph = await ensurePseudoHelper();
     const myKey = critiqueShown.key;
     const report = await critiqueSolve(session, {
@@ -1301,8 +1431,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return job.promise;
       },
       answers: answers(),
-      onProgress: (done, total) => { if (critiqueShown && critiqueShown.key === myKey) say.textContent = `${caption('critique.working')} ${done}/${total}`; },
     });
+    setThinking(false);
     if (!critiqueShown || critiqueShown.key !== myKey) return;
     say.textContent = caption('critique.intro');
     const ol = document.createElement('ol');
@@ -1312,9 +1442,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       li.innerHTML = `<div>${esc(item.text)}</div>${item.alt ? `<div class="alt">${esc(item.alt)}</div>` : ''}`;
       li.addEventListener('click', () => {
         if (!player) return;
-        const scr = playbackTokens(session.scramble).length;
+        manualPlayback = true;
         player.pause();
-        player.seek(scr + item.startMove, false);
+        player.seek(item.startMove, false);
         if (item.altRow) previewCandidateAt(session, item.stepIndex, item.altRow);
       });
       ol.appendChild(li);
@@ -1340,7 +1470,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     toks.push(...rowTokens(row, k === 0));
     pixelCube.setFacelets(applyAlgorithm(SOLVED_FACELETS, toks.join(' ')));
     const note = $('stage-note');
-    if (note) note.textContent = 'their alternative · press > to go back';
+    if (note) note.textContent = 'my alternative · press > to go back';
   }
 
   // ---------------------------------------------------------------------
@@ -1545,6 +1675,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     shownResults = null;
     shownOwner = null;
     reading = null;
+    continuation = null;
     syncEditor();
     persistSessionState();
     runSearch();

@@ -1,22 +1,30 @@
 /**
- * suggest.js — the avatar's three picks and their reasons (README "Avatar").
+ * suggest.js — the avatar's picks and their reasons (README "Avatar").
  *
- * The picks come from the step's ranked list (the same one the top 5 show);
- * the ranking itself is never changed. Pick 1 is the best TPP. Pick 2
- * depends on the solver's style: an efficiency solver gets the shortest step
- * within PICK_MARGIN of the best, a TPS solver the one that flows best (the
- * least time per turn). Pick 3 sets up what comes next: the look-ahead's best
- * when look-ahead is on, else the step leaving the best pair-choice view
- * (free pairs, oriented edges, open slots in front). Picks differ in
- * family (not the same moves after an AUF or rotation), and nothing above
- * the solver's level is suggested unless they chose to learn it.
+ * The picks come from the step's ranked list; the ranking itself is never
+ * changed. Every pick has to be justified by a fact, never by taste
+ * (developer, 2026-10-11):
+ * 1. the fastest (best TPP);
+ * 2. only when one is quantifiably different: a TPS solver gets a
+ *    **smoother** step -- one of the top three that is more than two moves
+ *    longer than the move-optimal step for the same goal (and longer than
+ *    the fastest), so its turns must flow; an efficiency solver a step at
+ *    least two moves shorter than the fastest within PICK_MARGIN;
+ * 3. the **free pair setup**: the fastest step within SETUP_MARGIN that
+ *    leaves more free pairs than there are now (or the look-ahead's best
+ *    when look-ahead is on).
+ * Otherwise there are fewer picks. Picks differ in family (not the same
+ * moves after an AUF or rotation), and nothing above the solver's level is
+ * suggested unless they chose to learn it.
  *
  * Reasons are facts, each with a captions.js key ('reason.<key>'); the
  * wording is the developer's.
  */
 'use strict';
 
-const PICK_MARGIN = 0.10;   // picks 2 and 3: within 10% of the best TPP
+const PICK_MARGIN = 0.10;   // the efficiency pick: within 10% of the best TPP
+const SMOOTH_TOP = 3;       // the smoother pick: among the top three
+const SMOOTH_EXTRA = 2;     // ... more than this many moves above the move-optimal step
 // Which facts a pick leads with, by its role (and pick 2 by style).
 const ROLE_REASONS = {
   best: ['fastest', 'multislot', 'cancels', 'free_pair', 'no_rotation'],
@@ -54,6 +62,21 @@ function setupValue(v) {
   return LOOK_FEATURES.reduce((s, k, i) => s + w.look[i] * v[k], 0) + PLAN_FEATURES.reduce((s, k, i) => s + w.plan[i] * v[k], 0);
 }
 
+/** More free (connected) pairs after the step than before it; the first step starts with none. */
+function leavesFreePair(before, after) {
+  return !!after && after.connected > (before ? before.connected : 0);
+}
+
+/**
+ * The quantified "smoother" (README "Avatar"): among the top three, more than
+ * SMOOTH_EXTRA moves above the move-optimal step for the same goal, and
+ * longer than the fastest -- it ranks that high only because its turns flow.
+ */
+function isSmoother(r, rank, best, optimal) {
+  const n = stmOf(r.coreAlg);
+  return rank > 0 && rank < SMOOTH_TOP && Number.isFinite(optimal) && n > optimal + SMOOTH_EXTRA && n > stmOf(best.coreAlg);
+}
+
 /**
  * The reasons for candidate `r`: [{ key, vars }] (most telling first).
  * ctx: { best, before (cubeView), after (cubeView), stepAlgs, rank, answers, lookahead }.
@@ -73,14 +96,12 @@ function reasonsFor(r, ctx) {
   if (ctx.stepAlgs && ctx.stepAlgs.length && typeof candidateCancellation === 'function' && candidateCancellation(ctx.stepAlgs, r.coreAlg)) {
     out.push({ key: 'cancels' });
   }
-  if (ctx.before && ctx.after) {
-    if (ctx.after.connected > ctx.before.connected) out.push({ key: 'free_pair' });
-    if (ctx.after.badEdgesU < ctx.before.badEdgesU && allowed('pair_influencing')) out.push({ key: 'edges_good' });
-  }
+  if (ctx.after && leavesFreePair(ctx.before, ctx.after)) out.push({ key: 'free_pair' });
+  if (ctx.before && ctx.after && ctx.after.badEdgesU < ctx.before.badEdgesU && allowed('pair_influencing')) out.push({ key: 'edges_good' });
   if (best && r !== best) {
     const d = stmOf(best.coreAlg) - stmOf(r.coreAlg);
     if (d >= 2) out.push({ key: 'shorter', vars: { n: d } });
-    else if (d < 0 && ctx.flow && ctx.flow(r) < ctx.flow(best)) out.push({ key: 'smoother' });
+    else if (ctx.optimalStm && isSmoother(r, ctx.rank, best, ctx.optimalStm(r))) out.push({ key: 'smoother' });
   }
   if (!rotationsIn(r.coreAlg) && best && (r === best ? false : rotationsIn(best.coreAlg) > 0)) out.push({ key: 'no_rotation' });
   if (typeof isWideAlg === 'function' && isWideAlg(r.coreAlg) && allowed('wide_cross')) out.push({ key: 'wide_ergonomic' });
@@ -101,27 +122,24 @@ function avatarPicks(results, ctx = {}) {
   const best = list[0];
   const picks = [{ r: best, role: 'best' }];
   const families = new Set([pickFamily(best)]);
-  const within = m => list.filter(r => r.tpp <= best.tpp * (1 + m) && usable(r) && !families.has(pickFamily(r)));
-  const flowMemo = new Map();
-  const flow = (r) => {
-    if (!flowMemo.has(r)) {
-      const n = Math.max(1, stmOf(r.coreAlg));
-      flowMemo.set(r, (typeof algSpeed === 'function' ? algSpeed(r.coreAlg, false, false) : n) / n);
-    }
-    return flowMemo.get(r);
-  };
-  // pick 2: by style
-  const near = within(PICK_MARGIN);
+  const fresh = r => usable(r) && !families.has(pickFamily(r));
+  // the move-optimal step for each goal in the list
+  const optimal = new Map();
+  for (const r of list) {
+    const n = stmOf(r.coreAlg);
+    if (!(optimal.get(r.targetNodeId) <= n)) optimal.set(r.targetNodeId, n);
+  }
+  const optimalStm = r => optimal.get(r.targetNodeId);
+  // pick 2: only when quantifiably different, by style
   let second = null;
   if (ctx.style === 'efficiency') {
-    second = near.slice().sort((a, b) => stmOf(a.coreAlg) - stmOf(b.coreAlg) || a.tpp - b.tpp)[0];
-    if (second && stmOf(second.coreAlg) >= stmOf(best.coreAlg)) second = near[0];
+    second = list.filter(r => r.tpp <= best.tpp * (1 + PICK_MARGIN) && fresh(r) && stmOf(best.coreAlg) - stmOf(r.coreAlg) >= 2)
+      .sort((a, b) => stmOf(a.coreAlg) - stmOf(b.coreAlg) || a.tpp - b.tpp)[0] || null;
   } else {
-    second = near.slice().sort((a, b) => flow(a) - flow(b) || a.tpp - b.tpp)[0];
+    second = list.slice(1, SMOOTH_TOP).find((r, i) => fresh(r) && isSmoother(r, i + 1, best, optimalStm(r))) || null;
   }
-  if (!second) second = list.find(r => usable(r) && !families.has(pickFamily(r)));
   if (second) { picks.push({ r: second, role: `style.${ctx.style === 'efficiency' ? 'efficiency' : 'tps'}` }); families.add(pickFamily(second)); }
-  // pick 3: sets up the next step
+  // pick 3: the free pair setup (or the look-ahead's best)
   let third = null;
   let lookaheadBest = false;
   if (ctx.lookahead) {
@@ -129,17 +147,11 @@ function avatarPicks(results, ctx = {}) {
     const top = done.slice().sort((a, b) => a.lookaheadTpp - b.lookaheadTpp)[0];
     if (top && !families.has(pickFamily(top))) { third = top; lookaheadBest = true; }
   }
-  if (!third && ctx.viewOf && !ctx.finishing) {
-    const pool = within(SETUP_MARGIN).slice(0, 40);
-    let bestVal = Infinity;
-    for (const r of pool) {
-      const v = ctx.viewOf(r);
-      if (!v) continue;
-      const val = setupValue(v);
-      if (val < bestVal) { bestVal = val; third = r; }
-    }
+  // (none when the fastest already leaves a free pair: it is that setup)
+  if (!third && ctx.viewOf && !ctx.finishing && !leavesFreePair(ctx.before, ctx.viewOf(best))) {
+    third = list.filter(r => r.tpp <= best.tpp * (1 + SETUP_MARGIN) && fresh(r)).slice(0, 60)
+      .find(r => leavesFreePair(ctx.before, ctx.viewOf(r))) || null;
   }
-  if (!third) third = list.find(r => usable(r) && !families.has(pickFamily(r)));
   if (third) picks.push({ r: third, role: 'setup', lookaheadBest });
   // reasons, led by what the pick is for; a reason another pick already
   // leads with goes to the back
@@ -149,7 +161,7 @@ function avatarPicks(results, ctx = {}) {
     const after = ctx.viewOf ? ctx.viewOf(p.r) : null;
     const reasons = reasonsFor(p.r, {
       best, rank, before: ctx.before, after, stepAlgs: ctx.stepAlgs, answers: ctx.answers,
-      lookahead: ctx.lookahead, lookaheadBest: p.lookaheadBest, flow, isRoot: ctx.isRoot,
+      lookahead: ctx.lookahead, lookaheadBest: p.lookaheadBest, optimalStm, isRoot: ctx.isRoot,
     });
     const lead = ROLE_REASONS[p.role === 'best' ? 'best' : p.role === 'setup' ? 'setup' : ctx.style === 'efficiency' ? 'efficiency' : 'tps'];
     const order = (x) => {
@@ -163,5 +175,5 @@ function avatarPicks(results, ctx = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { avatarPicks, reasonsFor, pickFamily, stmOf, setupValue, cubeView, PICK_MARGIN };
+  module.exports = { avatarPicks, reasonsFor, pickFamily, stmOf, setupValue, cubeView, isSmoother, leavesFreePair, PICK_MARGIN };
 }
