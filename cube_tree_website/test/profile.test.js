@@ -21,10 +21,10 @@ test('no profile at first; create signs in with default prefs', () => {
   const store = createProfileStore(memoryStorage());
   assert.strictEqual(store.active(), null);
   assert.deepStrictEqual(store.list(), []);
-  const p = store.create({ name: 'rick', avatar: 2, answers: { speed: 14 } });
+  const p = store.create({ name: 'rick', searcher: 2, answers: { speed: 14 } });
   assert.strictEqual(store.active().id, p.id);
   assert.strictEqual(p.name, 'rick');
-  assert.strictEqual(p.avatar, 2);
+  assert.strictEqual(p.searcher, 2);
   assert.strictEqual(p.onboarded, false);
   assert.deepStrictEqual(p.prefs, PROFILE_DEFAULT_PREFS);
   assert.deepStrictEqual(p.answers, { speed: 14 });
@@ -89,7 +89,7 @@ test('remove deletes the profile and its scoped settings', () => {
 test('export code round-trips the profile and its settings into a new profile', () => {
   const s1 = memoryStorage();
   const one = createProfileStore(s1);
-  const p = one.create({ name: 'Zoë ⑂', avatar: 3, answers: { speed: 11, goals: ['multislot'] }, prefs: { theme: 'violet' } });
+  const p = one.create({ name: 'Zoë ⑂', searcher: 3, answers: { speed: 11, goals: ['multislot'] }, prefs: { theme: 'violet' } });
   s1.setItem(one.key('cubecrit_search_criteria'), '{"colors":["white","yellow"]}');
   const code = one.exportCode(p.id);
   assert.ok(/^[A-Za-z0-9+/=]+$/.test(code), 'plain base64');
@@ -98,7 +98,7 @@ test('export code round-trips the profile and its settings into a new profile', 
   const q = two.importCode(code);
   assert.ok(q && q.id !== undefined);
   assert.strictEqual(q.name, 'Zoë ⑂');
-  assert.strictEqual(q.avatar, 3);
+  assert.strictEqual(q.searcher, 3);
   assert.deepStrictEqual(q.answers, { speed: 11, goals: ['multislot'] });
   assert.strictEqual(q.prefs.theme, 'violet');
   assert.strictEqual(two.active().id, q.id);
@@ -125,6 +125,13 @@ test('a corrupt saved blob reads as no profiles', () => {
   assert.deepStrictEqual(store.list(), []);
   storage.setItem(PROFILE_STORE_KEY, JSON.stringify({ activeId: 'gone', profiles: {} }));
   assert.strictEqual(store.active(), null);
+});
+
+test('profiles saved before the rename keep their tree-searcher', () => {
+  const storage = memoryStorage();
+  storage.setItem(PROFILE_STORE_KEY, JSON.stringify({ version: 1, activeId: 'a', profiles: { a: { id: 'a', name: 'old', avatar: 4, answers: {}, prefs: {} } } }));
+  const s = createProfileStore(storage);
+  assert.strictEqual(s.active().searcher, 4);
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

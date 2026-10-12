@@ -251,8 +251,8 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 .onboard .dots { display: flex; gap: 6px; }
 .onboard .dots span { width: 8px; height: 8px; border: var(--px) solid var(--line); }
 .onboard .dots span.on { background: var(--ink); }
-.avatar-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-.avatar-choice {
+.searcher-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.searcher-choice {
     border: var(--px) solid transparent;
     background: none;
     padding: 6px;
@@ -260,8 +260,8 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
     display: grid;
     place-items: center;
 }
-.avatar-choice canvas { width: 100%; max-width: 64px; aspect-ratio: 1; }
-.avatar-choice[aria-pressed="true"] { border-color: var(--line); box-shadow: var(--px) var(--px) 0 var(--line); }
+.searcher-choice canvas { width: 100%; max-width: 64px; aspect-ratio: 1; }
+.searcher-choice[aria-pressed="true"] { border-color: var(--line); box-shadow: var(--px) var(--px) 0 var(--line); }
 .choice-list { display: grid; gap: 8px; }
 .choice {
     display: flex;
@@ -446,14 +446,14 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 .status-line:empty { display: none; }
 .status-line[data-state="error"] { color: var(--bad); }
 
-/* ---- avatar: in the solution's column, right under the bar --------------- */
-.buddy {
+/* ---- searcher: in the solution's column, right under the bar --------------- */
+.searcher {
     display: flex;
     align-items: flex-start;
     gap: 16px;
     margin-top: 14px;
 }
-.buddy-sprite {
+.searcher-sprite {
     position: relative;
     width: 72px; height: 72px;
     flex: 0 0 auto;
@@ -463,8 +463,8 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
     cursor: pointer;
     display: grid; place-items: center;
 }
-.buddy-sprite canvas { width: 100%; height: 100%; animation: bob 1.6s steps(2) infinite; }
-.buddy-sprite::after {
+.searcher-sprite canvas { width: 100%; height: 100%; animation: bob 1.6s steps(2) infinite; }
+.searcher-sprite::after {
     /* its floor: a short dithered shadow */
     content: "";
     position: absolute; left: 14px; right: 14px; bottom: -6px; height: 4px;
@@ -472,8 +472,8 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
     opacity: 0.5;
 }
 @keyframes bob { 50% { transform: translateY(-2px); } }
-.buddy.thinking .buddy-sprite canvas { animation: bob 0.5s steps(2) infinite; }
-.buddy.thinking .buddy-sprite::before {
+.searcher.thinking .searcher-sprite canvas { animation: bob 0.5s steps(2) infinite; }
+.searcher.thinking .searcher-sprite::before {
     /* thinking dots over its head */
     content: "";
     position: absolute; top: -8px; right: 0;
@@ -582,17 +582,17 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 }
 @media (max-width: 600px) {
     body { font-size: 20px; }
-    .main { gap: 18px; padding: 14px 16px 96px; } /* room to scroll past the corner buddy */
+    .main { gap: 18px; padding: 14px 16px 96px; } /* room to scroll past the corner tree-searcher */
     .brand h1 { font-size: 15px; }
-    .avatar-grid { grid-template-columns: repeat(3, 1fr); }
-    .buddy { position: fixed; right: 10px; bottom: 10px; z-index: 40; margin: 0; }
-    .buddy-sprite { width: 56px; height: 56px; background: var(--bg); }
-    .buddy .bubble { position: fixed; left: 10px; right: 10px; bottom: 78px; width: auto; max-height: calc(100vh - 160px); overflow: auto; }
+    .searcher-grid { grid-template-columns: repeat(3, 1fr); }
+    .searcher { position: fixed; right: 10px; bottom: 10px; z-index: 40; margin: 0; }
+    .searcher-sprite { width: 56px; height: 56px; background: var(--bg); }
+    .searcher .bubble { position: fixed; left: 10px; right: 10px; bottom: 78px; width: auto; max-height: calc(100vh - 160px); overflow: auto; }
     .bubble::before { left: auto; right: 22px; top: auto; bottom: -12px; width: 12px; height: 10px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
-    .buddy.collapsed .bubble { display: none; }
+    .searcher.collapsed .bubble { display: none; }
     .play-row .px-btn { min-width: 38px; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .buddy-sprite canvas, .buddy.thinking .buddy-sprite canvas, .buddy.thinking .buddy-sprite::before { animation: none; }
+    .searcher-sprite canvas, .searcher.thinking .searcher-sprite canvas, .searcher.thinking .searcher-sprite::before { animation: none; }
 }
 .level-note { color: var(--dim); font-size: 19px; line-height: 1.2; }

@@ -24,15 +24,15 @@
     return n;
   };
   const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const avatarCanvas = (index, size = 64) => {
+  const searcherCanvas = (index, size = 64) => {
     const c = el('canvas', { width: size, height: size, 'aria-hidden': 'true' });
-    drawAvatar(c, index, cssVar('--ink'), cssVar('--panel'));
+    drawSearcher(c, index, cssVar('--ink'), cssVar('--panel'));
     return c;
   };
 
   const SCREENS = ['welcome', 'speed', 'inspection', 'style', 'goals', 'colours'];
   const params = new URLSearchParams(location.search);
-  let draft = null; // { editingId, name, avatar, theme, answers }
+  let draft = null; // { editingId, name, searcher, theme, answers }
   let screen = 0;
   let showAllGoals = false;
 
@@ -41,7 +41,7 @@
     draft = {
       editingId: profile ? profile.id : null,
       name: profile ? profile.name : '',
-      avatar: profile ? profile.avatar : 0,
+      searcher: profile ? profile.searcher : 0,
       theme: (profile && profile.prefs && profile.prefs.theme) || document.documentElement.dataset.theme || PROFILE_THEMES[0],
       answers: {
         speed: a.speed || '',
@@ -100,7 +100,7 @@
             applyProfileLook(cubeProfiles.active());
             if (p.onboarded) location.href = 'solver.html'; else startDraft(cubeProfiles.active());
           },
-        }, avatarCanvas(p.avatar, 32), el('span', { text: p.name }), el('span', { class: 'tag', text: level })),
+        }, searcherCanvas(p.searcher, 32), el('span', { text: p.name }), el('span', { class: 'tag', text: level })),
         el('button', {
           type: 'button', class: 'px-btn icon quiet', title: 'export a code', 'aria-label': `export ${p.name}`,
           onclick: () => showCode(cubeProfiles.exportCode(p.id)),
@@ -168,12 +168,12 @@
     welcome(body) {
       const name = el('input', { class: 'px-input', type: 'text', maxlength: 24, placeholder: 'name', 'aria-label': 'name', value: draft.name });
       name.addEventListener('input', () => { draft.name = name.value; });
-      const grid = el('div', { class: 'avatar-grid', role: 'radiogroup', 'aria-label': 'buddy' });
-      for (let i = 0; i < AVATAR_COUNT(); i++) {
+      const grid = el('div', { class: 'searcher-grid', role: 'radiogroup', 'aria-label': 'tree-searcher' });
+      for (let i = 0; i < SEARCHER_COUNT(); i++) {
         grid.append(el('button', {
-          type: 'button', class: 'avatar-choice', 'aria-pressed': String(draft.avatar === i), 'aria-label': `buddy ${i + 1}`,
-          onclick: () => { draft.avatar = i; renderOnboarding(); },
-        }, avatarCanvas(i, 64)));
+          type: 'button', class: 'searcher-choice', 'aria-pressed': String(draft.searcher === i), 'aria-label': `tree-searcher ${i + 1}`,
+          onclick: () => { draft.searcher = i; renderOnboarding(); },
+        }, searcherCanvas(i, 64)));
       }
       body.append(...heading('welcome'), name, grid);
       setTimeout(() => name.focus(), 0);
@@ -265,7 +265,7 @@
   function finish() {
     const fields = {
       name: draft.name.trim() || 'cuber',
-      avatar: draft.avatar,
+      searcher: draft.searcher,
       answers: { ...draft.answers, speed: draft.answers.speed || null },
       onboarded: true,
     };

@@ -11,6 +11,13 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
 
+**Rename (2026-10-11, developer):** the solving companion is **the
+tree-searcher** everywhere -- captions, aria labels, docs and code
+(`js/searchers.js`, `SEARCHER_SHEET`, `drawSearcher`, `searcherPicks`,
+`#searcher`, `searcher.*` caption keys, the profile's `searcher` field;
+profiles saved with the old `avatar` field are read as their
+tree-searcher). The developer's own caption edits went in with it.
+
 **Thirty-sixth pass (2026-10-11): bug fixes, polish, solver input.** Tree
 clean at the start (the 35th pass committed), every fast suite passing.
 The developer's list, in order:
@@ -26,7 +33,7 @@ The developer's list, in order:
    sub-10). A first-step type above the bracket is not switched on by the
    inspection answer unless its goal was chosen.
 2. **De-cluttering** (`solver.html`, `styles.css`): the top-5 list is gone
-   (autocomplete is the ghost after the caret; ↑/↓ cycle it); the buddy
+   (autocomplete is the ghost after the caret; ↑/↓ cycle it); the tree-searcher
    sits in its place under the bar; no stat cards, no result counts, no
    engine progress text, **no TPP anywhere a user sees** (info captions
    rewritten); the Cubedb button removed. Frames: only the cube stage and
@@ -38,9 +45,9 @@ The developer's list, in order:
    the controls or the cube were used. "Cursor in the scramble bar" in the
    brief read as the solution bar (the scramble is not editable).
 4. **Tab bug**: Tab used to fill the moves and leave them greyed and
-   uncommitted (the buddy then said "finish the step"); now Tab writes the
+   uncommitted (the tree-searcher then said "finish the step"); now Tab writes the
    step with its label and a newline, so it commits at once. A tail typed
-   by hand that finishes a step is drawn as a step and the buddy says so
+   by hand that finishes a step is drawn as a step and the tree-searcher says so
    (the last pair: "press tab to finish").
 5. **Continuation search** (solver-ui.js `runContinuation`): complete typed
    moves that start no listed step are searched onward (later steps: a fork
@@ -50,7 +57,7 @@ The developer's list, in order:
    each continuation = typed + rest, rescored by userStepRow; rests that
    cancel into the typed moves are dropped. Browser: after a cross, typed
    `R2 ` gave `R2 U' R' U R U' R U L' U' L` as the ghost.
-6. **Avatar picks** (`js/suggest.js`): fastest; a style pick only when
+6. **Tree-searcher picks** (`js/suggest.js`): fastest; a style pick only when
    quantified (TPS: top three, > 2 moves above the goal's move-optimal and
    longer than the fastest; efficiency: >= 2 moves shorter within 10%); the
    free pair setup (fastest within 16% leaving more connected pairs; none
@@ -66,7 +73,7 @@ Tests updated (onboarding, suggest, critique); all fast suites pass.
 Browser-checked in headless Chrome: onboarding screens, Tab commits, the
 continuation ghost, caret following, blur to the end, the start button,
 zoom, a full Tab solve, both critiques, paper theme, the shine frame, phone
-width. Open: the developer's avatars and info page (they will make them);
+width. Open: the developer's tree-searcher art and info page (they will make them);
 the copy in captions.js is still the agent's draft.
 
 **Thirty-fifth pass (2026-10-11): the UI overhaul.** The developer's
@@ -75,8 +82,8 @@ git-ignored: partly third-party art, kept out of the public repo; CubeDB
 screenshots, one-bit pixel art and UI kit, pixel avatars, two pixel cubes,
 Pokémon Showdown) plus a brief; the agent composes the visuals from those
 references (developer decisions: 2 dark + 2 light themes; the results table
-replaced entirely by the top 5 and the avatar; style changes only the
-avatar's picks; agent-drawn placeholder avatars; chunky/fine/smooth pixels;
+replaced entirely by the top 5 and the tree-searcher; style changes only the
+tree-searcher's picks; agent-drawn placeholder tree-searcher sprites; chunky/fine/smooth pixels;
 strict prefixes; free entry; Showdown ideas without the battle theme;
 look-ahead without clutter; **no last-layer work at all**). Tree clean at
 the start (only the new references untracked), every fast suite passing.
@@ -90,7 +97,7 @@ cubedb-export, pair-choice).
    saved key scoped per profile (`profileKey`, script.js `scopedKey`); the
    first profile takes over the pre-profile keys; export/import codes.
 2. **Onboarding** (`index.html`, `js/onboarding.js`, `js/skill-levels.js`):
-   name + buddy, average, inspection planning, style, goals gated by draft
+   name + tree-searcher, average, inspection planning, style, goals gated by draft
    brackets (rest behind "show all"), colours -> existing settings.
 3. **Captions** (`js/captions.js`): every user-facing sentence by key,
    placeholders for the developer (TODO(copy)); the info dialog reads them.
@@ -109,7 +116,7 @@ cubedb-export, pair-choice).
    user steps scored with the search's TPP formula (checked: final step =
    pathCost / 12). Top 5 by strict token prefix; Tab fills, Tab again writes
    the label and commits.
-7. **Avatar** (`js/suggest.js`): best / style pick within 10% / setup pick
+7. **Tree-searcher** (`js/suggest.js`): best / style pick within 10% / setup pick
    (pair-choice view within 16% or look-ahead best); families differ; level
    gating; role-led reasons (`test/suggest.test.js`).
 8. **Critique** (`js/critique.js`): each step ranked among its node's
@@ -129,8 +136,8 @@ the restored text on reload (the editor now records which session it holds);
 the critique waited minutes on hidden multislot searches (now only for a
 multislot step); the page-wide lowercase reached the editor overlay.
 
-Open from this pass: the developer's copy (captions.js), real avatar art
-(`AVATAR_SHEET`), the bracket thresholds (skill-levels.js); the cube's
+Open from this pass: the developer's copy (captions.js), real tree-searcher art
+(`SEARCHER_SHEET`), the bracket thresholds (skill-levels.js); the cube's
 hover preview is a jump to the final state (no animation); a line that
 merges cancelled turns across steps (`R2` written for `R` + `R`) is read as
 one merged step.
@@ -449,10 +456,10 @@ cube_tree_website/          the site (GitHub Pages root)
   js/profile.js             local profiles, per-profile keys, themes
   js/onboarding.js, js/skill-levels.js   onboarding, brackets, answers -> settings
   js/captions.js            every user-facing sentence (developer's copy)
-  js/avatars.js             placeholder buddy sprites (AVATAR_SHEET hook)
+  js/searchers.js             placeholder tree-searcher sprites (SEARCHER_SHEET hook)
   js/pixel-cube.js          pixel-art cube renderer + playback
   js/solve-editor.js        solution bar: text -> steps by replay, prefix matches
-  js/suggest.js             the avatar's three picks and reasons
+  js/suggest.js             the tree-searcher's three picks and reasons
   js/critique.js            whole-solution critique
   js/script.js              DAG pruning, criteria, MCC algSpeed, stepPenalty, naturalness model
   js/pro-steps.js           generated: the naturalness model's professional corpus
@@ -484,7 +491,7 @@ for t in cube_tree_website/test/*.test.js; do node $t || echo FAIL $t; done
 
 UI suites among them: `profile`, `onboarding` (brackets, captions, sprites),
 `pixel-cube` (geometry vs MOVE_TABLE), `solve-editor` (segmentation vs the
-pro segmenter), `suggest` (avatar picks), `critique` (fake search).
+pro segmenter), `suggest` (tree-searcher picks), `critique` (fake search).
 
 `test/spelling-search.test.js` checks the complete search's branch and
 bound against brute force (fast). Real-engine checks (slower; most set
@@ -515,7 +522,7 @@ identical batteries), `node-engine-pool.js`, `node-postprocess-pool.js`,
 ## State of the product
 
 Everything in the README is implemented, including the UI overhaul
-(thirty-fifth pass; captions and avatar art are placeholders for the
+(thirty-fifth pass; captions and tree-searcher art are placeholders for the
 developer). Solver, rankings and speed are done (developer-confirmed on an
 iPad Air 5, thirty-second pass).
 
@@ -530,7 +537,7 @@ iPad Air 5, thirty-second pass).
   variants, rotation spellings, side-cross inspections, cross optimisation
   and wide spellings for matched calls; pseudo calls keep the old ones.
 - **Solving screen:** solution bar (free entry, steps by replay, top 5 by
-  prefix, Tab/comment completion), avatar picks with reasons, critique,
+  prefix, Tab/comment completion), tree-searcher picks with reasons, critique,
   pixel cube with playback, settings drawer (look, filters, pair planning,
   look-ahead, search settings, scrambles, profile), copy / copy all / Cubedb,
   undo, reload persistence (rows and text), background searching with the
@@ -980,7 +987,7 @@ and 6-8 below stay as the record of where those stood; no further work is
 planned on them unless the developer asks.
 
 0. **Visual redesign** -- DONE (thirty-fifth pass, from UI_references/).
-   Waiting on the developer: captions.js copy, avatar art, bracket
+   Waiting on the developer: captions.js copy, tree-searcher art, bracket
    thresholds. Last layer: not to be started until the developer asks.
 1. **Speed** -- DONE (user goal, thirtieth/thirty-first pass: ~10 s per step,
    optimality kept). Browser, this 2-core machine: xcross + xxcross every

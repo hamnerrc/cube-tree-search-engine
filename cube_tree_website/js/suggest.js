@@ -1,5 +1,5 @@
 /**
- * suggest.js — the avatar's picks and their reasons (README "Avatar").
+ * suggest.js — the tree-searcher's picks and their reasons (README "Tree-searcher").
  *
  * The picks come from the step's ranked list; the ranking itself is never
  * changed. Every pick has to be justified by a fact, never by taste
@@ -68,7 +68,7 @@ function leavesFreePair(before, after) {
 }
 
 /**
- * The quantified "smoother" (README "Avatar"): among the top three, more than
+ * The quantified "smoother" (README "Tree-searcher"): among the top three, more than
  * SMOOTH_EXTRA moves above the move-optimal step for the same goal, and
  * longer than the fastest -- it ranks that high only because its turns flow.
  */
@@ -110,11 +110,11 @@ function reasonsFor(r, ctx) {
 }
 
 /**
- * The avatar's picks from `results` (ranked, filtered): up to 3 of
+ * The tree-searcher's picks from `results` (ranked, filtered): up to 3 of
  * { r, role, reasons }. ctx: { style, answers, isRoot, stepAlgs, viewOf(r) ->
  * cubeView after r, before: cubeView now, lookahead: depth > 1 }.
  */
-function avatarPicks(results, ctx = {}) {
+function searcherPicks(results, ctx = {}) {
   const list = (results || []).filter(r => Number.isFinite(r.tpp));
   if (!list.length) return [];
   const allowed = id => typeof goalAllowed !== 'function' || goalAllowed(id, ctx.answers);
@@ -175,5 +175,5 @@ function avatarPicks(results, ctx = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { avatarPicks, reasonsFor, pickFamily, stmOf, setupValue, cubeView, isSmoother, leavesFreePair, PICK_MARGIN };
+  module.exports = { searcherPicks, reasonsFor, pickFamily, stmOf, setupValue, cubeView, isSmoother, leavesFreePair, PICK_MARGIN };
 }

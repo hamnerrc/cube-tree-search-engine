@@ -1,5 +1,5 @@
 /**
- * critique.js — the buddy goes through a whole solution (README "Critique").
+ * critique.js — the tree-searcher goes through a whole solution (README "Critique").
  *
  * The steps are the solution's committed steps (solve-editor.js reads them
  * off the typed text by replaying it). Each one is compared with the

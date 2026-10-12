@@ -1,7 +1,7 @@
 /**
  * solver-ui.js — DOM glue between solver.html's markup and solver-bridge.js's
  * SolveSession / searchCurrentNode logic: the solution bar (solve-editor.js)
- * with its inline autocomplete, the avatar (suggest.js), the critique (critique.js), the cube
+ * with its inline autocomplete, the tree-searcher (suggest.js), the critique (critique.js), the cube
  * (pixel-cube.js) and the settings drawer (README "The solving screen").
  *
  * One SolveSession per scramble (per README: "Multiple scrambles are solved
@@ -561,8 +561,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       el.textContent = msg || '';
       el.dataset.state = kind;
     }
-    const buddy = $('buddy');
-    if (buddy) buddy.classList.toggle('thinking', kind === 'busy');
+    const searcher = $('searcher');
+    if (searcher) searcher.classList.toggle('thinking', kind === 'busy');
   }
 
   function renderActiveResults(results, partial = false) {
@@ -572,14 +572,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     shownOwner = activeStepKey();
     shownPartial = partial;
     // No counts or other numbers on screen (developer, 2026-10-11): the
-    // buddy says when it is thinking; the line only speaks up when it must.
+    // tree-searcher says when it is thinking; the line only speaks up when it must.
     const final = !partial || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
     shownFinal = final;
     if (results.failedCalls) setStatus(caption('solve.someFailed'), 'error');
     else if (final && !results.length) setStatus(caption('solve.noResults'), 'done');
     else setStatus('', final ? 'done' : 'busy');
     renderSuggestions();
-    renderBuddy();
+    renderSearcher();
     if (final) maybeContinuationSearch();
   }
 
@@ -706,14 +706,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       shownOwner = null;
       setStatus('', 'done');
       renderSuggestions();
-      renderBuddy();
+      renderSearcher();
       return;
     }
     if (!keepRows || shownOwner !== activeStepKey()) {
       shownResults = null;
       shownOwner = null;
       renderSuggestions();
-      renderBuddy();
+      renderSearcher();
       setStatus('', 'busy');
     }
     let h;
@@ -771,7 +771,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       persistSessionState();
     }
     renderSuggestions();
-    renderBuddy();
+    renderSearcher();
     renderPath(session);
     renderUndoButton(session);
     updatePlayer();
@@ -974,10 +974,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (continuation && continuation.key === key) return;
     if (continuation && continuation.job) scheduler.setStale(continuation.job);
     const mine = { key, list: null, job: null };
-    continuation = mine; // pending from now on: the buddy says it is following
-    renderBuddy();
+    continuation = mine; // pending from now on: the tree-searcher says it is following
+    renderSearcher();
     continuationTimer = setTimeout(() => {
-      runContinuation(session, typed, mine).catch(() => { if (continuation === mine) { mine.list = []; renderBuddy(); } });
+      runContinuation(session, typed, mine).catch(() => { if (continuation === mine) { mine.list = []; renderSearcher(); } });
     }, CONTINUATION_DELAY);
   }
 
@@ -1041,7 +1041,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     out.sort((a, b) => a.tpp - b.tpp);
     mine.list = out;
     renderSuggestions();
-    renderBuddy();
+    renderSearcher();
   }
 
   function bindEditor() {
@@ -1239,7 +1239,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // The buddy (suggest.js): its picks with reasons, or the critique
+  // The tree-searcher (suggest.js): its picks with reasons, or the critique
   // ---------------------------------------------------------------------
   let critiqueShown = null; // { key, items } while the critique is on screen
   const viewMemo = new Map();
@@ -1268,33 +1268,33 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     };
   }
 
-  function drawBuddySprites() {
+  function drawSearcherSprites() {
     const p = profile();
-    const sprite = $('buddy-sprite');
-    if (sprite) buddyAnimator.redraw();
+    const sprite = $('searcher-sprite');
+    if (sprite) searcherAnimator.redraw();
     const chip = $('profile-chip');
     if (chip) {
-      drawAvatar(chip.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--bg'));
+      drawSearcher(chip.querySelector('canvas'), p ? p.searcher : 0, cssVar('--ink'), cssVar('--bg'));
       const name = $('profile-name');
       if (name) name.textContent = p ? p.name : '';
     }
   }
 
   /**
-   * The buddy's minimal life (developer, 2026-10-11): a pixel shine that
+   * The tree-searcher's minimal life (developer, 2026-10-11): a pixel shine that
    * runs diagonally across it now and then, a blink when idle, a faster bob
    * and thinking dots while it searches (CSS, .thinking). Off with reduced
    * motion.
    */
-  const buddyAnimator = (() => {
+  const searcherAnimator = (() => {
     let timer = 0;
     let frame = null; // { shine, blink }
     const still = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     function redraw() {
-      const sprite = $('buddy-sprite');
+      const sprite = $('searcher-sprite');
       if (!sprite) return;
       const p = profile();
-      drawAvatar(sprite.querySelector('canvas'), p ? p.avatar : 0, cssVar('--ink'), cssVar('--panel'), {
+      drawSearcher(sprite.querySelector('canvas'), p ? p.searcher : 0, cssVar('--ink'), cssVar('--panel'), {
         blink: !!(frame && frame.blink),
         shine: frame && frame.shine !== undefined ? { band: frame.shine, colour: cssVar('--shine') || '#7dff9a' } : null,
       });
@@ -1322,12 +1322,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   })();
 
   function setThinking(on) {
-    const buddy = $('buddy');
-    if (buddy) buddy.classList.toggle('thinking', !!on);
+    const searcher = $('searcher');
+    if (searcher) searcher.classList.toggle('thinking', !!on);
   }
 
-  function renderBuddy() {
-    const say = $('buddy-say');
+  function renderSearcher() {
+    const say = $('searcher-say');
     const picksEl = $('picks');
     const actions = $('bubble-actions');
     const title = $('bubble-title');
@@ -1341,9 +1341,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const list = currentList();
     const statusBusy = ($('search-status') || {}).dataset ? $('search-status').dataset.state === 'busy' : false;
     setThinking(!session || (!session.isComplete && (!list || statusBusy)) || continuationPending());
-    if (!session) { say.textContent = caption('avatar.thinking'); return; }
+    if (!session) { say.textContent = caption('searcher.thinking'); return; }
     if (session.isComplete) {
-      say.textContent = caption('avatar.solved');
+      say.textContent = caption('searcher.solved');
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'px-btn primary';
@@ -1355,31 +1355,31 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     let pickList = list;
     if (reading && reading.tail.tokens.length) {
       if (tailStep) {
-        say.textContent = caption(tailStep.last ? 'avatar.lastDone' : 'avatar.stepDone', { label: tailStep.label });
+        say.textContent = caption(tailStep.last ? 'searcher.lastDone' : 'searcher.stepDone', { label: tailStep.label });
         return;
       }
       if (!suggestions.some(s => s.kind === 'alg')) {
-        say.textContent = caption(continuationPending() || !shownFinal ? 'avatar.following' : 'avatar.offNode');
+        say.textContent = caption(continuationPending() || !shownFinal ? 'searcher.following' : 'searcher.offNode');
         return;
       }
       // picks that carry on what is typed, when only the continuation has it
       const cont = continuationFor(reading.tail);
       if (cont && list && !prefixMatches(list, reading.tail.tokens, reading.tail.partial, session.isAtRoot).length) pickList = cont;
     }
-    if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'avatar.thinking'); return; }
-    let picks = avatarPicks(pickList, pickContext(session));
+    if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'searcher.thinking'); return; }
+    let picks = searcherPicks(pickList, pickContext(session));
     if (reading && reading.tail.tokens.length) {
       // only picks that start like what is typed
       picks = picks.filter(p => prefixMatches([p.r], reading.tail.tokens, reading.tail.partial, session.isAtRoot).length);
     }
-    say.textContent = caption(!picks.length ? 'avatar.keepGoing' : picks.length > 1 ? 'avatar.greeting' : 'avatar.greetingOne');
+    say.textContent = caption(!picks.length ? 'searcher.keepGoing' : picks.length > 1 ? 'searcher.greeting' : 'searcher.greetingOne');
     picks.forEach((p) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
       const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
-      b.innerHTML = `<span class="tag">${esc(caption(`avatar.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>`;
+      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
       b.addEventListener('mouseenter', () => previewCandidate(p.r));
       b.addEventListener('mouseleave', endPreview);
@@ -1387,17 +1387,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     });
   }
 
-  function bindBuddy() {
-    const sprite = $('buddy-sprite');
-    const buddy = $('buddy');
-    if (!sprite || !buddy) return;
-    if (matchMedia('(max-width: 600px)').matches) { buddy.classList.add('collapsed'); sprite.setAttribute('aria-expanded', 'false'); }
+  function bindSearcher() {
+    const sprite = $('searcher-sprite');
+    const searcher = $('searcher');
+    if (!sprite || !searcher) return;
+    if (matchMedia('(max-width: 600px)').matches) { searcher.classList.add('collapsed'); sprite.setAttribute('aria-expanded', 'false'); }
     sprite.addEventListener('click', () => {
-      const collapsed = buddy.classList.toggle('collapsed');
+      const collapsed = searcher.classList.toggle('collapsed');
       sprite.setAttribute('aria-expanded', String(!collapsed));
     });
-    drawBuddySprites();
-    buddyAnimator.start();
+    drawSearcherSprites();
+    searcherAnimator.start();
   }
 
   // ---------------------------------------------------------------------
@@ -1405,11 +1405,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // ---------------------------------------------------------------------
   async function runCritique() {
     const session = getOrCreateSession(activeIndex);
-    const say = $('buddy-say');
+    const say = $('searcher-say');
     const picksEl = $('picks');
     const actions = $('bubble-actions');
-    const buddy = $('buddy');
-    if (buddy) buddy.classList.remove('collapsed');
+    const searcher = $('searcher');
+    if (searcher) searcher.classList.remove('collapsed');
     $('bubble-title').textContent = caption('critique.title');
     picksEl.innerHTML = '';
     actions.innerHTML = '';
@@ -1458,7 +1458,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     close.type = 'button';
     close.className = 'px-btn';
     close.textContent = 'ok';
-    close.addEventListener('click', () => { critiqueShown = null; renderBuddy(); });
+    close.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
     actions.appendChild(close);
   }
 
@@ -1504,7 +1504,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       cubeTheme();
     }
     if (player) player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
-    drawBuddySprites();
+    drawSearcherSprites();
   }
 
   function bindSettings() {
@@ -1646,7 +1646,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     bindSolutionActions();
     bindEditor();
     bindCube();
-    bindBuddy();
+    bindSearcher();
     bindSettings();
     bindNewScramble();
     const saved = loadPersistedState(crit);

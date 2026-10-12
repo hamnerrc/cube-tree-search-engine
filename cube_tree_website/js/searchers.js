@@ -1,21 +1,21 @@
 /**
- * avatars.js — the solving buddy's sprites (README "Avatar").
+ * searchers.js — the solving tree-searcher's sprites (README "Tree-searcher").
  *
  * PLACEHOLDER ART: 16x16 one-bit sprites drawn in code, in the style of
- * UI_references/avatars_inspo.webp. To use real art, set AVATAR_SHEET to a
- * horizontal sprite sheet (one square cell per avatar, transparent
- * background, ink pixels white): drawAvatar then draws from it and tints it
+ * UI_references/avatars_inspo.webp. To use real art, set SEARCHER_SHEET to a
+ * horizontal sprite sheet (one square cell per tree-searcher, transparent
+ * background, ink pixels white): drawSearcher then draws from it and tints it
  * with the theme's ink colour.
  *
  * Sprite rows: '#' ink, 'x' a cut-out (drawn in the background colour, e.g.
  * eyes), '.' transparent. `blink`: the cells [row, col, char] that change
- * while the buddy blinks (the eyes shut).
+ * while the tree-searcher blinks (the eyes shut).
  */
 'use strict';
 
-const AVATAR_SHEET = null; // e.g. { url: 'img/avatars.png', cell: 16, names: ['ghost', ...] }
+const SEARCHER_SHEET = null; // e.g. { url: 'img/searchers.png', cell: 16, names: ['ghost', ...] }
 
-function cubeBuddyRows() {
+function cubeSearcherRows() {
   const rows = Array.from({ length: 16 }, () => Array(16).fill('.'));
   for (let r = 1; r <= 14; r++) {
     for (let c = 1; c <= 14; c++) rows[r][c] = (r === 5 || r === 10 || c === 5 || c === 10) ? 'x' : '#';
@@ -25,7 +25,7 @@ function cubeBuddyRows() {
   return rows.map(r => r.join(''));
 }
 
-const AVATAR_SPRITES = [
+const SEARCHER_SPRITES = [
   { id: 'ghost', blink: [[5, 4, '#'], [5, 5, '#'], [5, 10, '#'], [5, 11, '#']], rows: [
     '................',
     '.....######.....',
@@ -116,38 +116,38 @@ const AVATAR_SPRITES = [
     '................',
     '................',
   ] },
-  { id: 'cube', blink: [[7, 6, '#'], [7, 9, '#']], rows: cubeBuddyRows() },
+  { id: 'cube', blink: [[7, 6, '#'], [7, 9, '#']], rows: cubeSearcherRows() },
 ];
 
-const AVATAR_COUNT = () => (AVATAR_SHEET && AVATAR_SHEET.names ? AVATAR_SHEET.names.length : AVATAR_SPRITES.length);
+const SEARCHER_COUNT = () => (SEARCHER_SHEET && SEARCHER_SHEET.names ? SEARCHER_SHEET.names.length : SEARCHER_SPRITES.length);
 
-let avatarSheetImage = null;
-function loadAvatarSheet() {
-  if (!AVATAR_SHEET || avatarSheetImage || typeof Image === 'undefined') return avatarSheetImage;
-  avatarSheetImage = new Image();
-  avatarSheetImage.src = AVATAR_SHEET.url;
-  return avatarSheetImage;
+let searcherSheetImage = null;
+function loadSearcherSheet() {
+  if (!SEARCHER_SHEET || searcherSheetImage || typeof Image === 'undefined') return searcherSheetImage;
+  searcherSheetImage = new Image();
+  searcherSheetImage.src = SEARCHER_SHEET.url;
+  return searcherSheetImage;
 }
 
 /**
- * Draws avatar `index` into `canvas` (sized to a multiple of 16 by the
+ * Draws tree-searcher `index` into `canvas` (sized to a multiple of 16 by the
  * caller; drawn pixel-crisp), in `ink` with cut-outs in `paper`.
- * opts (the buddy's animations): blink -- the cut-outs in the top half (the
+ * opts (the tree-searcher's animations): blink -- the cut-outs in the top half (the
  * eyes) drawn shut; shine: { band, colour } -- the ink pixels on the
  * diagonal band (row + column in [band, band + SHINE_WIDTH)) drawn in
  * `colour`, so a shine runs pixel by pixel across the sprite as band grows.
  */
 const SHINE_WIDTH = 3;
-function drawAvatar(canvas, index, ink, paper, opts = {}) {
+function drawSearcher(canvas, index, ink, paper, opts = {}) {
   const ctx = canvas.getContext('2d');
-  const n = AVATAR_COUNT();
+  const n = SEARCHER_COUNT();
   const i = ((Number(index) || 0) % n + n) % n;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const img = loadAvatarSheet();
+  const img = loadSearcherSheet();
   if (img) {
     const draw = () => {
-      const cell = AVATAR_SHEET.cell || 16;
+      const cell = SEARCHER_SHEET.cell || 16;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, i * cell, 0, cell, cell, 0, 0, canvas.width, canvas.height);
       ctx.globalCompositeOperation = 'source-in';
@@ -170,8 +170,8 @@ function drawAvatar(canvas, index, ink, paper, opts = {}) {
     if (img.complete && img.naturalWidth) draw(); else img.addEventListener('load', draw, { once: true });
     return;
   }
-  const rows = AVATAR_SPRITES[i].rows.map(r => r.split(''));
-  if (opts.blink) for (const [r, c, ch] of AVATAR_SPRITES[i].blink || []) rows[r][c] = ch;
+  const rows = SEARCHER_SPRITES[i].rows.map(r => r.split(''));
+  if (opts.blink) for (const [r, c, ch] of SEARCHER_SPRITES[i].blink || []) rows[r][c] = ch;
   const px = canvas.width / 16;
   for (let r = 0; r < 16; r++) {
     for (let c = 0; c < 16; c++) {
@@ -185,5 +185,5 @@ function drawAvatar(canvas, index, ink, paper, opts = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { AVATAR_SPRITES, AVATAR_COUNT, drawAvatar };
+  module.exports = { SEARCHER_SPRITES, SEARCHER_COUNT, drawSearcher };
 }

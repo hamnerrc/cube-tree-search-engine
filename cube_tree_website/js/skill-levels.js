@@ -74,7 +74,7 @@ function goalsFor(level) {
   return out;
 }
 
-/** Is goal `id` one the avatar may bring up for this profile (recommended, or chosen)? */
+/** Is goal `id` one the tree-searcher may bring up for this profile (recommended, or chosen)? */
 function goalAllowed(id, answers) {
   const a = answers || {};
   if ((a.goals || []).includes(id)) return true;

@@ -23,7 +23,7 @@ pair at once, a multislot two pairs at once).
 1. The solver searches the DAG edges leaving the **current node** (at first,
    the unsolved node).
 2. Each result is **one DAG edge**: the next step, never a whole solution.
-3. The user picks a result (Tab, a click, the avatar) or types a step of
+3. The user picks a result (Tab, a click, the tree-searcher) or types a step of
    their own; it is committed, the cube advances, and the solver searches
    again from the new node.
 4. This repeats until Cross + F2L is solved.
@@ -35,7 +35,7 @@ pixel fonts, lowercase text (move notation keeps its case). **Few lines**:
 the cube floats on the page, the scramble and the solution are labelled
 text, and only the cube's stage and the solution bar carry frames, drawn
 as **corner brackets** (no long edges, as in `UI_inspo.png`'s selection
-marks); the buttons around them are plain text until hovered; the buddy's
+marks); the buttons around them are plain text until hovered; the tree-searcher's
 speech bubble is the one box. Four **themes**, two dark and two light, each
 from a reference: ink (black and white), violet (purple and white, a green
 accent), paper (black ink on paper) and mint (a soft pixel palette); the
@@ -45,7 +45,7 @@ pixel art for visibility" setting: about 2.5× the resolution) or smooth
 
 ### Captions
 
-Every sentence the interface shows a user (onboarding, the avatar's
+Every sentence the interface shows a user (onboarding, the tree-searcher's
 reasons, the critique, the info dialog, empty and error states) is a key in
 `js/captions.js`. The current texts are placeholders: the developer writes
 them by hand; code never writes user-facing prose itself.

@@ -3,7 +3,7 @@
  * skill-levels.js: speed brackets, which learning goals each bracket is
  * offered (README "Onboarding": only what fits the solver's level, the rest
  * behind "show all"), and how answers set the existing settings. Also: every
- * caption key the onboarding data names exists, and every avatar sprite is
+ * caption key the onboarding data names exists, and every tree-searcher sprite is
  * 16x16.
  */
 'use strict';
@@ -12,7 +12,7 @@ const path = require('path');
 const js = f => require(path.join(__dirname, '..', 'js', f));
 const { SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, levelFor, goalsFor, goalAllowed, settingsFromAnswers } = js('skill-levels.js');
 const { CAPTIONS, INFO_SECTION_KEYS, caption } = js('captions.js');
-const { AVATAR_SPRITES } = js('avatars.js');
+const { SEARCHER_SPRITES } = js('searchers.js');
 
 let failures = 0;
 const test = (name, fn) => {
@@ -81,9 +81,9 @@ test('every caption key named by the onboarding data and the info dialog exists'
   assert.strictEqual(caption('no.such.key'), 'no.such.key');
 });
 
-test('avatar sprites are 16x16 of #, x and .', () => {
-  assert.ok(AVATAR_SPRITES.length >= 6);
-  for (const s of AVATAR_SPRITES) {
+test('tree-searcher sprites are 16x16 of #, x and .', () => {
+  assert.ok(SEARCHER_SPRITES.length >= 6);
+  for (const s of SEARCHER_SPRITES) {
     assert.strictEqual(s.rows.length, 16, s.id);
     for (const r of s.rows) assert.ok(/^[#x.]{16}$/.test(r), `${s.id}: ${r}`);
   }

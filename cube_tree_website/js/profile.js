@@ -74,6 +74,10 @@ function createProfileStore(storage = defaultProfileStorage()) {
     try { state = JSON.parse(safeGet(PROFILE_STORE_KEY) || 'null'); } catch (err) { state = null; }
     if (!state || typeof state !== 'object' || !state.profiles) state = { version: PROFILE_STORE_VERSION, activeId: null, profiles: {} };
     if (state.activeId && !state.profiles[state.activeId]) state.activeId = null;
+    // profiles saved before the rename kept their pick as `avatar`
+    for (const p of Object.values(state.profiles)) {
+      if (p && p.searcher === undefined && p.avatar !== undefined) { p.searcher = p.avatar; delete p.avatar; }
+    }
     return state;
   }
   function save(state) { safeSet(PROFILE_STORE_KEY, JSON.stringify(state)); }
@@ -99,7 +103,7 @@ function createProfileStore(storage = defaultProfileStorage()) {
       const profile = {
         id,
         name: String(fields.name || 'cuber').slice(0, 24),
-        avatar: fields.avatar || 0,
+        searcher: fields.searcher || 0,
         createdAt: Date.now(),
         onboarded: !!fields.onboarded,
         answers: { ...(fields.answers || {}) },
@@ -179,7 +183,7 @@ function createProfileStore(storage = defaultProfileStorage()) {
       s.profiles[id] = {
         id,
         name: String(p.name || 'cuber').slice(0, 24),
-        avatar: p.avatar || 0,
+        searcher: p.searcher || p.avatar || 0,
         createdAt: Date.now(),
         onboarded: !!p.onboarded,
         answers: { ...(p.answers || {}) },
