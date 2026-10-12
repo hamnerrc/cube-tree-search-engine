@@ -12,7 +12,8 @@ point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 ## Where we left off
 
 **Thirty-fifth pass (2026-10-11): the UI overhaul.** The developer's
-blueprint arrived as `cube_tree_website/UI_references/` (CubeDB
+blueprint arrived as `cube_tree_website/UI_references/` (local only and
+git-ignored: partly third-party art, kept out of the public repo; CubeDB
 screenshots, one-bit pixel art and UI kit, pixel avatars, two pixel cubes,
 Pokémon Showdown) plus a brief; the agent composes the visuals from those
 references (developer decisions: 2 dark + 2 light themes; the results table
@@ -386,7 +387,7 @@ every fast suite passed at the start.
 ```
 cube_tree_website/          the site (GitHub Pages root)
   index.html, solver.html   sign-in + onboarding, the solving screen
-  UI_references/            the developer's design references (blueprint)
+  UI_references/            the developer's design references (blueprint; local only, git-ignored)
   js/profile.js             local profiles, per-profile keys, themes
   js/onboarding.js, js/skill-levels.js   onboarding, brackets, answers -> settings
   js/captions.js            every user-facing sentence (developer's copy)

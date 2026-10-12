@@ -548,7 +548,8 @@ engines. Notices and the list of changes to vendored code are in
 - Fonts: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) and
   [VT323](https://fonts.google.com/specimen/VT323) (SIL Open Font License),
   loaded from Google Fonts.
-- Interface references: `UI_references/` (screenshots and art the developer
-  collected as the design brief; not shipped as part of the site).
+- Interface references: `UI_references/` (screenshots and third-party art the
+  developer collected as the design brief; kept on the developer's machine
+  only, git-ignored and not in the public repository).
 - Other code (DAG generator, UI, cube renderer, scoring plumbing) was
   written with AI assistance.

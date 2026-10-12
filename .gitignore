@@ -15,3 +15,6 @@
 __pycache__/
 *.pyc
 
+
+# Design inspiration screenshots (third-party art; kept local, not published)
+cube_tree_website/UI_references/
