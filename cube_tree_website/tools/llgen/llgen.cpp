@@ -154,6 +154,27 @@ static inline S applyTok(const S &s, int t) {
   u.pb = plMove[(size_t)s.pb * MAXT + t]; u.ob = s.ob ^ plFlip[(size_t)s.pb * MAXT + t];
   return u;
 }
+
+// The search's move tables for the active move set only, its K tokens side
+// by side per coordinate (a node's children read one block each instead of
+// K scattered entries); local token k is TOKS[k].
+static int K = 0;
+static vector<int> KTOK;
+static vector<uint16_t> kCp, kTw;
+static vector<int32_t> kPl;
+static vector<uint8_t> kFlip;
+static void compactTables(const vector<int> &toks) {
+  if ((int)toks.size() == K && toks == KTOK) return;
+  K = toks.size(); KTOK = toks;
+  kCp.resize((size_t)NCP * K); kTw.resize((size_t)NTW * K);
+  kPl.resize((size_t)NPL * K); kFlip.resize((size_t)NPL * K);
+  for (int r = 0; r < NCP; r++) for (int k = 0; k < K; k++) kCp[(size_t)r * K + k] = cpMove[(size_t)r * MAXT + toks[k]];
+  for (int r = 0; r < NTW; r++) for (int k = 0; k < K; k++) kTw[(size_t)r * K + k] = twMove[(size_t)r * MAXT + toks[k]];
+  for (int r = 0; r < NPL; r++) for (int k = 0; k < K; k++) {
+    kPl[(size_t)r * K + k] = plMove[(size_t)r * MAXT + toks[k]];
+    kFlip[(size_t)r * K + k] = plFlip[(size_t)r * MAXT + toks[k]];
+  }
+}
 static S fromCubie(const Cubie &c) {
   S s; s.cp = cpRank(c.cp); s.tw = twRank(c.co);
   for (int t = 0; t < 2; t++) {
@@ -335,12 +356,27 @@ static void emit(int len) {
 // collect every solution of length <= bound (all), or stop at the first
 static bool dfs(const S &s, int frame, int g, int bound, int lastAxis, bool all) {
   if (++nodes > nodeLimit) { truncated = true; return false; }
-  for (int t : toks) {
+  const uint16_t *cpRow = &kCp[(size_t)s.cp * K], *twRow = &kTw[(size_t)s.tw * K];
+  const int32_t *paRow = &kPl[(size_t)s.pa * K], *pbRow = &kPl[(size_t)s.pb * K];
+  const uint8_t *faRow = &kFlip[(size_t)s.pa * K], *fbRow = &kFlip[(size_t)s.pb * K];
+  for (int k = 0; k < K; k++) {
+    const int t = KTOK[k];
     if (TOKAXIS[t] == lastAxis) continue;
     if (g == 0 && TOKPUREU[t]) continue;           // the pre-AUF is the start's
-    S u = applyTok(s, t);
-    int ng = g + 1, hu = h(u);
-    if (ng + hu > bound) continue;
+    S u;
+    u.cp = cpRow[k]; u.tw = twRow[k];
+    u.pa = paRow[k]; u.oa = s.oa ^ faRow[k];
+    u.pb = pbRow[k]; u.ob = s.ob ^ fbRow[k];
+    // the three tables one at a time: most children are cut by the first
+    // (15 = unreachable in this move set)
+    const int ng = g + 1, room = bound - ng;
+    const int hc = cur->corner.get(cIdx(u.cp, u.tw));
+    if (hc > room || hc == 15) continue;
+    const int ha = cur->edgeA.get(eIdx(u.pa, u.oa));
+    if (ha > room || ha == 15) continue;
+    const int hb = cur->edgeB.get(eIdx(u.pb, u.ob));
+    if (hb > room || hb == 15) continue;
+    const int hu = max(hc, max(ha, hb));
     int nf = NF[frame][t];
     path[pathLen++] = t;
     if (hu == 0 && !TOKPUREU[t] && cur->exact.count(fullKey(u, nf))) { // never end on an AUF
@@ -381,6 +417,7 @@ int main() {
       vector<S> starts;
       for (int i = 0; i < n; i++) starts.push_back(fromCubie(readCubie(cin)));
       cur = tablesFor(setName, goal, toks);
+      compactTables(toks);
       int lo = 99;
       for (auto &s : starts) lo = min(lo, h(s));
       nodes = 0; truncated = false; found = 0; outBuf.clear();

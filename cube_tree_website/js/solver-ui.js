@@ -1096,7 +1096,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
    * like any step. Memoised per node.
    */
   const lastSlotMemo = new Map();
-  const LS_ROTATIONS = ['', 'y', 'y2', "y'"];
   const LS_PER_SET = 4; // algs per set and case
   function lastSlotRows() {
     const session = sessions.get(activeIndex);
@@ -1106,33 +1105,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (lastSlotMemo.has(key)) return lastSlotMemo.get(key);
     const sets = ['zbls', 'ols'].filter(id => LastLayer.LOADED[id]);
     if (sets.length < 2) { ensureLastLayerData(); return []; }
-    const here = AlgSets.labelsOf(replayFacelets(session.scramble, session.rotation, session.scoredPath, ''));
     const rows = [];
-    const seen = new Set();
-    // the sets are for the front-right slot: a y brings the slot there, or
-    // the mirror image (left-hand algs for a left slot, mirrored back)
-    for (const mirrored of [false, true]) for (const rot of LS_ROTATIONS) {
-      const base = mirrored ? AlgSets.mirrorLabels(here) : here;
-      const c = AlgSets.toCubie(AlgSets.labelsOf(rot ? applyAlgorithm(base, rot) : base));
-      if (!c || !AlgSets.lsReady(c)) continue;
-      for (const setId of sets) {
-        const d = LastLayer.LOADED[setId];
-        const hit = AlgSets.recognize(setId, d.index, c);
-        if (!hit) continue;
-        const kase = d.data.cases[hit.i];
-        for (const a of kase.algs.slice(0, LS_PER_SET)) {
-          const w = AlgSets.algFor(a, hit, setId);
-          const own = [rot, ...w.text.split(' ')].filter(Boolean).join(' ');
-          const toks = (mirrored ? AlgSets.mirrorAlg(own) : own).split(' ');
-          if (seen.has(toks.join(' '))) continue;
-          seen.add(toks.join(' '));
-          const row = userStepRow(session, toks);
-          if (!row) continue;
-          row.coreAlg = toks.join(' ');
-          row.lastSlot = { setId, name: AlgSets.caseTitle(d.data.name, kase.name) };
-          rows.push(row);
-        }
-      }
+    const here = replayFacelets(session.scramble, session.rotation, session.scoredPath, '');
+    for (const ls of LastLayer.lastSlotAlgs(here, LastLayer.LOADED, LS_PER_SET)) {
+      const row = userStepRow(session, ls.toks);
+      if (!row) continue;
+      row.coreAlg = ls.toks.join(' ');
+      row.lastSlot = { setId: ls.setId, name: ls.name };
+      rows.push(row);
     }
     rows.sort((a, b) => a.tpp - b.tpp);
     lastSlotMemo.set(key, rows);

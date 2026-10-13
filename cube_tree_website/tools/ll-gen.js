@@ -22,7 +22,7 @@ Object.assign(global, require(path.join(ROOT, 'js', 'facelet-cube.js')));
 const { AlgSets } = require(path.join(ROOT, 'js', 'alg-sets.js'));
 
 const WORK = path.resolve(process.env.LLGEN_WORK || path.join(ROOT, 'llgen-work'));
-const BIN = path.join(WORK, 'llgen');
+const BIN = process.env.LLGEN_BIN || path.join(WORK, 'llgen');
 
 // The move sets searched (token families), from the groups the community's
 // top algorithms use (tools note in PROJECT_STATUS "Algorithm sets").
@@ -41,7 +41,7 @@ const PLAN = {
   zbls: { maxLen: 16, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 2], ['RUFD', 1], ['RUDr', 1], ['RUB', 1]] },
 };
 const MAX_SOLS = 20000;     // per case and move set
-const NODE_LIMIT = 1.5e8;   // per case and move set (~1 min)
+const NODE_LIMIT = Number(process.env.LLGEN_NODES) || 1.5e8; // per case and move set (~1 min)
 
 const TOKENS = [];
 for (const f of 'URFDLBurfdlbMES') for (const s of ['', "'", '2']) TOKENS.push(f + s);
@@ -118,7 +118,8 @@ function runLlgen(lines, onCase) {
       }
     });
     child.on('error', reject);
-    child.on('close', code => (code ? reject(new Error(`llgen exited ${code}`)) : resolve()));
+    // a signal (killed, crashed) is a failure too: its cases were not all written
+    child.on('close', (code, signal) => (code || signal ? reject(new Error(`llgen exited ${code === null ? signal : code}`)) : resolve()));
     child.stdin.write(header());
     for (const l of lines) child.stdin.write(l);
     child.stdin.end();
@@ -141,25 +142,34 @@ async function runSet(setId, from = 0, to = Infinity) {
   for (let i = from; i < Math.min(to, cases.length); i++) {
     if (!fs.existsSync(path.join(dir, `${i}.json`))) todo.push(i);
   }
-  // grouped by move set, so each move set's tables are loaded once
+  // grouped by move set, so each move set's tables are loaded once; a move
+  // set's result already on disk is kept (a run can be stopped and resumed)
   const plan = PLAN[setId];
   for (const [ms, slack] of plan.sets) {
     const lines = [];
-    for (const i of todo) lines.push(caseLines(setId, i, cases[i].rep, { maxLen: plan.maxLen, sets: [[ms, slack]] })[0]);
+    for (const i of todo) {
+      if (fs.existsSync(path.join(dir, `${i}.${ms}.json`))) continue;
+      lines.push(caseLines(setId, i, cases[i].rep, { maxLen: plan.maxLen, sets: [[ms, slack]] })[0]);
+    }
+    if (!lines.length) continue;
     const t0 = Date.now();
     await runLlgen(lines, (r) => {
       const i = +r.id.split(':')[1];
       const file = path.join(dir, `${i}.${ms}.json`);
       fs.writeFileSync(file, JSON.stringify({ ms, opt: r.opt, bound: r.bound, count: r.count, truncated: r.truncated, nodes: r.nodes, algs: r.sols.map(([a, alg]) => [PRE[a], alg]) }));
     });
-    console.log(`${setId} ${ms}: ${todo.length} cases, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    console.log(`${setId} ${ms}: ${lines.length} cases, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
-  // one file per case: every move set's solutions
+  // one file per case: every move set's solutions (a case missing a move
+  // set waits for the next run)
+  let incomplete = 0;
   for (const i of todo) {
-    const parts = plan.sets.map(([ms]) => JSON.parse(fs.readFileSync(path.join(dir, `${i}.${ms}.json`), 'utf8')));
-    fs.writeFileSync(path.join(dir, `${i}.json`), JSON.stringify(parts));
-    for (const [ms] of plan.sets) fs.unlinkSync(path.join(dir, `${i}.${ms}.json`));
+    const files = plan.sets.map(([ms]) => path.join(dir, `${i}.${ms}.json`));
+    if (!files.every(f => fs.existsSync(f))) { incomplete++; continue; }
+    fs.writeFileSync(path.join(dir, `${i}.json`), JSON.stringify(files.map(f => JSON.parse(fs.readFileSync(f, 'utf8')))));
+    for (const f of files) fs.unlinkSync(f);
   }
+  if (incomplete) console.log(`${setId}: ${incomplete} cases still miss a move set: run again`);
 }
 
 async function oneCase(setId, index) {

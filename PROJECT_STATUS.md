@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-11 (thirty-sixth pass).*
+*Last updated 2026-10-12 (thirty-seventh pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,35 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-seventh pass (2026-10-12): the last slot and the last layer.**
+Tree clean at the start (only the developer's `docs/metric_info.txt`
+untracked, left out of every commit), every fast suite passing. The
+developer asked for OLL, PLL, COLL, OLS, ZBLS and ZBLL: a community
+baseline, generated algs that rank better under the internal ranking, and
+a CubeDB replacement with autocomplete. Built (details in "Algorithm sets"
+below):
+
+1. **Cases** (`js/alg-sets.js`): every set enumerated from the states it
+   allows, AUF classes; counts checked against the known numbers (OLL 57,
+   PLL 21, COLL 42, ZBLL 472, VLS 216, ZBLS 302) and every SpeedCubeDB case
+   maps to exactly one class. Recognition, case pictures, mirror.
+2. **Community baseline** (`tools/algdb.js` -> `data/ll/scdb.json`):
+   SpeedCubeDB's OLL, PLL, COLL, ZBLL, VLS/WV, SV and F2L pages (names,
+   setups, algs, votes); 3,043 of 3,045 algs replay on their case (one
+   needed a U2 pre-AUF, one is a 50-move joke).
+3. **Generator** (`tools/llgen/llgen.cpp`, `tools/ll-gen.js`): every
+   solution up to a few moves past the shortest in each human move set,
+   per case; ~3.5 h of CPU on this machine for all six sets.
+4. **Ranking** (`AlgSets.llScore`, `tools/ll-build.js`): the step
+   ranking's formula with last-layer constants fitted on the community's
+   votes: 79.4% agreement on clearly ordered pairs (the F2L constants:
+   68.8%).
+5. **The algs page** (`algs.html`, `js/algs-ui.js`, `js/case-diagram.js`)
+   and **the solving screen** (`js/last-layer.js`, `solver-ui.js`): last-
+   layer steps read by replay and named by case, ghost/Tab and tree-
+   searcher picks in the solver's method, ZBLS/OLS at the last pair (left
+   slots mirrored), a last-layer critique, links between the pages.
 
 **Rename (2026-10-11, developer):** the solving companion is **the
 tree-searcher** everywhere -- captions, aria labels, docs and code
@@ -458,6 +487,12 @@ cube_tree_website/          the site (GitHub Pages root)
   js/captions.js            every user-facing sentence (developer's copy)
   js/searchers.js             placeholder tree-searcher sprites (SEARCHER_SHEET hook)
   js/pixel-cube.js          pixel-art cube renderer + playback
+  algs.html                 the alg sets page (OLL PLL COLL ZBLL OLS ZBLS)
+  js/alg-sets.js            the sets: cubies, cases, recognition, mirror, llScore
+  js/algs-ui.js, js/case-diagram.js   the algs page, pixel case pictures
+  js/last-layer.js          the last layer on the solving screen: steps by replay, suggestions, critique
+  data/ll/<set>.json        each set's cases and ranked algs (tools/ll-build.js)
+  data/ll/scdb.json         SpeedCubeDB's algs, names and votes (tools/algdb.js)
   js/solve-editor.js        solution bar: text -> steps by replay, prefix matches
   js/suggest.js             the tree-searcher's three picks and reasons
   js/critique.js            whole-solution critique
@@ -489,6 +524,12 @@ python3 cube_tree_website/tools/test_tree_gen.py
 for t in cube_tree_website/test/*.test.js; do node $t || echo FAIL $t; done
 ```
 
+Alg sets: `alg-sets` (cubie model vs the facelet cube, the human view
+llgen.cpp relies on, mirror, case counts, every SpeedCubeDB case mapped,
+every alg in data/ll/*.json replayed with its AUFs, recognition of AUF
+variants), `last-layer` (stages, steps by replay, labels, every
+suggestion solves its cube, critique).
+
 UI suites among them: `profile`, `onboarding` (brackets, captions, sprites),
 `pixel-cube` (geometry vs MOVE_TABLE), `solve-editor` (segmentation vs the
 pro segmenter), `suggest` (tree-searcher picks), `critique` (fake search).
@@ -506,6 +547,12 @@ the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 `crossSolver/test/{dag-search,slot-mapping,color-orientation}.test.js`.
 Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
+
+Alg-set tools: `algdb.js fetch|parse` (SpeedCubeDB import), `ll-gen.js
+build|run <set>|case <set> <i>` (the generator; work dir `$LLGEN_WORK`,
+default `cube_tree_website/llgen-work/`, git-ignored: binary, ~2 GB of
+pruning tables, raw solutions), `ll-build.js eval|build [sets]` (rank,
+replay, write data/ll/; eval = agreement with the votes).
 
 Tools: `split-check.js` (multislot split == the whole engine call),
 `tune-alg-speed.js` (tuning, below), `pair-choice-pro.js` (pros'
@@ -542,6 +589,8 @@ iPad Air 5, thirty-second pass).
   look-ahead, search settings, scrambles, profile), copy / copy all / Cubedb,
   undo, reload persistence (rows and text), background searching with the
   active scramble first.
+- **Alg sets:** OLL, PLL, COLL, ZBLL, OLS, ZBLS (see "Algorithm sets"):
+  the algs page and the last layer / last slot on the solving screen.
 - **Engines:** prune tables shared between workers and kept in IndexedDB per
   `ENGINE_VERSION`; the cross engine worker sends solutions in batches
   (`ENGINE_GLUE_VERSION`, its own URL parameter so the table cache stays).
@@ -593,6 +642,88 @@ iPad Air 5, thirty-second pass).
   search exactly as written 89.7% (limit 11: 92.8%), first steps 66.0%;
   pro_references 45/47 later, 11/19 first (the rest are longer than the
   limits).
+
+## Algorithm sets
+
+README "Algorithm sets" is the spec. Thirty-seventh pass.
+
+**Cases.** `AlgSets.enumerateCases(set)` builds every state the set allows
+(last layer: 24 x 27 x 24 x 8 / 2 states; ZBLS: the FR pair anywhere in
+the U layer or its slot x every edge flip; OLS: X * (R U R') and
+X * (R U' R') for every LL orientation X) and groups them by the set's key
+under pre-AUF (s * U^a) and post-AUF (U^b * s). Counts: OLL 57, PLL 21,
+COLL 42, ZBLL 472, OLS 432 (VLS 216 + HLS 216), ZBLS 302 (305 minus the
+3 "pair solved, only edges flipped" classes the standard count leaves
+out). Names: SpeedCubeDB's (OLL n, PLL letters, COLL "AS 1", "ZBLL T 12",
+WV/VLS n, SV n); ours for the rest: COLL "O adjacent / O diagonal", HLS
+28-216 grouped by flipped edges like VLS, ZBLS "F2L n · flip UF UB" (the
+pair placement named by SpeedCubeDB's F2L page, the flipped U-layer edges
+in that orientation). Cases are listed in the database's order.
+
+**Cubie model.** Read off facelet-cube.js: positions' facelets checked to
+sit on their faces, round trips with every token kind, composition ==
+replay. llgen.cpp works in the solver's view of the cube (pieces by
+colour, fixed positions, centres tracked as a frame); its relation to the
+centre-relative state is `human = rot * state` (rot first: 300/300 random
+algs; the other order 9/300). A leading y on a last-layer case equals a U
+turn (F2L symmetric), so database "y A" is stored as pre-AUF U, then A
+(checked on every case). Mirror: the facelet reflection from the position
+names, each token's mirror found on the cube (`mirrorAlg("R U R' U'")` =
+`L' U' L U`); left-slot last pairs use mirrored ZBLS/OLS algs.
+
+**Generation** (`tools/ll-gen.js run <set>`). For each case, the four
+pre-AUF starts; for each move set of the set's plan, IDA* to the shortest
+solution in that set, then every solution up to `slack` moves longer
+(never starting or ending with U; U stays on top at the end). Pruning:
+three pattern databases (8 corners 88M, two halves of the edges 42.6M
+each) built by BFS **in the move set itself** from every goal state in
+every final frame the set can reach (the full-cube tables were 25-50x
+weaker: T perm RUD 6.9M nodes -> 281k). Tables ~86 MB per move set and
+goal, cached on disk. A first attempt searched the normalised cube with
+all 27 face/slice turns: fast near the optimum, but optimal algs are far
+from human ones (T perm 10 HTM vs the 14-move standard; ZBLL optimum + 1:
+96 solutions), so it was replaced. Plans (move set, slack): OLL RUF 3,
+RUFr 3, RUFl 2, LUF 3, LUFl 2, RUD/RUL/RUFMr/RUFSf/RUFD 2; PLL RU 3, RUF,
+RUD, RUL, RUFD, RUFr, RUDr, RUMr 2, RUFL, RUB 1; COLL similar; ZBLL RU 3,
+RUD/RUL 2, RUF/RUFD/RUFr/RUDr/RUMr 1; OLS and ZBLS RUF/RUD/RUL/RUFr 2, the
+rest 1. R, U and D never flip an edge, so in RUD/RUL only the 54
+oriented-edge OLS cases are solvable (the tables say so at once).
+
+**Ranking** (`AlgSets.llScore`). The step ranking's formula without the
+AUFs, constants fitted for the last layer on SpeedCubeDB's votes (two
+folds of cases; agreement on pairs whose votes differ clearly, by 2+ and
+25%+, / the top-voted alg ranked first):
+
+| score | pairs | top-voted first |
+|---|---|---|
+| move count (STM) | 52.8% | 16.4% |
+| MCC alone | 63.0 | 40.4 |
+| the F2L step ranking as is (MCC + penalties + F2L naturalness) | 68.8 | 48.7 |
+| + 3 per left-hand turn | 72.6 | 54.5 |
+| last-layer naturalness model (leave-one-case-out), left 2 | 77.2 | 61.0 |
+| **used**: + last-layer move penalties (D 1.75, F 2.25, B 3.5, r/l 0, u/d/f/b 3.5, slices 3.5), naturalness 1.25, left 2.5 | **79.4** | **63.4** |
+
+Folds of the used constants: 80.0 / 65.6 and 78.7 / 61.0; each fold's own
+coordinate fit agreed on no r/l penalty, D about 2 and naturalness
+1.25-1.5. Rejected: per-move terms on top of the F2L naturalness (did not
+hold across folds), a lower slice penalty (on the 335 pairs of a slice alg
+and a face-turn alg the votes favour face turns: 74.3% at 0, 75.8% at
+3.5), a cheaper rotation (no effect on any pair). The naturalness model is
+a trigram over the 2,986 verified community algs; a case is always ranked
+with a model that leaves its own algs out (`ll-build.js llModel`), so its
+community algs get no in-sample advantage over generated ones. The F2L
+model had priced slice PLLs far down (M2 U M2 U2 M2 U M2: +88 from
+naturalness vs 18 from MCC). What the votes cannot judge: a generated alg
+against a community one (generated algs have no votes); the A perms' x
+algs rank ~14th behind RU+D algs. Every list keeps the community's algs
+(up to 4) and the pages show the community favourite next to the fastest.
+
+**Build** (`tools/ll-build.js build`): community algs (notation
+normalised, pre-AUF found by replay) and every raw generated solution are
+replayed on the case; the 12 best by llScore plus the community's are
+kept with pre/post-AUF, score (never shown), source and votes.
+
+ALGSET_STATS_TABLE
 
 ## Complete search
 
@@ -988,7 +1119,18 @@ planned on them unless the developer asks.
 
 0. **Visual redesign** -- DONE (thirty-fifth pass, from UI_references/).
    Waiting on the developer: captions.js copy, tree-searcher art, bracket
-   thresholds. Last layer: not to be started until the developer asks.
+   thresholds.
+00. **Alg sets** -- built (thirty-seventh pass). For the developer's audit:
+   the ranking of generated against community algs cannot be checked on
+   votes (A perms: x R' U R' D2 R U' R' D2 R2 x' ranks ~14th behind RU+D
+   algs; H and Z: RU algs ahead of the M-slice ones, which MCC itself
+   rates faster -- the slice penalty, fitted on the votes, decides); the
+   new captions (`algs.*`, `searcher.ll.*`, `reason.ll.*`, `critique.ll.*`,
+   `info.lastlayer.*`) are drafts. Levers if wanted: more move sets or
+   slack for ZBLL (RUF slack 1 found ~12 solutions per case), trailing
+   rotations free after the last alg of a solve, a vote-weighted pick
+   among near-equal algs. Not built (not asked): other sets (1LLL, OLLCP,
+   EOLL, WV-only pages), a last-layer move in the F2L search itself.
 1. **Speed** -- DONE (user goal, thirtieth/thirty-first pass: ~10 s per step,
    optimality kept). Browser, this 2-core machine: xcross + xxcross every
    step <= 8.5 s; default settings (cross only) first steps <= 4.1 s, later

@@ -203,6 +203,7 @@
     grid.innerHTML = '';
     if (!d) { grid.textContent = caption('algs.loading'); return; }
     $('set-title').textContent = d.title;
+    $('set-legend').textContent = caption('algs.legend');
     renderGroups(d);
     d.cases.forEach((c, i) => { if (!view.group || c.group === view.group) grid.appendChild(tile(view.set, i)); });
     [...$('set-tabs').children].forEach((b, k) => b.setAttribute('aria-selected', String(SET_IDS[k] === view.set)));
@@ -230,6 +231,7 @@
     grid.innerHTML = '';
     $('group-chips').innerHTML = '';
     $('set-title').textContent = '';
+    $('set-legend').textContent = '';
     const hits = [];
     SET_IDS.forEach((setId, si) => {
       const d = DATA[setId];
@@ -249,6 +251,7 @@
     $('case-grid').hidden = true;
     $('group-chips').innerHTML = '';
     $('set-title').textContent = '';
+    $('set-legend').textContent = '';
     list.hidden = false;
     resetPictures();
     list.innerHTML = '';
@@ -343,6 +346,8 @@
     input.addEventListener('input', updateSearch);
     input.addEventListener('focus', () => renderGhost(typedNow));
     input.addEventListener('blur', () => renderGhost(typedNow));
+    // the ghost only shows with the caret at the end
+    for (const ev of ['click', 'keyup', 'select']) input.addEventListener(ev, () => renderGhost(typedNow));
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && typedNow && matches.length) {
         e.preventDefault();

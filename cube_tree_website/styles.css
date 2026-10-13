@@ -602,6 +602,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .search-note .link-btn { font-size: inherit; color: var(--ink); }
 .set-title { color: var(--dim); font-size: 18px; }
 .set-title:empty { display: none; }
+.set-legend { color: var(--dim); font-size: 16px; }
+.set-legend:empty { display: none; }
 .group-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .group-chips:empty { display: none; }
 .chip { background: none; border: var(--px) solid transparent; padding: 1px 8px 2px; cursor: pointer; color: var(--dim); font-size: 19px; }
@@ -658,6 +660,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
     .case-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
     .case-tile canvas { width: 72px; height: 72px; }
     .page-nav { margin-left: 4px; }
+    .group-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+    .group-chips::-webkit-scrollbar { display: none; }
+    .chip { white-space: nowrap; flex: 0 0 auto; }
 }
 
 /* ---- phones ------------------------------------------------------------- */

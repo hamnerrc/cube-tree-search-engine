@@ -153,7 +153,6 @@ const OUT_DIR = path.join(ROOT, 'data', 'll');
 const POS = ['UR', 'UF', 'UL', 'UB'];
 const flipDesc = c => [0, 1, 2, 3].filter(p => c.ep[p] < 4 && c.eo[p]).map(p => POS[p]).join(' ');
 const pairKey = (c) => { const pc = c.cp.indexOf(4), pe = c.ep.indexOf(8); return `${pc}/${c.co[pc]} ${pe}/${c.eo[pe]}`; };
-const EO_GROUPS = ['', 'UF', 'UL', 'UB', 'UF UL', 'UL UB', 'UF UB', 'UF UL UB'];
 const VLS_PAGE_GROUP = { WV: 'WV', VLSUF: 'VLS UF', VLSUL: 'VLS UL', VLSUB: 'VLS UB', VLSUFUL: 'VLS UF UL', VLSUBUL: 'VLS UL UB', VLSUFUB: 'VLS UF UB', VLSNE: 'VLS no edges' };
 const zbllGroup = page => page.replace(/^ZBLL/, '');
 
@@ -196,11 +195,14 @@ function namedCases(setId) {
     const svPair = pairKey(sv.state);
     const fresh = out.filter(c => !c.name);
     for (const c of fresh) c.state = preRotated(c.state, s => pairKey(s) === svPair);
-    fresh.sort((a, b) => EO_GROUPS.indexOf(flipDesc(a.state)) - EO_GROUPS.indexOf(flipDesc(b.state))
+    // like VLS's subsets: by the flipped LL edges (one, two, all three)
+    const flips = c => flipDesc(c.state).split(' ').filter(Boolean);
+    const posKey = c => flips(c).map(p => POS.indexOf(p)).join('');
+    fresh.sort((a, b) => flips(a).length - flips(b).length || posKey(a).localeCompare(posKey(b))
       || a.state.co.join('').localeCompare(b.state.co.join('')));
     fresh.forEach((c, k) => {
-      const f = flipDesc(c.state);
-      Object.assign(c, { name: `HLS ${28 + k}`, group: f === 'UF UL UB' ? 'HLS no edges' : `HLS ${f}`, order: 1e6 + k });
+      const f = flips(c);
+      Object.assign(c, { name: `HLS ${28 + k}`, group: f.length === 3 ? 'HLS no edges' : `HLS ${f.join(' ')}`, order: 1e6 + k });
     });
   }
   // the database's order (OLL 1-57, ZBLL by subset and number...); cases it

@@ -31,11 +31,22 @@ test('stages: done, auf, oriented, epll, eo, f2l, and null with the F2L broken',
   assert.strictEqual(L.stageOf(after(TPERM)), 'oriented');
   assert.strictEqual(L.stageOf(after(A.invertAlg(SUNE))), 'eo');
   assert.strictEqual(L.stageOf(after("F R U R' U' F'")), 'f2l');
-  assert.strictEqual(L.stageOf(after("M2 U M2 U2 M2 U M2")), 'oriented');
+  assert.strictEqual(L.stageOf(after("M2 U M2 U2 M2 U M2")), 'epll');
   assert.strictEqual(L.stageOf(after("R U2 R' U' R U' R' U2 R U R' U R U2 R'")), 'eo');
   assert.strictEqual(L.stageOf(after('R')), null);
-  // a Ua perm leaves the corners solved and the edges oriented: epll is "oriented" too
-  assert.strictEqual(L.stageOf(after("R U' R U R U R U' R' U' R2")), 'oriented');
+  // a Ua perm: the corners solved, the edges oriented
+  assert.strictEqual(L.stageOf(after("R U' R U R U R U' R' U' R2")), 'epll');
+  assert.strictEqual(L.STAGE_RANK.epll, L.STAGE_RANK.oriented);
+});
+
+test('a COLL step (edges oriented -> corners solved) is not an OLL one', () => {
+  // corners: an anti-sune COLL case with an H perm on top; COLL leaves an EPLL
+  const coll = "R U2 R' U' R U' R'";
+  const start = after(`M2 U M2 U2 M2 U M2 ${A.invertAlg(coll)}`);
+  assert.strictEqual(L.stageOf(start), 'eo');
+  const r = L.readSteps(start, [{ tokens: coll.split(' ') }], null);
+  assert.strictEqual(r.stage, 'epll');
+  assert.strictEqual(r.steps[0].label, 'coll');
 });
 
 test('lines after the F2L read as steps by replay; a line that moves nothing on merges', () => {
@@ -104,6 +115,38 @@ else {
         }
       }
     }
+  });
+}
+
+const slotReady = ['zbls', 'ols'].every(id => fs.existsSync(path.join(DATA_DIR, `${id}.json`)));
+if (!slotReady) console.log('SKIP: data/ll/zbls.json, ols.json not built: last-slot algs');
+else {
+  const data = {};
+  for (const id of ['zbls', 'ols']) {
+    const d = JSON.parse(fs.readFileSync(path.join(DATA_DIR, `${id}.json`), 'utf8'));
+    data[id] = { data: d, index: A.indexSet(id, d) };
+  }
+  let seed2 = 11;
+  const rand2 = n => { seed2 = (seed2 * 1103515245 + 12345) & 0x7fffffff; return seed2 % n; };
+  test('last-slot algs for every slot (y turns, mirror) solve the pair and reach their goal', () => {
+    let checked = 0;
+    for (let n = 0; n < 80; n++) {
+      const setId = ['zbls', 'ols'][rand2(2)];
+      const kase = data[setId].data.cases[rand2(data[setId].data.cases.length)];
+      let cube = A.fromCubie(A.toCubie(kase.state));
+      if (rand2(2)) cube = A.mirrorLabels(cube);             // a left slot
+      const rot = ['', 'y', 'y2', "y'"][rand2(4)];          // and any of the four
+      if (rot) cube = A.labelsOf(applyAlgorithm(cube, rot));
+      const found = L.lastSlotAlgs(cube, data, 2);
+      assert.ok(found.some(f => f.setId === setId), `${setId} ${kase.name} (${rot}) not found`);
+      for (const f of found) {
+        const end = L.stageOf(applyAlgorithm(cube, f.toks.join(' ')));
+        const want = f.setId === 'ols' ? ['oriented', 'auf', 'done'] : ['eo', 'oriented', 'epll', 'auf', 'done'];
+        assert.ok(want.includes(end), `${f.name}: ${f.toks.join(' ')} -> ${end}`);
+        checked++;
+      }
+    }
+    assert.ok(checked > 80);
   });
 }
 

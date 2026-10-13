@@ -11,7 +11,8 @@
 'use strict';
 
 const LastLayer = (() => {
-  // stages of the last layer, in order (F2L solved in all)
+  // stages of the last layer, in order (F2L solved in all); epll (the
+  // corners solved, the edges oriented) is an oriented layer too
   const STAGE_RANK = { f2l: 0, eo: 1, oriented: 2, epll: 2, auf: 3, done: 4 };
   const isEpll = c => AlgSets.llEO(c) && AlgSets.uPowers().some(u => [0, 1, 2, 3].every(i => c.cp[i] === u.cp[i] && c.co[i] === 0));
 
@@ -21,8 +22,8 @@ const LastLayer = (() => {
     if (!c || !AlgSets.f2lSolved(c)) return null;
     if (AlgSets.sameCubie(c, AlgSets.identity())) return 'done';
     if (AlgSets.reachesGoal(0, c)) return 'auf';
-    if (AlgSets.llOriented(c)) return 'oriented';
     if (isEpll(c)) return 'epll';
+    if (AlgSets.llOriented(c)) return 'oriented';
     if (AlgSets.llEO(c)) return 'eo';
     return 'f2l';
   }
@@ -137,9 +138,44 @@ const LastLayer = (() => {
       return '1lll';
     }
     if (to === 'oriented') return named('oll');
-    if (to === 'epll') return from === 'eo' ? named('coll') : 'cll';
+    if (to === 'epll') return from === 'eo' ? named('coll') : named('oll');
     if (to === 'eo') return 'eo';
     return 'last layer';
+  }
+
+  /**
+   * The last-slot algs (ZBLS, OLS) for a cube whose F2L lacks one pair:
+   * [{ setId, name, toks }], `toks` solving the cube as it stands. The sets
+   * are for the front-right slot: a y brings the slot there, or the mirror
+   * image does (left-hand algs for a left slot, mirrored back). `perCase`
+   * algs per set and case.
+   */
+  const LS_ROTATIONS = ['', 'y', 'y2', "y'"];
+  function lastSlotAlgs(facelets, data, perCase = 4) {
+    const here = AlgSets.labelsOf(facelets);
+    const out = [];
+    const seen = new Set();
+    for (const mirrored of [false, true]) for (const rot of LS_ROTATIONS) {
+      const base = mirrored ? AlgSets.mirrorLabels(here) : here;
+      const c = AlgSets.toCubie(AlgSets.labelsOf(rot ? applyAlgorithm(base, rot) : base));
+      if (!c || !AlgSets.lsReady(c)) continue;
+      for (const setId of ['zbls', 'ols']) {
+        const d = data[setId];
+        if (!d) continue;
+        const hit = AlgSets.recognize(setId, d.index, c);
+        if (!hit) continue;
+        const kase = d.data.cases[hit.i];
+        for (const a of kase.algs.slice(0, perCase)) {
+          const own = [rot, AlgSets.algFor(a, hit, setId).text].filter(Boolean).join(' ');
+          const toks = (mirrored ? AlgSets.mirrorAlg(own) : own).split(' ');
+          const key = toks.join(' ');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ setId, name: AlgSets.caseTitle(d.data.name, kase.name), toks, mirrored });
+        }
+      }
+    }
+    return out;
   }
 
   // A step's alg as the sets store it: no AUF before or after (a leading y
@@ -202,7 +238,7 @@ const LastLayer = (() => {
     return PENDING[setId];
   }
 
-  return { stageOf, setsFor, casesOf, suggestions, readSteps, stepLabel, caseLabel, critique, bodyOf, load, LOADED, STAGE_RANK };
+  return { stageOf, setsFor, casesOf, suggestions, readSteps, stepLabel, caseLabel, critique, bodyOf, lastSlotAlgs, load, LOADED, STAGE_RANK };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
