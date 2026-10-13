@@ -25,7 +25,9 @@
 // itself (BFS from every goal state's projection, in every final frame the
 // set can reach): the 8 corners (88M), the 6 edges UR UF UL UB FR FL and
 // the 6 others (42.6M each); nibbles, 15 = unreachable; cached on disk per
-// move set and goal.
+// move set and goal. The search reads the active move set's move tables
+// side by side and checks the three tables one at a time, most children
+// being cut by the first (both changes kept the output identical).
 //
 // stdin:  TOKEN <i> <name> <axis> <pureU> <cubie>     (axis 0 R/L, 1 U/D, 2 F/B)
 //         FRAME <f> <yfamily> <cubie>                 (f = 0: identity)

@@ -52,7 +52,11 @@ below):
 
 All fast suites pass; real-engine suites re-run and passing:
 solver-bridge-e2e, cubedb-export-e2e, wide-spellings-e2e, progressive-e2e,
-crossSolver/test (dag-search, slot-mapping, color-orientation).
+crossSolver/test (dag-search, slot-mapping, color-orientation),
+search-options, lookahead, offload, wide-moves, corpus-candidates,
+pair-choice, pro-references and complete-search e2e. Pushed to main; the
+live site serves the new files (hashes checked) and its algs page passed
+a smoke test (deep link, recognition, no console errors).
 
 **Rename (2026-10-11, developer):** the solving companion is **the
 tree-searcher** everywhere -- captions, aria labels, docs and code
@@ -490,6 +494,31 @@ every fast suite passed at the start.
    13-15 s, second 44 s → 6-9 s (rows shown final ~4 s); the hardest known
    scramble's first step ~25-30 s (Node 24 s).
 
+### For the final audit (next session)
+
+What this pass added, to test on a real device (the dev machine is slow;
+timings here understate an iPad):
+
+- **algs.html**: first paint and tab switches (the set's file loads first,
+  the rest behind it; ZBLL 606 KB / 80 KB gzipped), scrolling the ZBLL
+  grid (472 top views) and the OLS/ZBLS grids (432 / 302 3D pictures drawn
+  as they scroll in), search as you type (names; moves with the ghost, Tab,
+  arrows, Enter; "this alg solves"), the case dialog's playback, deep links
+  (`algs.html#zbll/zbll-t-12`), phone width, all four themes.
+- **Solving screen**: finish an F2L, then type or Tab last-layer steps
+  (labels "oll 27", "pll t", "zbll s 34", "coll s 5", "auf"); the three
+  methods (settings -> last layer); undo of a last-layer line; copy / copy
+  all / move count with the last layer; the critique with last-layer steps;
+  at the last pair: the OLS pick ("skips the oll"), the ZBLS pick (zbll
+  method, edges unoriented), a left slot (mirrored left-hand algs), "last
+  slot algs" off; "all algs for this case" opens the algs page.
+- **Judgement calls** (see "Algorithm sets"): generated vs community order
+  (A, H, Z perms), the left-hand penalty, the "new find" label.
+- **Copy**: the new caption keys (`algs.*`, `searcher.ll.*`,
+  `searcher.pick.ll.*`, `searcher.pick.lastslot.*`, `reason.ll.*`,
+  `reason.ls.*`, `critique.ll.*`, `critique.ls.*`, `info.lastlayer.*`,
+  `solve.noSetup`) are drafts.
+
 ## Layout
 
 ```
@@ -747,7 +776,11 @@ driver now treats a killed llgen as a failure (one OLS pass lost 180 cases
 silently), resumes (finished move-set results are kept), and
 `LLGEN_BIN`/`LLGEN_NODES` override the binary and node cap. llgen.cpp:
 the active move set's move tables side by side and the three pruning
-tables checked one at a time cut ~26% (identical output on a battery).
+tables checked one at a time cut ~26% (identical output on a battery). Would
+a deeper search pay? On 16 ZBLL cases spread over the set, one more move
+of slack in RUF, RUD, RUL or RUFD (5-140 s each) gave 3,221 new candidates
+and changed the first alg once (L 17, by 1.8 units): the plans' depth is
+not what limits the lists.
 
 **The sets as built** (every alg replayed with its AUFs in
 test/alg-sets.test.js; "generated first": a generated alg ranks above all

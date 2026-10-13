@@ -162,6 +162,7 @@ const CAPTIONS = {
   'algs.search.placeholder': 'search: oll 27, t perm, sune, zbll as 3, or type moves',
   'algs.legend': 'algs are ranked by how fast they are to turn, the way I rank f2l steps. "community" algs come from speedcubedb; the others I found myself.',
   'algs.group.all': 'all',
+  'algs.newTag': 'new find',
   'algs.loading': 'loading the algs…',
   'algs.loadFailed': 'the alg sets could not be loaded. reload to try again. sorry!',
   'algs.empty': 'no case by that name.',

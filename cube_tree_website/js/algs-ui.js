@@ -188,6 +188,13 @@
     alg.className = 'alg';
     alg.innerHTML = c.algs[0] ? algHtml(c.algs[0]) : '';
     b.append(canvas, name, alg);
+    // the fastest alg is the tree-searcher's own and beats the community's
+    if (c.algs[0] && c.algs[0].src === 'gen' && c.algs.some(a => a.src === 'db')) {
+      const tag = document.createElement('span');
+      tag.className = 'new-tag';
+      tag.textContent = caption('algs.newTag');
+      b.appendChild(tag);
+    }
     b.addEventListener('click', () => openCase(setId, i));
     picture(canvas, setId, c.state);
     return b;
