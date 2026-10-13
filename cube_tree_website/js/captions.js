@@ -72,6 +72,7 @@ const CAPTIONS = {
   'solve.searchFailed': 'this search failed. undo, change a setting or reload. sorry!',
   'solve.someFailed': 'part of this search failed: undo and redo to try again. sorry!',
   'solve.loadingSolver': 'warming up…',
+  'solve.noSetup': 'nothing to solve yet: sign in (or answer the questions again) to set up your search.',
 
   // --- searcher: the three picks and their reasons ---
   'searcher.greeting': 'here are my picks.',
@@ -147,6 +148,8 @@ const CAPTIONS = {
   'critique.total.great': 'a great solve. I would not change a thing!',
   'critique.total.good': 'a good solve, with a couple of spots to polish.',
   'critique.total.work': 'a few steps have quicker options. have a look at the ones above!',
+  'critique.ls.edges': 'but yours orients the edges too, which the quicker one doesn’t.',
+  'critique.ls.oriented': 'but yours orients the whole last layer too, which the quicker one doesn’t.',
   'critique.ll.best': '{label}: my favourite alg for it!',
   'critique.ll.good': '{label}: a great alg for it.',
   'critique.ll.slower': '{label}: there is a quicker alg for this case.',

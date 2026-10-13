@@ -124,6 +124,9 @@ test('database notation: brackets, Rw, R3, 2\' and a leading y on the last layer
   assert.strictEqual(A.normalizeAlg("(R U2' R') Rw R3 [F2'] Lw2"), "R U2 R' r R' F2 l2");
   assert.deepStrictEqual(splitAlg("y U R U R' U' y", 'pll'), { body: "R U R' U' y", pre: 2 });
   assert.deepStrictEqual(splitAlg("U2 R U R' U2", 'ols'), { body: "R U R'", pre: 2 });
+  // uncancelled turns in a community alg
+  assert.deepStrictEqual(splitAlg("R U' U R' U R U2 R'", 'ols'), { body: "R U2 R'", pre: 1 });
+  assert.deepStrictEqual(splitAlg("R U' U' U' R'", 'ols'), { body: "R U R'", pre: 0 });
 });
 
 test('a leading y on a last-layer case is the same as a U turn (replayed on every case)', () => {

@@ -209,6 +209,28 @@ function loadSearchCriteria() {
 // bar instead of inline captions. Its sections are captions.js keys
 // (info.<key>.title / .text), written by hand (README "Captions").
 // ---------------------------------------------------------------------------
+/**
+ * The search a signed-in profile's answers give (skill-levels.js
+ * settingsFromAnswers, as onboarding saves it), with the saved criteria's
+ * own fields kept and a random-state scramble when it has none; saved.
+ * Null without a profile.
+ */
+function criteriaFromProfile(saved) {
+    const p = typeof cubeProfiles !== 'undefined' && cubeProfiles ? cubeProfiles.active() : null;
+    if (!p || typeof settingsFromAnswers !== 'function') return null;
+    const settings = settingsFromAnswers(p.answers);
+    const scramble = typeof generateRandomStateScramble === 'function' ? generateRandomStateScramble() : generateScramble();
+    const criteria = normalizeCriteria({
+        colors: (saved && saved.colors && saved.colors.length) ? saved.colors : settings.colors,
+        advanced: (saved && saved.advanced) || settings.advanced,
+        searchConfig: saved ? saved.searchConfig : undefined,
+        scrambles: [scramble],
+        version: CRITERIA_VERSION,
+    });
+    try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify(criteria)); } catch (err) { /* private mode: this visit only */ }
+    return criteria;
+}
+
 function installInfoDialog() {
     const button = document.getElementById('info-btn');
     if (!button || typeof document.createElement('dialog').showModal !== 'function') {
@@ -1724,9 +1746,15 @@ if (typeof document !== 'undefined') {
             criteria = null;
         }
         if (!criteria || !criteria.scrambles?.length) {
+            // a signed-in profile without a saved search (storage cleared,
+            // an imported profile): the search its answers give, as
+            // onboarding saves it, with a fresh random-state scramble
+            criteria = criteriaFromProfile(criteria);
+        }
+        if (!criteria) {
             const display = document.getElementById('scramble-display');
-            if (display) display.textContent = 'no scrambles yet';
-            showSetupError('no search set up yet: go back to choose the options and scrambles.');
+            if (display) display.textContent = '';
+            showSetupError(typeof caption === 'function' ? caption('solve.noSetup') : '');
             return;
         }
 

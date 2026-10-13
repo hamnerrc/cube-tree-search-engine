@@ -17,7 +17,6 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const SET_IDS = AlgSets.SETS.map(s => s.id);
-  const DATA_VERSION = '20261015a';
   const VIEW_KEY = 'cubetree_algs_view';
   const DATA = {};      // set id -> data/ll/<set>.json
   const LOADING = {};   // set id -> promise
@@ -27,7 +26,7 @@
   let activeMatch = -1;
   // familiar names a search also finds
   const ALIASES = {
-    oll: { 'OLL 21': 'h double headlights', 'OLL 22': 'pi bruno', 'OLL 23': 'headlights u', 'OLL 24': 't chameleon', 'OLL 25': 'l bowtie', 'OLL 26': 'antisune anti sune', 'OLL 27': 'sune' },
+    oll: { 'OLL 21': 'h double headlights', 'OLL 22': 'pi bruno', 'OLL 23': 'headlights u', 'OLL 24': 't chameleon', 'OLL 25': 'l bowtie', 'OLL 26': 'antisune', 'OLL 27': 'sune' },
   };
 
   const storageKey = () => (typeof profileKey === 'function' ? profileKey(VIEW_KEY) : VIEW_KEY);
@@ -42,7 +41,7 @@
   function load(setId) {
     if (DATA[setId]) return Promise.resolve(DATA[setId]);
     if (!LOADING[setId]) {
-      LOADING[setId] = fetch(`data/ll/${setId}.json?v=${DATA_VERSION}`)
+      LOADING[setId] = fetch(AlgSets.dataUrl(setId))
         .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then((d) => {
           DATA[setId] = d;
@@ -201,7 +200,13 @@
     grid.hidden = false;
     resetPictures();
     grid.innerHTML = '';
-    if (!d) { grid.textContent = caption('algs.loading'); return; }
+    if (!d) {
+      grid.textContent = caption('algs.loading');
+      $('set-title').textContent = '';
+      $('set-legend').textContent = '';
+      $('group-chips').innerHTML = '';
+      return;
+    }
     $('set-title').textContent = d.title;
     $('set-legend').textContent = caption('algs.legend');
     renderGroups(d);

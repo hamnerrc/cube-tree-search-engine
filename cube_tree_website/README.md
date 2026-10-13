@@ -100,9 +100,12 @@ and **ZBLS** (302: the last pair inserted while the edges are oriented).
   tree-searcher offer the algs of the case on the cube, in the solver's
   last-layer method (settings: oll + pll, coll or zbll when the edges are
   oriented). At the last pair, ZBLS and OLS algs that fit the cube are
-  offered too, scored like any step, and the tree-searcher picks one only
-  with a fact for it: it skips the OLL, or it orients the edges for a ZBLL
-  solver.
+  offered too (a left slot gets the mirrored, left-hand algs), scored like
+  any step, and the tree-searcher picks one only with a fact for it: it
+  skips the OLL, or it orients the edges for a ZBLL solver. The critique
+  goes through the last-layer steps too (each against its case's algs, by
+  the same ranking) and says when a last pair also orients the edges or
+  the whole layer, which the quicker alternative does not.
 
 ## Out of scope (for now)
 

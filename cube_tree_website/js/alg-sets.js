@@ -29,6 +29,9 @@ const AlgSets = (() => {
   const CORNER_COLORS = CORNER_NAMES.map(n => [...n]);
   const EDGE_COLORS = EDGE_NAMES.map(n => [...n]);
   const SOLVED_LABELS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
+  // the data files' cache-buster: bump it whenever data/ll/*.json are rebuilt
+  const DATA_VERSION = '20261015b';
+  const dataUrl = setId => `data/ll/${setId}.json?v=${DATA_VERSION}`;
 
   /** Facelets (any colours) -> the same cube in face letters, by its centres. */
   function labelsOf(facelets) {
@@ -418,7 +421,7 @@ const AlgSets = (() => {
   }
 
   return {
-    llScore, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
+    DATA_VERSION, dataUrl, llScore, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
     CORNER_FACELETS, EDGE_FACELETS, CORNER_NAMES, EDGE_NAMES, SOLVED_LABELS,
     labelsOf, toCubie, fromCubie, identity, mul, sameCubie, algCubie, faceletCubie, uPowers,
     SETS, SET_BY_ID, enumerateCases, aufVariants, caseKeyOf, invertAlg, reachesGoal, solves, normalizeAlg,

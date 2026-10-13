@@ -229,7 +229,7 @@ const LastLayer = (() => {
   /** Every set's data and recognition index, loaded once: set id -> { data, index }. */
   const LOADED = {};
   const PENDING = {};
-  function load(setId, url = `data/ll/${setId}.json`) {
+  function load(setId, url = AlgSets.dataUrl(setId)) {
     if (LOADED[setId]) return Promise.resolve(LOADED[setId]);
     if (!PENDING[setId]) {
       PENDING[setId] = fetch(url).then((r) => { if (!r.ok) throw new Error(`${setId}: ${r.status}`); return r.json(); })

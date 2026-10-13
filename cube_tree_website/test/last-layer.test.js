@@ -110,7 +110,8 @@ else {
         assert.strictEqual(sug[0].setId, L.setsFor(stage, method)[0]);
         for (const s of sug.slice(0, 4)) {
           const end = L.stageOf(applyAlgorithm(cube, s.toks.join(' ')));
-          const want = s.setId === 'oll' ? ['oriented', 'auf', 'done'] : s.setId === 'coll' ? ['oriented', 'auf', 'done'] : ['done'];
+          // an OLL may solve the corners too (epll); a COLL must
+          const want = s.setId === 'oll' ? ['oriented', 'epll', 'auf', 'done'] : s.setId === 'coll' ? ['epll', 'auf', 'done'] : ['done'];
           assert.ok(want.includes(end), `${s.label} ${s.toks.join(' ')}: ${end}`);
         }
       }

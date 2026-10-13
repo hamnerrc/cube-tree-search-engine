@@ -39,6 +39,16 @@ below):
    layer steps read by replay and named by case, ghost/Tab and tree-
    searcher picks in the solver's method, ZBLS/OLS at the last pair (left
    slots mirrored), a last-layer critique, links between the pages.
+6. **Fixes elsewhere**: solver.html never loaded
+   `random-state-scramble.js`, so "+" made random-move scrambles (README:
+   random-state); a signed-in profile without a saved search (storage
+   cleared, an imported profile) was stuck on "go back to choose the
+   options" (a page that no longer exists): the search is now rebuilt from
+   the profile's answers (`criteriaFromProfile`), the message a caption;
+   a failed load of alg-sets.js could break the F2L editor (the last-layer
+   code now needs both scripts or stays out); the critique credits a last
+   pair that orients the edges or the layer when the quicker alternative
+   does not.
 
 **Rename (2026-10-11, developer):** the solving companion is **the
 tree-searcher** everywhere -- captions, aria labels, docs and code
@@ -719,11 +729,41 @@ algs rank ~14th behind RU+D algs. Every list keeps the community's algs
 (up to 4) and the pages show the community favourite next to the fastest.
 
 **Build** (`tools/ll-build.js build`): community algs (notation
-normalised, pre-AUF found by replay) and every raw generated solution are
-replayed on the case; the 12 best by llScore plus the community's are
-kept with pre/post-AUF, score (never shown), source and votes.
+normalised, adjacent turns of one layer merged -- a few entries carry
+"U' U" -- pre-AUF found by replay) and every raw generated solution are
+replayed on the case; kept: the 12 best by llScore plus the community's
+algs with a vote (up to 4), nothing scoring above 2.5x the case's best
+unless voted for (a 20-move joke entry sat in WV 18), with pre/post-AUF,
+score (never shown), source and votes. A body that appears twice keeps
+the higher vote count.
 
-ALGSET_STATS_TABLE
+**Generator runs** (this machine, 2 cores): OLL 15 min, PLL 32, COLL 8,
+OLS ~25, ZBLS 9, ZBLL ~2 h (four processes at the end). Lessons: the
+driver now treats a killed llgen as a failure (one OLS pass lost 180 cases
+silently), resumes (finished move-set results are kept), and
+`LLGEN_BIN`/`LLGEN_NODES` override the binary and node cap. llgen.cpp:
+the active move set's move tables side by side and the three pruning
+tables checked one at a time cut ~26% (identical output on a battery).
+
+**The sets as built** (every alg replayed with its AUFs in
+test/alg-sets.test.js; "generated first": a generated alg ranks above all
+of the case's community algs; STM without AUFs):
+
+| set | cases | algs kept | generated alg first (cases with community algs) | cases with generated algs only | STM of the first alg | STM of the community favourite |
+|---|---|---|---|---|---|---|
+| OLL | 57 | 737 | 14 of 57 | 0 | 10.1 | 9.7 |
+| PLL | 21 | 291 | 13 of 21 | 0 | 15.4 | 13.2 |
+| COLL | 42 | 518 | 6 of 40 | 2 | 11.5 | 11.2 |
+| ZBLL | 472 | 5869 | 82 of 472 | 0 | 14.7 | 14.5 |
+| OLS | 432 | 5008 | 71 of 242 | 190 | 10.9 | 9.7 |
+| ZBLS | 302 | 3470 | - | 302 | 9.2 | - |
+
+Data: 1.5 MB in all (197 KB gzipped; ZBLL 606 KB). Browser-checked
+(headless Chrome): every tab, name search ("t perm", "sune", "oll 2",
+"zbll as 3", "vls uf", "f2l 5"), move autocomplete and "this alg solves",
+deep links, phone width, paper and violet themes; the solving screen in
+each method (oll 27 -> pll t; "zbll s 34" with the two-look alternative;
+"coll s 5"), the OLS pick at a Winter Variation last pair.
 
 ## Complete search
 
@@ -1106,6 +1146,12 @@ not look-ahead optimal).
   normTok): a postAlg with `U2'` hung the next step's search.
 - Headless Chrome caches solver.html and scripts even with new `?v=`:
   drive it with `Network.setCacheDisabled`.
+- After rebuilding `data/ll/*.json`, bump `DATA_VERSION` in
+  js/alg-sets.js (both pages fetch the sets with it as the cache-buster).
+- Background generator runs: kill them by PID, never `pkill -f` a
+  pattern (it took down another run's llgen), and check for orphaned
+  `llgen` processes after an interrupted shell (one ran unseen for an
+  hour, halving every timing).
 - GitHub Pages: after `git push origin master:main`, check
   `api.github.com/repos/hamnerrc/cube-tree-search-engine/actions/runs` and
   compare live file hashes before judging live performance.

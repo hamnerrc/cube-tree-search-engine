@@ -825,7 +825,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
   /** readLastLayer for any session's reading of its text (copy all reads the other scrambles' texts). */
   function readLastLayerOf(session, reading, text) {
-    if (!session.isComplete || !reading || typeof LastLayer === 'undefined') return null;
+    if (!session.isComplete || !reading || !llAvailable()) return null;
     ensureLastLayerData();
     const first = reading.tail.onNewLine ? reading.parsed.length - 1 : reading.tail.line;
     const parsed = reading.parsed.slice(first);
@@ -856,12 +856,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return { steps: r.steps, base: first, cube: r.cube, stage: r.stage, tailTokens, tailLine, finished };
   }
 
-  const LL_DATA_VERSION = '20261015a';
+  // the last layer needs both scripts; without them (a failed load) the
+  // F2L works as before
+  const llAvailable = () => typeof LastLayer !== 'undefined' && typeof AlgSets !== 'undefined';
   let llLoading = null;
   /** Loads every alg set once (data/ll/*.json); re-renders when they arrive. */
   function ensureLastLayerData() {
-    if (llLoading || typeof LastLayer === 'undefined') return llLoading;
-    llLoading = Promise.all(AlgSets.SETS.map(s => LastLayer.load(s.id, `data/ll/${s.id}.json?v=${LL_DATA_VERSION}`).catch(() => null)))
+    if (llLoading || !llAvailable()) return llLoading;
+    llLoading = Promise.all(AlgSets.SETS.map(s => LastLayer.load(s.id, AlgSets.dataUrl(s.id)).catch(() => null)))
       .then(() => {
         lastSlotMemo.clear();
         if (reading) {
@@ -1099,7 +1101,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const LS_PER_SET = 4; // algs per set and case
   function lastSlotRows() {
     const session = sessions.get(activeIndex);
-    if (!session || session.isComplete || session.isAtRoot || !view.lastSlot || typeof LastLayer === 'undefined') return [];
+    if (!session || session.isComplete || session.isAtRoot || !view.lastSlot || !llAvailable()) return [];
     if ((session.currentNode.state.corners || []).length !== 3) return [];
     const key = `${activeIndex}|${session.scoredPath}|${session.rotation}`;
     if (lastSlotMemo.has(key)) return lastSlotMemo.get(key);
@@ -1680,6 +1682,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     setThinking(false);
     if (!critiqueShown || critiqueShown.key !== myKey) return;
     say.textContent = caption('critique.intro');
+    creditLastSlot(session, report);
     const ol = document.createElement('ol');
     ol.className = 'critique-list';
     for (const item of report.items) {
@@ -1695,7 +1698,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       ol.appendChild(li);
     }
     // the last layer (last-layer.js): each step against its case's algs
-    if (llRead && llRead.steps.length && typeof LastLayer !== 'undefined') {
+    if (llRead && llRead.steps.length && llAvailable()) {
       const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
       const f2lMoves = solutionTokens(session).length;
       for (const item of LastLayer.critique(start, llRead.steps, LastLayer.LOADED, view.llMethod)) {
@@ -1722,6 +1725,27 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     close.textContent = 'ok';
     close.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
     actions.appendChild(close);
+  }
+
+  /**
+   * The last pair: when the user's step leaves the last layer further on
+   * than the quicker alternative (the edges or the whole layer oriented, a
+   * ZBLS or OLS), the critique says so -- a fact found by replaying both.
+   */
+  function creditLastSlot(session, report) {
+    if (!llAvailable() || !session.isComplete) return;
+    const k = session.committedRows.length - 1;
+    const item = report.items.find(x => x.stepIndex === k);
+    if (!item || !item.altRow) return;
+    const toks = solutionTokens(session);
+    const mine = rowTokens(session.committedRows[k], k === 0);
+    const before = applyAlgorithm(scrambledState(session.scramble), toks.slice(0, toks.length - mine.length).join(' '));
+    let altStage = null;
+    try { altStage = LastLayer.stageOf(applyAlgorithm(before, rowTokens(item.altRow, k === 0).join(' '))); } catch (e) { return; }
+    const myStage = LastLayer.stageOf(applyAlgorithm(before, mine.join(' ')));
+    if (!myStage || !altStage || LastLayer.STAGE_RANK[myStage] <= LastLayer.STAGE_RANK[altStage]) return;
+    const key = LastLayer.STAGE_RANK[myStage] >= LastLayer.STAGE_RANK.oriented ? 'critique.ls.oriented' : 'critique.ls.edges';
+    item.text = `${item.text} ${caption(key)}`;
   }
 
   /** Shows the cube after the critique's alternative for step `k` (instead of the user's step). */

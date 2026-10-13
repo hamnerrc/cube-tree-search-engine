@@ -30,7 +30,7 @@ const Y_TO_U = { y: 1, y2: 2, "y'": 3 };
  * as U, then A. Trailing U turns are the post-AUF and are dropped.
  */
 function splitAlg(text, setId) {
-  const toks = AlgSets.normalizeAlg(text).split(' ').filter(Boolean);
+  const toks = cancelTurns(AlgSets.normalizeAlg(text).split(' ').filter(Boolean));
   let pre = 0;
   for (;;) {
     const t = toks[0];
@@ -40,6 +40,25 @@ function splitAlg(text, setId) {
   }
   while (toks.length && /^U['2]?$/.test(toks[toks.length - 1])) toks.pop();
   return { body: toks.join(' '), pre };
+}
+
+/**
+ * Adjacent turns of the same layer merged (a few community algs carry
+ * "U' U" or "U' U' U'"): quarter turns summed, nothing left when they cancel,
+ * repeated until stable ("R U U' R'" is nothing).
+ */
+function cancelTurns(toks) {
+  const amount = t => (t.endsWith('2') ? 2 : t.endsWith("'") ? 3 : 1);
+  const out = [];
+  for (const t of toks) {
+    const prev = out[out.length - 1];
+    if (prev && prev[0] === t[0]) {
+      const q = (amount(prev) + amount(t)) % 4;
+      out.pop();
+      if (q) out.push(t[0] + ['', '', '2', "'"][q]);
+    } else out.push(t);
+  }
+  return out;
 }
 
 /** The pre-AUF (0-3) with which `body` solves the case state, or -1. */
@@ -148,6 +167,7 @@ function evaluate() {
 // ---- building the sets ------------------------------------------------------------
 const MAX_ALGS = 12;          // algorithms kept per case
 const MAX_DB = 4;             // ... always including up to this many database ones (by votes)
+const MAX_SLOWER = 2.5;       // nothing scoring above this many times the case's best
 const WORK = path.resolve(process.env.LLGEN_WORK || path.join(ROOT, 'llgen-work'));
 const OUT_DIR = path.join(ROOT, 'data', 'll');
 const POS = ['UR', 'UF', 'UL', 'UB'];
@@ -240,7 +260,7 @@ function buildSet(setId, { requireRaw = true } = {}) {
     const model = llModel(c.dbKey || '');
     const add = (body, pre, src, votes) => {
       const old = cand.get(body);
-      if (old) { if (src === 'db') Object.assign(old, { src, votes }); return; }
+      if (old) { if (src === 'db') Object.assign(old, { src, votes: Math.max(old.votes || 0, votes || 0) }); return; }
       cand.set(body, { body, pre, src, votes, score: AlgSets.llScore(body, model) });
     };
     for (const a of c.db) add(a.body, a.pre, 'db', a.votes);
@@ -254,9 +274,13 @@ function buildSet(setId, { requireRaw = true } = {}) {
         add(body, p, 'gen');
       }
     }
-    const all = [...cand.values()].sort((a, b) => a.score - b.score);
+    // far slower than the best (a few community entries are jokes): out,
+    // unless the community voted for them
+    const sorted = [...cand.values()].sort((a, b) => a.score - b.score);
+    const all = sorted.filter(a => a.score <= MAX_SLOWER * sorted[0].score || (a.src === 'db' && a.votes > 0));
     const keep = all.slice(0, MAX_ALGS);
-    const dbTop = all.filter(a => a.src === 'db').sort((a, b) => b.votes - a.votes).slice(0, MAX_DB);
+    // the community's algs with a vote always stay (a 0-vote one competes on speed)
+    const dbTop = all.filter(a => a.src === 'db' && a.votes > 0).sort((a, b) => b.votes - a.votes).slice(0, MAX_DB);
     for (const a of dbTop) if (!keep.includes(a)) keep.push(a);
     keep.sort((a, b) => a.score - b.score);
     if (keep.length && c.db.length) {
@@ -289,4 +313,4 @@ if (require.main === module) {
   else console.log('usage: node tools/ll-build.js eval | build [sets...] [--partial]');
 }
 
-module.exports = { splitAlg, preAufFor, dbCases, SCORES, namedCases, buildSet, llModel, llCorpus };
+module.exports = { splitAlg, cancelTurns, preAufFor, dbCases, SCORES, namedCases, buildSet, llModel, llCorpus };
