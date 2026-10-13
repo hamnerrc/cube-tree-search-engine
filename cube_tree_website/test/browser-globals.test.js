@@ -8,7 +8,7 @@ const assert = require('assert');
 const root = path.join(__dirname, '..');
 let failures = 0;
 
-for (const page of ['solver.html', 'index.html']) {
+for (const page of ['solver.html', 'index.html', 'algs.html']) {
   const html = fs.readFileSync(path.join(root, page), 'utf8');
   const srcs = [...html.matchAll(/<script[^>]+src="([^"?]+)/g)].map(m => m[1]).filter(s => !/^https?:/.test(s));
   const owner = new Map();

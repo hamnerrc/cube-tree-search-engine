@@ -18,3 +18,6 @@ __pycache__/
 
 # Design inspiration screenshots (third-party art; kept local, not published)
 cube_tree_website/UI_references/
+
+# last-layer generator work dir (binary, pruning tables, raw solutions; tools/ll-gen.js)
+cube_tree_website/llgen-work/

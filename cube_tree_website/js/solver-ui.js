@@ -394,8 +394,26 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return out.length ? out.join('\n') + '\n' : '';
   }
 
-  /** The uncommitted moves after the last step (as typed). */
-  const tailText = () => (reading && reading.tail.tokens.length ? reading.tail.tokens.join(' ') : '');
+  /**
+   * What follows the F2L steps: the last-layer steps, one per line with their
+   * labels, then any unfinished moves (as typed).
+   */
+  function tailText() {
+    if (!reading || !reading.tail.tokens.length) return '';
+    if (!llRead) return reading.tail.tokens.join(' ');
+    const lines = llRead.steps.map(st => `${st.toks.join(' ')} // ${st.label}`);
+    if (llRead.tailTokens.length) lines.push(llRead.tailTokens.join(' '));
+    return lines.join('\n');
+  }
+
+  /** STM / ETM of the solution and its last-layer steps. */
+  function solutionCounts(session) {
+    const c = moveCounts(session);
+    if (!llRead) return c.text;
+    let stm = c.stm, etm = c.etm;
+    for (const st of llRead.steps) for (const t of st.toks) { etm++; if (!/^[xyz]/.test(t)) stm++; }
+    return `${stm}STM / ${etm}ETM`;
+  }
 
   /** What copy writes: the scramble, the solution as a reconstruction (cancellations merged), then any unfinished moves. */
   function copyText(session, tail = '') {
@@ -409,13 +427,21 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const copyAll = $('copy-all-btn');
     if (copyAll) copyAll.disabled = ![...sessions.values()].some(s => s.committedRows.length);
     const count = $('move-count');
-    if (count) count.textContent = lines.length ? moveCounts(session).text : '';
+    if (count) count.textContent = lines.length ? solutionCounts(session) : '';
   }
 
   function allSolutionsText() {
     return scrambleController.sequenceList.map((raw, idx) => {
       const session = sessions.get(idx);
-      return session ? copyText(session, idx === activeIndex ? tailText() : '') : cleanScramble(raw || '');
+      if (!session) return cleanScramble(raw || '');
+      if (idx === activeIndex) return copyText(session, tailText());
+      // another scramble: its finished last-layer steps, read from its text
+      let ll = '';
+      if (session.isComplete && session._text) {
+        const r = readLastLayerOf(session, readSolution(session, session._text, []), session._text);
+        if (r) ll = r.steps.map(st => `${st.toks.join(' ')} // ${st.label}`).join('\n');
+      }
+      return copyText(session, ll);
     }).join('\n\n');
   }
 
@@ -488,6 +514,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const view = {
     lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
+    llMethod: 'oll', lastSlot: true, // README "Algorithm sets": oll | coll | zbll; zbls/ols picks at the last pair
   };
   let shownResults = null; // the current step's list (complete or partial)
   // The scramble and step the list belongs to: a pick from a list that is no
@@ -514,6 +541,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
+    view.llMethod = ['oll', 'coll', 'zbll'].includes(view.llMethod) ? view.llMethod : 'oll';
+    view.lastSlot = view.lastSlot !== false;
   }
 
   function saveViewPrefs() {
@@ -534,6 +563,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     set('hide-unorthodox', 'checked', view.hideUnorthodox);
     set('simple-pseudo', 'checked', view.simplePseudo);
     set('pair-planning', 'checked', view.planning);
+    set('ll-method', 'value', view.llMethod);
+    set('last-slot', 'checked', view.lastSlot);
   }
 
   function bindViewControls() {
@@ -552,6 +583,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     // Pair planning changes the ranking itself: the step is searched again
     // (or taken from the memo, if it was searched with that setting before).
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
+    // the last layer's settings only change what is suggested
+    const relist = () => { saveViewPrefs(); syncViewControls(); lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); };
+    on('ll-method', 'change', (e) => { view.llMethod = e.target.value; relist(); });
+    on('last-slot', 'change', (e) => { view.lastSlot = e.target.checked; relist(); });
   }
 
 
@@ -749,6 +784,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   let activeIdx = -1;      // keyboard-selected suggestion (shown as the ghost)
   let suggestions = [];    // [{ kind: 'alg'|'comment', r?, toks?, text }]
   let tailStep = null;     // the typed tail as a finished step ({ label, row }), or null
+  let llRead = null;       // after the F2L: the last-layer steps read from the tail (readLastLayer)
   let syncTimer = 0;
 
   function syncEditor() {
@@ -764,6 +800,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     while (session.committedRows.length > read.keep) { session.undo(); changed = true; }
     for (const st of read.steps) { session.commit(st.row); changed = true; }
     reading = read;
+    llRead = readLastLayer(session);
     if (changed || atNode !== session.committedRows.length) {
       persistSessionState();
       runSearch();
@@ -776,6 +813,74 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderUndoButton(session);
     updatePlayer();
     maybeContinuationSearch();
+  }
+
+  /**
+   * After the F2L (README "Algorithm sets"): the tail's finished lines read
+   * as last-layer steps (last-layer.js, by replay), their lines drawn as
+   * steps; what follows the last of them is the last layer's tail.
+   */
+  function readLastLayer(session) {
+    return reading && editor ? readLastLayerOf(session, reading, editor.value) : null;
+  }
+  /** readLastLayer for any session's reading of its text (copy all reads the other scrambles' texts). */
+  function readLastLayerOf(session, reading, text) {
+    if (!session.isComplete || !reading || typeof LastLayer === 'undefined') return null;
+    ensureLastLayerData();
+    const first = reading.tail.onNewLine ? reading.parsed.length - 1 : reading.tail.line;
+    const parsed = reading.parsed.slice(first);
+    // the last line is still being typed unless the text ends with a newline
+    const done = text.endsWith('\n') ? parsed.length : parsed.length - 1;
+    const lineToks = l => l.tokens.filter(t => t.valid).map(t => normTok(t.tok));
+    const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
+    const r = LastLayer.readSteps(start, parsed.slice(0, done).map(l => ({ tokens: lineToks(l) })), LastLayer.LOADED);
+    for (const st of r.steps) {
+      for (let li = st.firstLine; li <= st.lastLine; li++) {
+        reading.lines[first + li] = { kind: li === st.lastLine ? 'step' : 'merged', label: li === st.lastLine ? st.label : null };
+      }
+    }
+    const open = done < parsed.length ? lineToks(parsed[done]) : [];
+    const tailTokens = [...r.tail.tokens, ...open];
+    const tailLine = first + (r.tail.tokens.length ? r.tail.firstLine : done);
+    // the tail as a finished stage (its comment is suggested, as for a pair)
+    let finished = null;
+    if (tailTokens.length && done < parsed.length) {
+      try {
+        const after = applyAlgorithm(r.cube, tailTokens.join(' '));
+        const next = LastLayer.stageOf(after);
+        if (next && r.stage && LastLayer.STAGE_RANK[next] > LastLayer.STAGE_RANK[r.stage]) {
+          finished = { label: LastLayer.stepLabel(r.cube, r.stage, next, LastLayer.LOADED), stage: next };
+        }
+      } catch (e) { finished = null; }
+    }
+    return { steps: r.steps, base: first, cube: r.cube, stage: r.stage, tailTokens, tailLine, finished };
+  }
+
+  const LL_DATA_VERSION = '20261015a';
+  let llLoading = null;
+  /** Loads every alg set once (data/ll/*.json); re-renders when they arrive. */
+  function ensureLastLayerData() {
+    if (llLoading || typeof LastLayer === 'undefined') return llLoading;
+    llLoading = Promise.all(AlgSets.SETS.map(s => LastLayer.load(s.id, `data/ll/${s.id}.json?v=${LL_DATA_VERSION}`).catch(() => null)))
+      .then(() => {
+        lastSlotMemo.clear();
+        if (reading) {
+          const session = sessions.get(activeIndex);
+          if (session) llRead = readLastLayer(session);
+        }
+        renderSuggestions();
+        renderSearcher();
+      });
+    return llLoading;
+  }
+
+  /** The moves typed after the last finished step: the F2L tail, or the last layer's. */
+  function typedTail() {
+    if (llRead) {
+      const partial = reading.tail.partial && llRead.tailTokens.length ? reading.tail.partial : '';
+      return { tokens: llRead.tailTokens, partial, line: llRead.tailLine };
+    }
+    return { tokens: reading.tail.tokens, partial: reading.tail.partial, line: reading.tail.line };
   }
 
   function scheduleSync() {
@@ -823,8 +928,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (!top || !reading) return '';
     const text = editor.value;
     if (top.kind === 'comment') return (/\s$/.test(text) ? '' : ' ') + top.text;
-    const typed = reading.tail.tokens;
-    const partial = reading.tail.partial;
+    const { tokens: typed, partial } = typedTail();
     const rest = top.toks.slice(typed.length - (partial ? 1 : 0));
     if (!rest.length) return '';
     if (partial) {
@@ -845,10 +949,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /** Text before the tail (the committed steps' lines), ending at a line start. */
   function textBeforeTail() {
     const text = editor.value;
-    if (!reading || !reading.tail.tokens.length) {
+    const tail = reading ? typedTail() : null;
+    if (!tail || !tail.tokens.length) {
       return text && !text.endsWith('\n') ? text + '\n' : text;
     }
-    const line = reading.parsed[reading.tail.line];
+    const line = reading.parsed[tail.line];
     return text.slice(0, line.start);
   }
 
@@ -860,13 +965,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /** A candidate the solution bar may commit: from the step's list or the continuation search. */
-  const committable = r => !!r && ((currentList() || []).includes(r) || !!(continuation && continuation.list && continuation.list.includes(r)));
+  const committable = r => !!r && ((currentList() || []).includes(r) || !!(continuation && continuation.list && continuation.list.includes(r))
+    || lastSlotRows().includes(r));
 
   /** Writes candidate `r` as the next step (with its label) and commits it. */
   function commitSuggestion(r) {
     const session = getOrCreateSession(activeIndex);
     if (!committable(r)) return;
-    const label = labelFor(session, r);
+    const label = labelFor(session, r) + (r.lastSlot ? ` (${r.lastSlot.name})` : '');
     const lines = session.isAtRoot && r.rotation
       ? `${r.rotation} // inspection\n${r.coreAlg} // ${label}\n`
       : `${r.coreAlg} // ${label}\n`;
@@ -891,8 +997,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       setEditorText(`${text} ${s.text}\n`);
       return true;
     }
+    if (s.kind === 'll') { commitLastLayer(s); return true; }
     commitSuggestion(s.r);
     return true;
+  }
+
+  /** Writes a last-layer alg (with its AUFs) and its label as the next line. */
+  function commitLastLayer(s) {
+    const before = textBeforeTail();
+    animateFrom = player ? player.length : 0;
+    setEditorText(`${before}${s.toks.join(' ')} // ${s.label}\n`);
+    editor.focus();
   }
 
   /** The suggestions after what is typed (the ghost, Tab and ↑/↓ use them; nothing is listed on screen). */
@@ -900,6 +1015,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const session = sessions.get(activeIndex);
     suggestions = [];
     tailStep = null;
+    if (session && reading && session.isComplete && llRead && llRead.stage && llRead.stage !== 'done') {
+      // the last layer: the algs of the case on the cube, in the solver's method
+      const { tokens, partial } = typedTail();
+      if (llRead.finished && tokens.length) suggestions.push({ kind: 'comment', text: `// ${llRead.finished.label}` });
+      else {
+        const pool = LastLayer.suggestions(llRead.cube, LastLayer.LOADED, view.llMethod);
+        for (const m of tokenPrefixMatches(pool, tokens, partial)) {
+          if (suggestions.length >= 5) break;
+          if (suggestions.some(x => x.toks.join(' ') === m.toks.join(' '))) continue;
+          suggestions.push({ kind: 'll', toks: m.toks, label: m.label, s: m });
+        }
+      }
+    }
     if (session && reading && !session.isComplete) {
       const tail = reading.tail;
       const list = currentList();
@@ -908,7 +1036,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       tailStep = done;
       const line = reading.parsed[tail.line];
       if (done && line && line.commentStart < 0) suggestions.push({ kind: 'comment', text: `// ${done.label}` });
-      const pools = [list, continuationFor(tail)].filter(Boolean);
+      const pools = [list, continuationFor(tail), lastSlotRows()].filter(p => p && p.length);
       for (const pool of pools) {
         for (const m of prefixMatches(pool, tail.tokens, tail.partial, session.isAtRoot)) {
           if (suggestions.length >= 5) break;
@@ -921,6 +1049,94 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     if (activeIdx >= suggestions.length) activeIdx = -1;
     renderEditor();
+  }
+
+  /**
+   * The last-slot pick, when there is a fact for it: a ZBLS alg for a ZBLL
+   * solver whose other picks leave edges to orient ("leaves the edges
+   * oriented"), or an OLS alg ("skips the oll"). None otherwise.
+   */
+  function lastSlotPick(session, picks) {
+    const rows = lastSlotRows();
+    if (!rows.length) return null;
+    const leaves = (r) => {
+      try {
+        const f = replayFacelets(session.scramble, session.rotation, session.scoredPath, r.coreAlg);
+        return LastLayer.stageOf(f);
+      } catch (e) { return null; }
+    };
+    const ols = rows.find(r => r.lastSlot.setId === 'ols');
+    const pickStages = picks.map(p => leaves(p.r));
+    if (ols && !pickStages.some(st => st === 'oriented' || st === 'auf' || st === 'done')) {
+      return { r: ols, role: 'lastslot.ols', reasons: [{ key: 'ls.skipsOll', vars: { label: ols.lastSlot.name } }] };
+    }
+    const zbls = rows.find(r => r.lastSlot.setId === 'zbls');
+    if (zbls && view.llMethod === 'zbll' && !pickStages.some(st => st && st !== 'f2l')) {
+      return { r: zbls, role: 'lastslot.zbls', reasons: [{ key: 'ls.edgesForZbll', vars: { label: zbls.lastSlot.name } }] };
+    }
+    return null;
+  }
+
+  /** Items ({ toks }) whose tokens start with the typed ones (the strict prefix of prefixMatches). */
+  function tokenPrefixMatches(items, typed, partial) {
+    typed = typed.map(normTok);
+    const done = partial ? typed.slice(0, -1) : typed;
+    return items.filter((it) => {
+      const t = it.toks;
+      if (t.length < done.length + (partial ? 1 : 0)) return false;
+      for (let i = 0; i < done.length; i++) if (t[i] !== done[i]) return false;
+      return !partial || t[done.length].startsWith(partial);
+    });
+  }
+
+  /**
+   * At the last pair (README "Algorithm sets"): the ZBLS and OLS algs of the
+   * cube's last-slot case, the slot turned to the front right by a y, each
+   * replayed and scored as a step the user wrote (userStepRow), so they rank
+   * like any step. Memoised per node.
+   */
+  const lastSlotMemo = new Map();
+  const LS_ROTATIONS = ['', 'y', 'y2', "y'"];
+  const LS_PER_SET = 4; // algs per set and case
+  function lastSlotRows() {
+    const session = sessions.get(activeIndex);
+    if (!session || session.isComplete || session.isAtRoot || !view.lastSlot || typeof LastLayer === 'undefined') return [];
+    if ((session.currentNode.state.corners || []).length !== 3) return [];
+    const key = `${activeIndex}|${session.scoredPath}|${session.rotation}`;
+    if (lastSlotMemo.has(key)) return lastSlotMemo.get(key);
+    const sets = ['zbls', 'ols'].filter(id => LastLayer.LOADED[id]);
+    if (sets.length < 2) { ensureLastLayerData(); return []; }
+    const here = AlgSets.labelsOf(replayFacelets(session.scramble, session.rotation, session.scoredPath, ''));
+    const rows = [];
+    const seen = new Set();
+    // the sets are for the front-right slot: a y brings the slot there, or
+    // the mirror image (left-hand algs for a left slot, mirrored back)
+    for (const mirrored of [false, true]) for (const rot of LS_ROTATIONS) {
+      const base = mirrored ? AlgSets.mirrorLabels(here) : here;
+      const c = AlgSets.toCubie(AlgSets.labelsOf(rot ? applyAlgorithm(base, rot) : base));
+      if (!c || !AlgSets.lsReady(c)) continue;
+      for (const setId of sets) {
+        const d = LastLayer.LOADED[setId];
+        const hit = AlgSets.recognize(setId, d.index, c);
+        if (!hit) continue;
+        const kase = d.data.cases[hit.i];
+        for (const a of kase.algs.slice(0, LS_PER_SET)) {
+          const w = AlgSets.algFor(a, hit, setId);
+          const own = [rot, ...w.text.split(' ')].filter(Boolean).join(' ');
+          const toks = (mirrored ? AlgSets.mirrorAlg(own) : own).split(' ');
+          if (seen.has(toks.join(' '))) continue;
+          seen.add(toks.join(' '));
+          const row = userStepRow(session, toks);
+          if (!row) continue;
+          row.coreAlg = toks.join(' ');
+          row.lastSlot = { setId, name: AlgSets.caseTitle(d.data.name, kase.name) };
+          rows.push(row);
+        }
+      }
+    }
+    rows.sort((a, b) => a.tpp - b.tpp);
+    lastSlotMemo.set(key, rows);
+    return rows;
   }
 
   /** The tail as a finished step: { label, row, last } (a listed candidate or the user's own), or null. */
@@ -1342,8 +1558,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const statusBusy = ($('search-status') || {}).dataset ? $('search-status').dataset.state === 'busy' : false;
     setThinking(!session || (!session.isComplete && (!list || statusBusy)) || continuationPending());
     if (!session) { say.textContent = caption('searcher.thinking'); return; }
+    if (session.isComplete && llRead && llRead.stage && llRead.stage !== 'done' && llRead.stage !== 'auf') {
+      renderLastLayerPicks(session, say, picksEl, title, actions);
+      return;
+    }
     if (session.isComplete) {
-      say.textContent = caption('searcher.solved');
+      say.textContent = caption(llRead && llRead.stage === 'auf' ? 'searcher.ll.auf' : 'searcher.solved');
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'px-btn primary';
@@ -1372,6 +1592,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       // only picks that start like what is typed
       picks = picks.filter(p => prefixMatches([p.r], reading.tail.tokens, reading.tail.partial, session.isAtRoot).length);
     }
+    const ls = lastSlotPick(session, picks);
+    if (ls && (!reading || !reading.tail.tokens.length || prefixMatches([ls.r], reading.tail.tokens, reading.tail.partial, false).length)) picks.push(ls);
     say.textContent = caption(!picks.length ? 'searcher.keepGoing' : picks.length > 1 ? 'searcher.greeting' : 'searcher.greetingOne');
     picks.forEach((p) => {
       const b = document.createElement('button');
@@ -1385,6 +1607,49 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       b.addEventListener('mouseleave', endPreview);
       picksEl.appendChild(b);
     });
+  }
+
+  /**
+   * After the F2L: the case on the cube and up to three algs -- the fastest
+   * of the method's set, the community's favourite when it is another one,
+   * and the fastest of the other set that applies (a whole last layer when
+   * the edges are oriented). Every pick says why, in words.
+   */
+  function renderLastLayerPicks(session, say, picksEl, title, actions) {
+    if (!Object.keys(LastLayer.LOADED).length) { say.textContent = caption('searcher.thinking'); ensureLastLayerData(); return; }
+    if (llRead.finished) { say.textContent = caption('searcher.ll.stepDone', { label: llRead.finished.label }); return; }
+    const pool = LastLayer.suggestions(llRead.cube, LastLayer.LOADED, view.llMethod);
+    const { tokens, partial } = typedTail();
+    const fits = tokenPrefixMatches(pool, tokens, partial);
+    if (!pool.length) { say.textContent = caption('searcher.ll.unknown'); return; }
+    if (!fits.length) { say.textContent = caption('searcher.keepGoing'); return; }
+    const picks = [];
+    const add = (m, role, why) => { if (m && !picks.some(p => p.m === m)) picks.push({ m, role, why }); };
+    const firstSet = fits[0].setId;
+    const own = fits.filter(m => m.setId === firstSet);
+    add(own[0], 'll.best', own[0].src === 'gen' ? 'll.new' : 'll.fastest');
+    const fav = own.filter(m => m.src === 'db').sort((a, b) => (b.alg.votes || 0) - (a.alg.votes || 0))[0];
+    if (fav && fav !== own[0]) add(fav, 'll.favourite', 'll.favourite');
+    const other = fits.find(m => m.setId !== firstSet);
+    if (other) add(other, `ll.set.${other.setId}`, other.setId === 'zbll' ? 'll.whole' : other.setId === 'oll' ? 'll.twoLook' : 'll.other');
+    title.textContent = fits[0].label;
+    say.textContent = caption('searcher.ll.case', { label: fits[0].label });
+    picks.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pick';
+      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span>`;
+      b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
+      picksEl.appendChild(b);
+    });
+    // every alg of the case, on the algs page
+    const more = document.createElement('a');
+    more.className = 'px-btn quiet';
+    more.href = `algs.html#${fits[0].setId}/${String(fits[0].caseName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+    more.target = '_blank';
+    more.rel = 'noopener';
+    more.textContent = caption('searcher.ll.more');
+    actions.appendChild(more);
   }
 
   function bindSearcher() {
@@ -1449,6 +1714,23 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       });
       ol.appendChild(li);
     }
+    // the last layer (last-layer.js): each step against its case's algs
+    if (llRead && llRead.steps.length && typeof LastLayer !== 'undefined') {
+      const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
+      const f2lMoves = solutionTokens(session).length;
+      for (const item of LastLayer.critique(start, llRead.steps, LastLayer.LOADED, view.llMethod)) {
+        const li = document.createElement('li');
+        const alt = item.alt ? caption(item.alt.key, item.alt.vars) : '';
+        li.innerHTML = `<div>${esc(caption(item.key, item.vars))}</div>${alt ? `<div class="alt">${esc(alt)}</div>` : ''}`;
+        li.addEventListener('click', () => {
+          if (!player) return;
+          manualPlayback = true;
+          player.pause();
+          player.seek(f2lMoves + item.at, false);
+        });
+        ol.appendChild(li);
+      }
+    }
     const total = document.createElement('li');
     total.className = 'total';
     total.textContent = report.total;
@@ -1479,6 +1761,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   async function handleUndo() {
     const session = getOrCreateSession(activeIndex);
     if (!editor || !reading) return;
+    if (llRead && !llRead.tailTokens.length && llRead.steps.length) {
+      // a last-layer step: its lines go
+      const st = llRead.steps[llRead.steps.length - 1];
+      setEditorText(editor.value.slice(0, reading.parsed[llRead.base + st.firstLine].start));
+      return;
+    }
     if (reading.tail.tokens.length) {
       // first the unfinished moves
       setEditorText(textBeforeTail());
@@ -1637,6 +1925,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   // Hooks called by script.js (DOMContentLoaded and scrambleController.render()).
   window.onPrunedTreeReady = function (tree, crit) {
+    // the alg sets load once the solver is up (the last pair and the last layer use them)
+    setTimeout(ensureLastLayerData, 1500);
     prunedTree = tree;
     criteria = crit;
     sessions.clear();

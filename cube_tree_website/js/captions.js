@@ -87,6 +87,28 @@ const CAPTIONS = {
   'searcher.pick.style.efficiency': 'shortest',
   'searcher.pick.style.tps': 'smoothest',
   'searcher.pick.setup': 'sets you up',
+  // --- searcher: the last layer and the last slot (README "Algorithm sets") ---
+  'searcher.ll.case': 'here is how I would solve this one.',
+  'searcher.ll.stepDone': 'that finishes the {label}! press tab (or enter) to write it down.',
+  'searcher.ll.unknown': 'I don’t know an alg for this one. finish it your way!',
+  'searcher.ll.auf': 'one last turn of the top!',
+  'searcher.ll.more': 'all algs for this case ›',
+  'searcher.pick.ll.best': 'my favourite',
+  'searcher.pick.ll.favourite': 'community favourite',
+  'searcher.pick.ll.set.zbll': 'whole last layer',
+  'searcher.pick.ll.set.oll': 'two-look',
+  'searcher.pick.ll.set.coll': 'corners first',
+  'searcher.pick.ll.set.pll': 'pll',
+  'searcher.pick.lastslot.ols': 'skips the oll',
+  'searcher.pick.lastslot.zbls': 'sets up zbll',
+  'reason.ll.fastest': 'the fastest alg I know for {label}.',
+  'reason.ll.new': 'a new find: faster than the community’s algs for {label}.',
+  'reason.ll.favourite': 'the one most cubers use.',
+  'reason.ll.whole': 'the edges are oriented: this solves the whole last layer ({label}).',
+  'reason.ll.twoLook': 'or the two-look way: orient first ({label}), then pll.',
+  'reason.ll.other': 'another way: {label}.',
+  'reason.ls.skipsOll': 'inserts the pair and orients the whole last layer ({label}): no oll.',
+  'reason.ls.edgesForZbll': 'inserts the pair and orients the edges ({label}): then zbll.',
   'reason.fastest': 'fastest to execute here.',
   'reason.free_pair': 'sets up a free pair. fancy!',
   'reason.edges_good': 'leaves the edges oriented: fewer rotations later.',
@@ -125,8 +147,27 @@ const CAPTIONS = {
   'critique.total.great': 'a great solve. I would not change a thing!',
   'critique.total.good': 'a good solve, with a couple of spots to polish.',
   'critique.total.work': 'a few steps have quicker options. have a look at the ones above!',
+  'critique.ll.best': '{label}: my favourite alg for it!',
+  'critique.ll.good': '{label}: a great alg for it.',
+  'critique.ll.slower': '{label}: there is a quicker alg for this case.',
+  'critique.ll.alt': 'try {alg}',
+  'critique.ll.unknown': '{label}: I don’t know this one well enough to say.',
   'critique.needSolve': 'type a solution (or finish this one) and I’ll go through it.',
   'critique.working': 'going through it…',
+
+  // --- the alg sets page (algs.html) ---
+  'algs.search.placeholder': 'search: oll 27, t perm, sune, zbll as 3, or type moves',
+  'algs.group.all': 'all',
+  'algs.loading': 'loading the algs…',
+  'algs.loadFailed': 'the alg sets could not be loaded. reload to try again. sorry!',
+  'algs.empty': 'no case by that name.',
+  'algs.noMatch': 'no alg starts like that.',
+  'algs.note.solves': 'this alg solves',
+  'algs.note.none': 'this alg doesn’t solve a case of these sets.',
+  'algs.src.db': 'community',
+  'algs.src.dbTop': 'community favourite',
+  'algs.src.gen': 'found by the tree-searcher',
+  'algs.src.genNew': 'new find: faster than the community’s',
 
   // --- info dialog sections (title, text) ---
   'info.how.title': 'how it works',
@@ -143,11 +184,13 @@ const CAPTIONS = {
   'info.lookahead.text': 're-rank the best few steps (breadth) by how fast they go together with the next steps. 3 is slow.',
   'info.critique.title': 'critique',
   'info.critique.text': 'type a whole solution and ask for a critique: each step is compared with the solver’s list for the same step.',
+  'info.lastlayer.title': 'last layer',
+  'info.lastlayer.text': 'once the f2l is solved, keep typing: each line that orients or solves the last layer is read as a step and named after its case. tab takes the fastest alg for the case on the cube, in your method (settings: oll + pll, coll or zbll). at the last pair, zbls and ols algs show up when they fit. every case and its algs are on the algs page.',
   'info.background.title': 'background',
   'info.background.text': 'every scramble keeps searching while you look at another one; background tabs get less cpu.',
 };
 
-const INFO_SECTION_KEYS = ['how', 'profile', 'cube', 'ranking', 'filters', 'lookahead', 'critique', 'background'];
+const INFO_SECTION_KEYS = ['how', 'profile', 'cube', 'ranking', 'filters', 'lookahead', 'critique', 'lastlayer', 'background'];
 
 function caption(key, vars) {
   const text = Object.prototype.hasOwnProperty.call(CAPTIONS, key) ? CAPTIONS[key] : key;

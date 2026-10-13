@@ -107,6 +107,7 @@ const PC_COLOURS = {
   B: ['#6f9bff', '#1e5bff', '#1238b0'],
   R: ['#ff6a5c', '#e8231c', '#a51510'],
   O: ['#ffb45c', '#ff8a00', '#c26400'],
+  X: ['#7a7a76', '#5d5d5a', '#3f3f3d'], // a sticker that does not matter (alg-set case pictures)
 };
 const PC_BODY = ['#3a3a3a', '#1c1c1c', '#0c0c0c'];
 

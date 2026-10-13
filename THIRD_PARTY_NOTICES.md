@@ -134,6 +134,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## SpeedCubeDB — community algorithms (data)
+
+Source: https://www.speedcubedb.com (the OLL, PLL, COLL, ZBLL, VLS, Summer
+Variation and F2L pages, fetched 2026-10-12 with `tools/algdb.js`). The
+case names, setups, community algorithms (move sequences) and their vote
+counts are stored in `cube_tree_website/data/ll/scdb.json` and shown, with
+their source, on the algs page and in the solving screen's last-layer
+suggestions. The raw pages are not redistributed. Every imported algorithm
+is replayed on the cube; the ones that do not solve their case are dropped.
+
 ## Development-only tools (not distributed)
 
 The Python packages `magiccube` and `kociemba` are used only by the test

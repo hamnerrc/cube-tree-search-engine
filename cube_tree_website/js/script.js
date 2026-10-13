@@ -674,16 +674,21 @@ function mirrorMove(t) {
  * steps out of the training algs (leave-one-solve-out benchmarks). `proSteps`
  * (one array of step algs per solve) replaces proStepAlgs(), for tuning
  * tools that train on part of the data; `order` / `discount` override
- * NATURALNESS.
+ * NATURALNESS. `corpus` (an array of algs) replaces the F2L training algs
+ * altogether (the last-layer model of tools/ll-build.js).
  */
-function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight, proSteps = proStepAlgs(), order = NATURALNESS.order, discount = NATURALNESS.discount } = {}) {
+function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight, proSteps = null, order = NATURALNESS.order, discount = NATURALNESS.discount, corpus = null } = {}) {
     const { floor } = NATURALNESS;
     const D = discount;
-    const algs = HUMAN_F2L_ALGS.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-    proSteps.forEach((steps, k) => {
-        if (k + 1 === excludeSolve) return;
-        for (let n = 0; n < proWeight; n++) algs.push(...steps);
-    });
+    let algs;
+    if (corpus) algs = corpus.slice();
+    else {
+        algs = HUMAN_F2L_ALGS.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+        (proSteps || proStepAlgs()).forEach((steps, k) => {
+            if (k + 1 === excludeSolve) return;
+            for (let n = 0; n < proWeight; n++) algs.push(...steps);
+        });
+    }
     // counts[n]: context (n previous tokens, space-joined) -> Map(token -> count);
     // the highest order holds raw counts, lower orders Kneser-Ney continuation counts.
     const counts = Array.from({ length: order }, () => new Map());
