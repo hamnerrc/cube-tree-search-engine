@@ -63,6 +63,7 @@ const CaseDiagram = (() => {
     c.width = 170; c.height = 153;
     const cube = new PixelCube(c, { resolution: 'chunky', backFaces: false });
     cube.setTheme({ clear: true, floorShadow: false });
+    cube.zoomBy(1.75); // a tile shows the cube, not room to orbit it
     iso = { canvas: c, cube };
     return iso;
   }

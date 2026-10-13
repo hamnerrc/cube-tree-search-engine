@@ -1609,7 +1609,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const add = (m, role, why) => { if (m && !picks.some(p => p.m === m)) picks.push({ m, role, why }); };
     const firstSet = fits[0].setId;
     const own = fits.filter(m => m.setId === firstSet);
-    add(own[0], 'll.best', own[0].src === 'gen' ? 'll.new' : 'll.fastest');
+    // a new find only when the community has algs for the case and it beats them
+    const caseHasDb = pool.some(m => m.setId === firstSet && m.src === 'db');
+    const isNew = own[0].src === 'gen' && caseHasDb && pool.filter(m => m.setId === firstSet)[0] === own[0];
+    add(own[0], 'll.best', isNew ? 'll.new' : 'll.fastest');
     const fav = own.filter(m => m.src === 'db').sort((a, b) => (b.alg.votes || 0) - (a.alg.votes || 0))[0];
     if (fav && fav !== own[0]) add(fav, 'll.favourite', 'll.favourite');
     const other = fits.find(m => m.setId !== firstSet);

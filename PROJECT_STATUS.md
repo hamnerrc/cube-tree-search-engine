@@ -50,6 +50,10 @@ below):
    pair that orients the edges or the layer when the quicker alternative
    does not.
 
+All fast suites pass; real-engine suites re-run and passing:
+solver-bridge-e2e, cubedb-export-e2e, wide-spellings-e2e, progressive-e2e,
+crossSolver/test (dag-search, slot-mapping, color-orientation).
+
 **Rename (2026-10-11, developer):** the solving companion is **the
 tree-searcher** everywhere -- captions, aria labels, docs and code
 (`js/searchers.js`, `SEARCHER_SHEET`, `drawSearcher`, `searcherPicks`,

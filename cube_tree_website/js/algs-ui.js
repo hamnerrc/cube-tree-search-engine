@@ -423,7 +423,7 @@
       li.tabIndex = 0;
       const src = a.src === 'db'
         ? (a.votes && a.votes === topVotes ? caption('algs.src.dbTop') : caption('algs.src.db'))
-        : (bestDb < 0 || j < bestDb ? caption('algs.src.genNew') : caption('algs.src.gen'));
+        : (bestDb >= 0 && j < bestDb ? caption('algs.src.genNew') : caption('algs.src.gen'));
       li.innerHTML = `<span class="alg">${algHtml(a)}</span><span class="meta">${stm(a.alg)} stm · ${esc(src)}</span>`;
       const copy = document.createElement('button');
       copy.type = 'button';
