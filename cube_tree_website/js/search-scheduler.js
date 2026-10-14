@@ -119,10 +119,15 @@ function createSearchScheduler() {
       });
   }
 
+  const idleWaiters = [];
   function pump() {
     for (const job of queued.filter(j => j.priority > SEARCH_PRIORITY.BACKGROUND)) start(job);
     if (!running.size && queued.length) start(queued[0]);
     pumpGates();
+    if (!running.size && !queued.length && idleWaiters.length) {
+      const fns = idleWaiters.splice(0);
+      Promise.resolve().then(() => fns.forEach(f => f()));
+    }
   }
 
   return {
@@ -150,6 +155,10 @@ function createSearchScheduler() {
       pump();
     },
     get idle() { return !queued.length && !running.size; },
+    /** Is any job but `job` queued or running (does the engine time belong to someone else)? */
+    busyBesides(job) { return queued.length > 0 || [...running].some(j => j !== job); },
+    /** Calls fn once nothing is queued or running (at once, if so now). */
+    whenIdle(fn) { idleWaiters.push(fn); if (!queued.length && !running.size) pump(); },
   };
 }
 

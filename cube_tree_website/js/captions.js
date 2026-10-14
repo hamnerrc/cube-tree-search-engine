@@ -186,7 +186,7 @@ const CAPTIONS = {
   'info.filters.title': 'filters',
   'info.filters.text': 'they only hide results: multislot, wide moves, hide awkward f2l solutions, simple pseudo only.',
   'info.lookahead.title': 'look-ahead',
-  'info.lookahead.text': 're-rank the best few steps (breadth) by how fast they go together with the next steps. 3 is slow.',
+  'info.lookahead.text': 're-rank the steps by how fast they go together with the next steps: the best few first, then more and more while nothing else needs the solver. 3 is slow.',
   'info.critique.title': 'critique',
   'info.critique.text': 'type a whole solution and ask for a critique: each step is compared with the solver’s list for the same step.',
   'info.lastlayer.title': 'last layer',

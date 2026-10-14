@@ -512,7 +512,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // depth-1 search behind it); filters only hide.
   // ---------------------------------------------------------------------
   const view = {
-    lookaheadDepth: 1, lookaheadBreadth: 5, multislot: false, wideMoves: true,
+    lookaheadDepth: 1, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
     llMethod: 'oll', lastSlot: true, // README "Algorithm sets": oll | coll | zbll; zbls/ols picks at the last pair
   };
@@ -533,7 +533,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     try { saved = JSON.parse(localStorage.getItem(scopedKey(VIEW_PREFS_KEY)) || 'null'); } catch (err) { saved = null; }
     Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
     view.lookaheadDepth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, parseInt(view.lookaheadDepth, 10) || 1));
-    view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(view.lookaheadBreadth, 10) || 5));
+    delete view.lookaheadBreadth; // the look-ahead's breadth grows by itself now
     view.simplePseudo = !!view.simplePseudo;
     view.multislot = !!view.multislot;
     delete view.noR2L2; // a removed option, maybe still saved
@@ -554,8 +554,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function syncViewControls() {
     const set = (id, prop, value) => { const el = $(id); if (el) el[prop] = value; };
     set('lookahead-depth', 'value', String(view.lookaheadDepth));
-    set('lookahead-breadth', 'value', view.lookaheadBreadth);
-    set('lookahead-breadth', 'disabled', view.lookaheadDepth <= 1);
     const wrap = $('simple-pseudo-wrap');
     if (wrap) wrap.hidden = !pseudoOn();
     set('multislot', 'checked', view.multislot);
@@ -572,10 +570,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const research = () => { saveViewPrefs(); syncViewControls(); runSearch(); };
     const refine = () => { saveViewPrefs(); syncViewControls(); runSearch({ keepRows: true }); };
     on('lookahead-depth', 'change', (e) => { view.lookaheadDepth = parseInt(e.target.value, 10) || 1; research(); });
-    on('lookahead-breadth', 'change', (e) => {
-      view.lookaheadBreadth = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 5));
-      research();
-    });
     on('simple-pseudo', 'change', (e) => { view.simplePseudo = e.target.checked; refine(); });
     on('hide-unorthodox', 'change', (e) => { view.hideUnorthodox = e.target.checked; refine(); });
     on('wide-moves', 'change', (e) => { view.wideMoves = e.target.checked; refine(); });
@@ -643,7 +637,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const filter = resultFilter();
     return {
       depth: lookahead,
-      breadth: view.lookaheadBreadth,
       filter: filter.fn,
       filterKey: filter.key,
       multislot: true,
@@ -655,12 +648,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function resultsFor(session, h, ph, priority) {
     const opts = searchOptions(priority);
-    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.depth > 1 ? opts.breadth : '', opts.filterKey, opts.planning ? '' : 'noplan'].join('|');
+    const key = [session.currentNodeId, session.scoredPath, opts.depth, opts.filterKey, opts.planning ? '' : 'noplan'].join('|');
     if (!session.resultsCache || session.resultsCache.key !== key) {
       if (session.resultsCache && session.resultsCache.job) scheduler.setStale(session.resultsCache.job);
       session._status = 'searching';
       renderScrambleStatusIfActive(session);
-      const cache = { key, live: null };
+      const cache = { key, live: null, bests: new Map() };
       session.resultsCache = cache;
       const isShown = () => sessions.get(activeIndex) === session && session.resultsCache === cache;
       // the engine's progress messages are technical: only 'busy' reaches the screen
@@ -672,19 +665,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         if (isShown()) renderActiveResults(list, true);
       };
       const isCancelled = () => session.resultsCache !== cache;
-      const job = scheduler.submit((wrap) => {
-        if (session.postProcessor && session.postProcessor.forJob) session.postProcessor = session.postProcessor.forJob(job);
-        return searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled });
-      }, priority);
+      const job = submitLookahead(session, cache, h, ph, opts, priority, { onUpdate, onStatus, isCancelled, isShown });
       const promise = job.promise;
       cache.job = job;
       cache.promise = promise;
-      trackJob(session, job, priority);
-      promise.then(() => {
+      promise.then((list) => {
         cache.live = null;
         if (session.resultsCache !== cache) return;
         session._status = 'done';
         renderScrambleStatusIfActive(session);
+        if (list && list.stepResults) cache.stepResults = list.stepResults;
+        if (list && list.lookaheadMore) growLater(session, cache, h, ph, opts, { onUpdate, onStatus, isCancelled, isShown });
       }).catch(() => {
         if (session.resultsCache !== cache) return;
         session._status = 'error';
@@ -696,6 +687,39 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (session.resultsCache.live && sessions.get(activeIndex) === session) renderActiveResults(session.resultsCache.live, true);
     }
     return session.resultsCache.promise;
+  }
+
+  /**
+   * The step's search with look-ahead as a scheduler job. The look-ahead's
+   * breadth grows while this is the step on screen, the page is visible and
+   * no other search needs the engines (README "Look-ahead").
+   */
+  function submitLookahead(session, cache, h, ph, opts, priority, { onUpdate, onStatus, isCancelled, isShown }, stepResults = null) {
+    let job = null;
+    const grow = () => isShown() && !isCancelled() && !document.hidden && !!job && !scheduler.busyBesides(job)
+      && !continuationPending();
+    job = scheduler.submit((wrap) => {
+      if (session.postProcessor && session.postProcessor.forJob) session.postProcessor = session.postProcessor.forJob(job);
+      return searchWithLookahead(session, wrap(h), onStatus, wrap(ph), { ...opts, onUpdate, isCancelled, grow, bests: cache.bests, stepResults });
+    }, priority);
+    trackJob(session, job, priority);
+    return job;
+  }
+
+  /** A look-ahead that stopped growing for another search goes on once the engines are free. */
+  function growLater(session, cache, h, ph, opts, hooks) {
+    const stepResults = session.resultsCache === cache ? cache.stepResults : null;
+    scheduler.whenIdle(() => {
+      if (session.resultsCache !== cache || !hooks.isShown()) return;
+      if (document.hidden) { document.addEventListener('visibilitychange', () => growLater(session, cache, h, ph, opts, hooks), { once: true }); return; }
+      const job = submitLookahead(session, cache, h, ph, opts, ACTIVE, hooks, stepResults);
+      cache.job = job;
+      job.promise.then((list) => {
+        if (session.resultsCache !== cache || !list) return;
+        renderActiveResults(list);
+        if (list.lookaheadMore) growLater(session, cache, h, ph, opts, hooks);
+      }, () => {});
+    });
   }
 
   function trackJob(session, job, priority) {

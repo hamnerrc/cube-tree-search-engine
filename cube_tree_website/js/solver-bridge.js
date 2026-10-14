@@ -2263,7 +2263,8 @@ function mergeRanked(a, b) {
 
 // Depths 4 and 5 were removed: no use for finding a human solution.
 const LOOKAHEAD_MAX_DEPTH = 3;
-const DEFAULT_LOOKAHEAD_BREADTH = 5;
+// the look-ahead starts with this many candidates and grows from there
+const DEFAULT_LOOKAHEAD_BREADTH = 3;
 // Below the first look-ahead level only the best few continuations of each
 // node are followed, or depth 3 would need breadth^2 searches.
 const LOOKAHEAD_INNER_BREADTH = 2;
@@ -2492,16 +2493,26 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
       onUpdate(copy);
     } else onUpdate(shown);
   });
-  const results = filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial, options.isCancelled || ALWAYS_WANTED), filter, true);
+  // a caller may hand over the step's own list (a later round of a growing look-ahead)
+  const results = options.stepResults || filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial, options.isCancelled || ALWAYS_WANTED), filter, true);
   if (depth === 1 || !results.length) return results;
 
-  const top = results.slice(0, breadth);
-  const bests = new Array(top.length);
+  // The breadth grows (developer, 2026-10-13: no breadth setting): the best
+  // `breadth` candidates are looked at first; then, one by one in rank order,
+  // the next ones, for as long as options.grow() says the engines are not
+  // needed elsewhere. options.bests (a Map the caller keeps) remembers every
+  // finished look-ahead, so a later round goes on where this one stopped.
+  const known = options.bests || null;
+  const grow = typeof options.grow === 'function' ? options.grow : null;
+  const keyOf = c => `${c.rotation || ''}|${c.coreAlg}|${c.targetNodeId}`;
+  const bests = [];
+  let next = 0; // candidates [0, next) are looked at (or being looked at)
   const rerank = (final) => {
     const done = [];
     const pending = [];
-    top.forEach((cand, i) => {
-      if (bests[i] === undefined) { pending.push({ ...cand, lookaheadPending: true }); return; }
+    results.slice(0, next).forEach((cand, i) => {
+      // a growing candidate still being looked at keeps its place below
+      if (bests[i] === undefined) { if (i < breadth) pending.push({ ...cand, lookaheadPending: true }); return; }
       done.push({
         ...cand,
         lookaheadTpp: bests[i] ? bests[i].tpp : cand.tpp,
@@ -2512,29 +2523,55 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
       });
     });
     done.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
-    const out = done.concat(pending, results.slice(breadth));
+    const rest = results.slice(0, next).filter((c, i) => bests[i] === undefined && i >= breadth).concat(results.slice(next));
+    const out = done.concat(pending, rest);
     if (results.hiddenCount) out.hiddenCount = results.hiddenCount;
     if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
     if (results.failedCalls) out.failedCalls = results.failedCalls;
     if (done.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
     if (!final) out.lookaheadPending = pending.length;
+    out.lookaheadCount = done.length;
+    if (next < results.length) out.lookaheadMore = true;
+    // the step's own list, for a later round (not enumerable: copies leave it)
+    Object.defineProperty(out, 'stepResults', { value: results, enumerable: false });
     return out;
   };
-  if (onUpdate) onUpdate(rerank(false));
   // The results page searches every step with multislots and hides them with
   // its filter; while they are hidden, follow-ups searched without them give
   // the same look-ahead in half the time (test/search-options-e2e.js).
   const follow = options.lookaheadMultislot === undefined ? session : session.withSettings({ multislot: options.lookaheadMultislot });
-  await Promise.all(top.map((cand, i) => {
-    const status = onStatus && (msg => onStatus(`look-ahead ${i + 1}/${top.length} (depth ${depth}): ${msg}`));
+  const cancelled = () => !!(options.isCancelled && options.isCancelled());
+  const look = (i) => {
+    const cand = results[i];
+    const k = keyOf(cand);
+    if (known && known.has(k)) { bests[i] = known.get(k); return Promise.resolve(); }
+    const status = onStatus && (msg => onStatus(`look-ahead ${i + 1} (depth ${depth}): ${msg}`));
     return bestContinuation(lookaheadFork(follow, cand, i), depth - 1, helper, status, pseudoHelper, lookDeadline, filter, options.isCancelled || null)
       .then((best) => {
         bests[i] = best;
-        if (onUpdate && bests.filter(b => b !== undefined).length < top.length) onUpdate(rerank(false));
+        if (known && best && !best.cancelled) known.set(k, best);
+        if (onUpdate) onUpdate(rerank(false));
       });
-  }));
+  };
+  await new Promise((resolve, reject) => {
+    let running = 0;
+    const pump = () => {
+      // (a candidate an earlier round looked at costs nothing: always taken)
+      while (next < results.length && !cancelled()
+        && (next < breadth || (known && known.has(keyOf(results[next]))) || (grow && running < LOOKAHEAD_GROW_PARALLEL && grow()))) {
+        const i = next++;
+        running++;
+        look(i).then(() => { running--; pump(); }, reject);
+      }
+      if (!running) resolve();
+    };
+    pump();
+    if (onUpdate) onUpdate(rerank(false));
+  });
   return rerank(true);
 }
+// look-aheads of growing candidates run side by side (an engine pool serves them by rank)
+const LOOKAHEAD_GROW_PARALLEL = 2;
 
 /**
  * The root's outgoing target whose solved corners/edges are exactly the given

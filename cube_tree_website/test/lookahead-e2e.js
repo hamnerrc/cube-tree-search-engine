@@ -90,6 +90,29 @@ const advanced = process.argv.includes('--pro') ? ['pro_moves'] : [];
     console.log(`  ${r.coreAlg.padEnd(28)} combined ${r.lookaheadTpp.toFixed(3)} via ${r.lookaheadAlgs.join(' | ')}`);
   }
 
+  // --- a growing breadth: 2, grown to 6 while grow() allows it, in two rounds ---
+  // (README "Look-ahead": no breadth setting; the second round goes on from the
+  // first's finished look-aheads and must not search them again)
+  const bests = new Map();
+  let allowed = 2;
+  const g1 = await searchWithLookahead(newSession(), h, null, null, { depth: 2, breadth: 2, bests, grow: () => allowed-- > 0 });
+  assert.strictEqual(g1.lookaheadCount, 4, 'round 1: 2 + 2 grown');
+  assert.ok(g1.lookaheadMore);
+  assert.strictEqual(bests.size, 4);
+  const searched = [];
+  const spy = Object.create(h);
+  for (const k of Object.getOwnPropertyNames(Object.getPrototypeOf(h))) {
+    if (k.startsWith('solve')) spy[k] = (...args) => { searched.push(k); return h[k](...args); };
+  }
+  allowed = 2;
+  const fresh2 = newSession();
+  const g2 = await searchWithLookahead(fresh2, spy, null, null, { depth: 2, breadth: 2, bests, grow: () => allowed-- > 0, stepResults: g1.stepResults });
+  assert.strictEqual(g2.lookaheadCount, 6, 'round 2: 4 known + 2 grown');
+  const fixed = await searchWithLookahead(newSession(), h, null, null, { depth: 2, breadth: 6 });
+  assert.deepStrictEqual(g2.slice(0, 6).map(r => r.coreAlg), fixed.slice(0, 6).map(r => r.coreAlg), 'grown == fixed breadth 6');
+  assert.deepStrictEqual(g2.map(r => r.coreAlg), fixed.map(r => r.coreAlg));
+  console.log(`growing breadth: 2 -> 4 -> 6, same order as breadth 6; round 2 made ${searched.length} engine calls (two new candidates only)`);
+
   console.log('\nAll look-ahead e2e checks passed.');
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
