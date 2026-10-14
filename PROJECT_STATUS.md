@@ -108,6 +108,13 @@ suite passing. What was done, in the brief's order (README is the spec):
 10. **Onboarding**: three more questions -- the last layer (2-look / full /
     COLL / ZBLL -> method and known sets), last-slot tricks (each switches
     its set on), how chatty the tree-searcher is.
+12. **Efficiency by moves per piece** (developer, after the pass): the
+    white-collar pick, its "n moves shorter" reason and the critique's
+    "longer" compare moves per piece solved (`suggest.js movesSaved`:
+    best's moves per piece x the step's pieces - its moves, >= 2), so a
+    plain cross is no longer "3 moves shorter" than an xcross; two pairs in
+    10 beat one in 7 ("fewer moves for each piece it solves"). The pick is
+    called "most efficient" (was "shortest").
 11. Also: the settings' cross colours showed none checked when the saved
     list was empty (the search used white): the form now shows white.
 

@@ -8,8 +8,9 @@
  * 2. only when one is quantifiably different: a TPS solver gets a
  *    **smoother** step -- one of the top three that is more than two moves
  *    longer than the move-optimal step for the same goal (and longer than
- *    the fastest), so its turns must flow; an efficiency solver a step at
- *    least two moves shorter than the fastest within PICK_MARGIN;
+ *    the fastest), so its turns must flow; an efficiency solver a step
+ *    within PICK_MARGIN with fewer moves per piece than the fastest (two
+ *    moves' worth for the pieces it solves; movesSaved);
  * 3. the **free pair setup**: the fastest step within SETUP_MARGIN that
  *    leaves more free pairs than there are now (or the look-ahead's best
  *    when look-ahead is on).
@@ -30,7 +31,7 @@ const SMOOTH_EXTRA = 2;     // ... more than this many moves above the move-opti
 // Which facts a pick leads with, by its role (and pick 2 by style).
 const ROLE_REASONS = {
   best: ['fastest', 'multislot', 'cancels', 'free_pair', 'no_rotation'],
-  efficiency: ['shorter', 'multislot', 'no_rotation', 'cancels'],
+  efficiency: ['shorter', 'efficient', 'multislot', 'no_rotation', 'cancels'],
   tps: ['smoother', 'wide_ergonomic', 'no_rotation', 'shorter'],
   setup: ['lookahead_best', 'free_pair', 'edges_good', 'back_slots', 'multislot', 'no_rotation'],
   next: ['nearly', 'no_rotation', 'shorter', 'free_pair', 'cancels'],
@@ -39,6 +40,23 @@ const SETUP_MARGIN = 0.16;
 
 const isRotTok = t => /^[xyz]/.test(t);
 const stmOf = alg => String(alg || '').split(/\s+/).filter(t => t && !isRotTok(t)).length;
+/** Pieces a step solves: the cross's four edges at the first step, then its new corners and edges. */
+const piecesOf = (r, isRoot) => {
+  const corners = (r.corners || []).length;
+  return (isRoot ? 4 : 0) + corners + (r.edges ? r.edges.length : corners);
+};
+/**
+ * How many moves `r` saves against `best` for the pieces `r` solves: best's
+ * moves per piece times r's pieces, minus r's moves (developer, 2026-10-13:
+ * "more efficient" means fewer moves per piece; a step is not more
+ * efficient for solving fewer pieces in fewer moves). The same pieces: the
+ * plain difference in moves.
+ */
+function movesSaved(r, best, isRoot) {
+  const pr = piecesOf(r, isRoot), pb = piecesOf(best, isRoot);
+  if (!pr || !pb) return 0;
+  return (stmOf(best.coreAlg) / pb) * pr - stmOf(r.coreAlg);
+}
 const rotationsIn = alg => String(alg || '').split(/\s+/).filter(t => t && isRotTok(t)).length;
 
 /** The moves a step is "really" made of: without leading AUFs and rotations. */
@@ -103,8 +121,10 @@ function reasonsFor(r, ctx) {
   if (ctx.after && leavesFreePair(ctx.before, ctx.after)) out.push({ key: 'free_pair' });
   if (ctx.before && ctx.after && ctx.after.badEdgesU < ctx.before.badEdgesU && allowed('pair_influencing')) out.push({ key: 'edges_good' });
   if (best && r !== best) {
-    const d = stmOf(best.coreAlg) - stmOf(r.coreAlg);
-    if (d >= 2) out.push({ key: 'shorter', vars: { n: d } });
+    const saved = movesSaved(r, best, ctx.isRoot);
+    const same = piecesOf(r, ctx.isRoot) === piecesOf(best, ctx.isRoot);
+    // fewer moves per piece: "n moves shorter" for the same pieces, else "fewer moves per piece"
+    if (saved >= 2 - 1e-9) out.push(same ? { key: 'shorter', vars: { n: Math.round(saved) } } : { key: 'efficient' });
     else if (ctx.optimalStm && isSmoother(r, ctx.rank, best, ctx.optimalStm(r))) out.push({ key: 'smoother' });
   }
   if (!rotationsIn(r.coreAlg) && best && (r === best ? false : rotationsIn(best.coreAlg) > 0)) out.push({ key: 'no_rotation' });
@@ -137,8 +157,11 @@ function searcherPicks(results, ctx = {}) {
   // pick 2: only when quantifiably different, by style
   let second = null;
   if (ctx.style === 'efficiency') {
-    second = list.filter(r => r.tpp <= best.tpp * (1 + PICK_MARGIN) && fresh(r) && stmOf(best.coreAlg) - stmOf(r.coreAlg) >= 2)
-      .sort((a, b) => stmOf(a.coreAlg) - stmOf(b.coreAlg) || a.tpp - b.tpp)[0] || null;
+    // fewer moves per piece than the fastest, by two moves' worth at least
+    const isRoot = !!ctx.isRoot;
+    const mpp = r => stmOf(r.coreAlg) / Math.max(1, piecesOf(r, isRoot));
+    second = list.filter(r => r.tpp <= best.tpp * (1 + PICK_MARGIN) && fresh(r) && movesSaved(r, best, isRoot) >= 2 - 1e-9)
+      .sort((a, b) => mpp(a) - mpp(b) || a.tpp - b.tpp)[0] || null;
   } else {
     second = list.slice(1, SMOOTH_TOP).find((r, i) => fresh(r) && isSmoother(r, i + 1, best, optimalStm(r))) || null;
   }
@@ -185,5 +208,5 @@ function searcherPicks(results, ctx = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { searcherPicks, reasonsFor, pickFamily, stmOf, setupValue, cubeView, isSmoother, leavesFreePair, PICK_MARGIN };
+  module.exports = { searcherPicks, reasonsFor, pickFamily, stmOf, piecesOf, movesSaved, setupValue, cubeView, isSmoother, leavesFreePair, PICK_MARGIN };
 }

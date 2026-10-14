@@ -46,6 +46,10 @@ pair at once, a multislot two pairs at once).
 - **Look-ahead** has only a depth (off, 2, 3). Its breadth grows by itself:
   the best three candidates first, then one more at a time for as long as
   the step is on screen and no other search needs the engines.
+- **"More efficient"** (the white-collar pick, "n moves shorter", the
+  critique's "longer") means **fewer moves per piece solved** (the cross's
+  four edges, then a corner and an edge per pair), never a shorter step
+  that only solves fewer pieces.
 - **The tree-searcher** makes two to four picks, each with a reason, and
   speaks to the solver's level and to how much they want it to talk
   (onboarding). Its **critique** only suggests what the solver has switched

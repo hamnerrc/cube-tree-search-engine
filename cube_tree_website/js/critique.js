@@ -83,7 +83,10 @@ function whySlower(mine, alt, ctx) {
   const turns = alg => String(alg || '').split(/\s+/).filter(t => t && !isRotationTok(t)).length;
   const rots = alg => String(alg || '').split(/\s+/).filter(t => t && isRotationTok(t)).length;
   if (rots(mine.coreAlg) > rots(alt.coreAlg)) out.push('rotation');
-  if (turns(mine.coreAlg) > turns(alt.coreAlg) + 1) out.push('longer');
+  // longer: more moves per piece (the alternative may solve other pieces)
+  const pieces = r => (ctx.isRoot ? 4 : 0) + (r.corners || []).length + (r.edges ? r.edges.length : (r.corners || []).length);
+  const pm = Math.max(1, pieces(mine)), pa = Math.max(1, pieces(alt));
+  if ((turns(mine.coreAlg) / pm) * pa > turns(alt.coreAlg) + 1) out.push('longer');
   if (flowOf(mine.coreAlg) > flowOf(alt.coreAlg) * 1.08) out.push('awkward');
   if (ctx.mineView && ctx.altView && !ctx.finishing) {
     if (ctx.altView.connected > ctx.mineView.connected) out.push('no_free_pair');
@@ -154,7 +157,7 @@ async function critiqueSolve(session, opts = {}) {
     } else if (alt) {
       const keys = why ? [`outside.${outsideKey(why)}`] : [];
       for (const w of whySlower(row, alt, {
-        mineView: viewOf(row), altView: viewOf(alt), finishing: after >= 4, edgesAllowed,
+        mineView: viewOf(row), altView: viewOf(alt), finishing: after >= 4, edgesAllowed, isRoot,
       })) keys.push(`why.${w}`);
       item.why = keys.slice(0, 2);
       item.text = caption('critique.step.slower', { label, why: item.why.map(x => caption(`critique.${x}`)).join(' ') });

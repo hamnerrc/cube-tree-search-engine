@@ -15,7 +15,7 @@ const path = require('path');
 const js = f => path.join(__dirname, '..', 'js', f);
 for (const f of ['script.js', 'facelet-cube.js', 'facelet-flags.js', 'skill-levels.js']) Object.assign(global, require(js(f)));
 Object.assign(global, require(js('solver-bridge.js')));
-const { searcherPicks, pickFamily, stmOf } = require(js('suggest.js'));
+const { searcherPicks, pickFamily, stmOf, movesSaved, reasonsFor } = require(js('suggest.js'));
 
 let failures = 0;
 const test = (name, fn) => {
@@ -51,6 +51,24 @@ test('pick 1 is the best; pick 2 only when quantified; families differ', () => {
   assert.ok(!searcherPicks(far, { style: 'tps', answers: { speed: 7 } }).some(p => p.role === 'style.tps'), 'the long one is 4th: not in the top three');
   const fams = eff.map(p => pickFamily(p.r));
   assert.strictEqual(new Set(fams).size, fams.length, 'families differ');
+});
+
+test('white collar: more efficient means fewer moves per piece, not a shorter step that solves less', () => {
+  // the first step: an xcross (6 pieces, 9 moves) and a plain cross (4 pieces, 6 moves): 1.5 a piece both
+  const xc = row("R U R' D R' F D' L2 F", 1.0, { corners: ['FR'] });
+  const cross = row("D R' F D' L2 F", 1.05, { corners: [] });
+  const root = searcherPicks([xc, cross], { style: 'efficiency', answers: { speed: 7 }, isRoot: true });
+  assert.ok(!root.some(p => p.role === 'style.efficiency'), 'three moves shorter, but only because it solves two pieces fewer');
+  assert.ok(!reasonsFor(cross, { best: xc, rank: 1, isRoot: true }).some(x => x.key === 'shorter' || x.key === 'efficient'));
+  // a later step: one pair in 7, or two pairs in 10 (5 a pair): the multislot is the more efficient one
+  const one = row("R U R' U' R U R'", 1.0, { corners: ['FR'] });
+  const two = row("R U' R' U L' U L U' R U R'", 1.05, { corners: ['FR', 'FL'], multislot: true, targetNodeId: 'N9' });
+  const later = searcherPicks([one, two], { style: 'efficiency', answers: { speed: 5 }, isRoot: false });
+  assert.strictEqual(later[1].r, two);
+  assert.strictEqual(later[1].role, 'style.efficiency');
+  assert.ok(later[1].reasons.some(x => x.key === 'efficient'), 'fewer moves per piece (it is not shorter)');
+  assert.ok(movesSaved(two, one, false) >= 2);
+  assert.ok(movesSaved(one, two, false) < 0, 'the single pair is not the more efficient one');
 });
 
 test('pick 3: the fastest step leaving a free pair, none when the fastest does; or the look-ahead best', () => {
