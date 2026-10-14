@@ -65,6 +65,42 @@ const LastLayer = (() => {
   /** The label of a case: "oll 27", "pll t", "zbll t 12". */
   const caseLabel = (setId, data, kase) => AlgSets.caseTitle(data[setId] ? data[setId].data.name : setId, kase.name);
 
+  // ---- the solver's preferences (solver-ui.js sets them; algs-ui.js too) ----
+  // style: 'efficiency' ("white collar") or 'tps' ("blue collar"): a small
+  //   cost per move, so white collar solvers see shorter algs a little
+  //   higher and blue collar ones faster-turning ones (developer, 2026-10-13);
+  // main: case id -> the solver's own alg for it (their main), known: case
+  //   id -> true; lastSlot: the last-slot sets switched on ({ zbls, ols, vls,
+  //   hls, wv, sv }); hideAwkward: hide awkward algs where the case's
+  //   community favourite is not awkward itself.
+  const PREFS = { style: 'tps', main: {}, known: {}, lastSlot: { zbls: true, ols: false, vls: false, hls: false, wv: true, sv: true }, hideAwkward: true };
+  const STYLE_PER_MOVE = { efficiency: 1.2, tps: -0.6 };
+  function setPrefs(p) { Object.assign(PREFS, p || {}); }
+  /** A case's id for the solver's main and known algs: "oll/oll-27". */
+  const caseId = (setId, kase) => `${setId}/${String(kase.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+  const stmOf = alg => String(alg).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
+  /** An alg's score as this solver sees it: the ranking plus the style's cost per move. */
+  const styledScore = a => a.score + (STYLE_PER_MOVE[PREFS.style] || 0) * stmOf(a.alg);
+  /**
+   * A case's algs in the order this solver sees them: their main alg first,
+   * then by the styled score; awkward ones (data flag `awk`) left out when
+   * hidden and the case's community favourite is not awkward (`awkOk`).
+   */
+  function orderedAlgs(setId, kase) {
+    const main = PREFS.main[caseId(setId, kase)];
+    let algs = kase.algs.slice();
+    if (PREFS.hideAwkward && !kase.awkOk) algs = algs.filter(a => !a.awk || a.alg === main);
+    algs.sort((a, b) => (b.alg === main) - (a.alg === main) || styledScore(a) - styledScore(b));
+    return algs;
+  }
+  /** Is a last-slot case allowed by the sets switched on (its OLS subsets or ZBLS)? */
+  function lastSlotAllowed(setId, kase) {
+    const on = PREFS.lastSlot || {};
+    if (setId === 'zbls') return !!on.zbls;
+    if (on.ols) return true;
+    return (kase.tags || []).some(t => on[t]);
+  }
+
   /**
    * The algs to offer on a cube: [{ setId, label, toks, score, src, alg }],
    * the method's first set first, each set by its ranking. AUFs included:
@@ -86,9 +122,13 @@ const LastLayer = (() => {
     for (const setId of order) {
       const f = found.find(x => x.setId === setId);
       if (!f) continue;
-      for (const a of f.case.algs) {
+      const id = caseId(setId, f.case);
+      for (const a of orderedAlgs(setId, f.case)) {
         const w = AlgSets.algFor(a, f.hit, setId);
-        out.push({ setId, label: caseLabel(setId, data, f.case), caseName: f.case.name, toks: w.text.split(' ').filter(Boolean), score: a.score, src: a.src, alg: a });
+        out.push({
+          setId, label: caseLabel(setId, data, f.case), caseName: f.case.name, caseId: id, toks: w.text.split(' ').filter(Boolean),
+          score: styledScore(a), src: a.src, alg: a, main: PREFS.main[id] === a.alg,
+        });
       }
     }
     return out;
@@ -165,13 +205,15 @@ const LastLayer = (() => {
         const hit = AlgSets.recognize(setId, d.index, c);
         if (!hit) continue;
         const kase = d.data.cases[hit.i];
-        for (const a of kase.algs.slice(0, perCase)) {
+        if (!lastSlotAllowed(setId, kase)) continue;
+        const id = caseId(setId, kase);
+        for (const a of orderedAlgs(setId, kase).slice(0, perCase)) {
           const own = [rot, AlgSets.algFor(a, hit, setId).text].filter(Boolean).join(' ');
           const toks = (mirrored ? AlgSets.mirrorAlg(own) : own).split(' ');
           const key = toks.join(' ');
           if (seen.has(key)) continue;
           seen.add(key);
-          out.push({ setId, name: AlgSets.caseTitle(d.data.name, kase.name), toks, mirrored });
+          out.push({ setId, name: AlgSets.caseTitle(d.data.name, kase.name), toks, mirrored, caseId: id, alg: a, main: PREFS.main[id] === a.alg, tags: kase.tags || [] });
         }
       }
     }
@@ -209,12 +251,17 @@ const LastLayer = (() => {
       const f = found[0];
       if (!f || !body) items.push({ key: 'critique.ll.unknown', vars: { label }, at });
       else {
-        const algs = f.case.algs;
+        const algs = orderedAlgs(f.setId, f.case);
         const rank = algs.findIndex(a => a.alg === body);
-        const mine = rank >= 0 ? algs[rank].score : AlgSets.llScore(body);
+        const mine = rank >= 0 ? styledScore(algs[rank]) : AlgSets.llScore(body, null, f.setId) + (STYLE_PER_MOVE[PREFS.style] || 0) * stmOf(body);
         const best = algs[0];
-        if (rank === 0) items.push({ key: 'critique.ll.best', vars: { label }, at });
-        else if (mine <= best.score + CRITIQUE_MARGIN) items.push({ key: 'critique.ll.good', vars: { label }, at });
+        const main = PREFS.main[caseId(f.setId, f.case)];
+        if (main && main === body) items.push({ key: 'critique.ll.main', vars: { label }, at });
+        else if (main) {
+          const w = AlgSets.algFor(f.case.algs.find(a => a.alg === main) || best, f.hit, f.setId);
+          items.push({ key: 'critique.ll.notMain', vars: { label }, alt: { key: 'critique.ll.yourAlt', vars: { alg: w.text } }, at });
+        } else if (rank === 0) items.push({ key: 'critique.ll.best', vars: { label }, at });
+        else if (mine <= styledScore(best) + CRITIQUE_MARGIN) items.push({ key: 'critique.ll.good', vars: { label }, at });
         else {
           const w = AlgSets.algFor(best, f.hit, f.setId);
           items.push({ key: 'critique.ll.slower', vars: { label }, alt: { key: 'critique.ll.alt', vars: { alg: w.text } }, at });
@@ -238,7 +285,29 @@ const LastLayer = (() => {
     return PENDING[setId];
   }
 
-  return { stageOf, setsFor, casesOf, suggestions, readSteps, stepLabel, caseLabel, critique, bodyOf, lastSlotAlgs, load, LOADED, STAGE_RANK };
+  /**
+   * OLS beyond VLS and HLS (data/ll/ols-more.json, ~7,600 cases), merged into
+   * the loaded OLS: only for solvers who switch full OLS on.
+   */
+  let MORE = null;
+  function loadOlsMore(url = AlgSets.dataUrl('ols-more')) {
+    if (MORE) return MORE;
+    MORE = Promise.all([load('ols'), fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null)]).then(([d, more]) => {
+      if (more && !d.data.moreLoaded) {
+        d.data.cases.push(...more.cases);
+        d.data.moreLoaded = true;
+        d.index = AlgSets.indexSet('ols', d.data);
+      }
+      return d;
+    });
+    return MORE;
+  }
+
+  return {
+    loadOlsMore,
+    stageOf, setsFor, casesOf, suggestions, readSteps, stepLabel, caseLabel, critique, bodyOf, lastSlotAlgs, load, LOADED, STAGE_RANK,
+    PREFS, setPrefs, caseId, orderedAlgs, styledScore, lastSlotAllowed, stmOf,
+  };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

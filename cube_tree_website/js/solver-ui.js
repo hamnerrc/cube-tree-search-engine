@@ -514,8 +514,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const view = {
     lookaheadDepth: 1, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
-    llMethod: 'oll', lastSlot: true, // README "Algorithm sets": oll | coll | zbll; zbls/ols picks at the last pair
+    llMethod: 'oll', // README "Algorithm sets": oll | coll | zbll
+    // the last-slot sets, each on its own (developer, 2026-10-13); when any
+    // is on, the last two pairs are never solved at once (README "Algorithm sets")
+    lsSets: null,
+    hideAwkwardAlgs: true,
   };
+  const LS_SET_IDS = ['zbls', 'wv', 'sv', 'vls', 'hls', 'ols'];
+  const lastSlotOn = () => !!view.lsSets && LS_SET_IDS.some(k => view.lsSets[k]);
   let shownResults = null; // the current step's list (complete or partial)
   // The scramble and step the list belongs to: a pick from a list that is no
   // longer current must never be committed at another node.
@@ -542,7 +548,37 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
     view.llMethod = ['oll', 'coll', 'zbll'].includes(view.llMethod) ? view.llMethod : 'oll';
-    view.lastSlot = view.lastSlot !== false;
+    // the last-slot sets: saved, else the onboarding's answer, else the
+    // easy ones (the old single switch "last slot algs" meant zbls + vls/hls)
+    const a = answers();
+    if (!view.lsSets || typeof view.lsSets !== 'object') {
+      const fromAnswers = Array.isArray(a.lastSlot) ? a.lastSlot : null;
+      const old = view.lastSlot;
+      view.lsSets = Object.fromEntries(LS_SET_IDS.map(k => [k, fromAnswers ? fromAnswers.includes(k)
+        : old === false ? false : (k === 'wv' || k === 'sv' || (k === 'zbls' && view.llMethod === 'zbll'))]));
+    }
+    for (const k of LS_SET_IDS) view.lsSets[k] = !!view.lsSets[k];
+    delete view.lastSlot;
+    view.hideAwkwardAlgs = view.hideAwkwardAlgs !== false;
+    syncLastLayerPrefs();
+  }
+
+  /** The solver's last-layer preferences (style, main and known algs, last-slot sets) for last-layer.js. */
+  function syncLastLayerPrefs() {
+    // who the tree-searcher talks to: their speed bracket, how much they want it to talk
+    if (typeof CAPTION_CONTEXT !== 'undefined') {
+      const a = answers();
+      CAPTION_CONTEXT.level = a.speed && typeof SKILL_LEVELS !== 'undefined' ? SKILL_LEVELS[levelFor(a.speed)].id : '';
+      CAPTION_CONTEXT.chat = a.chat === 'brief' || a.chat === 'chatty' ? a.chat : '';
+    }
+    if (typeof LastLayer === 'undefined') return;
+    const p = profile();
+    const algs = p && cubeProfiles ? cubeProfiles.algs(p.id) : { main: {}, known: {} };
+    LastLayer.setPrefs({
+      style: answers().style === 'efficiency' ? 'efficiency' : 'tps',
+      main: algs.main, known: algs.known, knownSets: answers().knownSets || [],
+      lastSlot: { ...(view.lsSets || {}) }, hideAwkward: view.hideAwkwardAlgs !== false,
+    });
   }
 
   function saveViewPrefs() {
@@ -562,7 +598,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     set('simple-pseudo', 'checked', view.simplePseudo);
     set('pair-planning', 'checked', view.planning);
     set('ll-method', 'value', view.llMethod);
-    set('last-slot', 'checked', view.lastSlot);
+    for (const k of LS_SET_IDS) set(`ls-${k}`, 'checked', !!(view.lsSets && view.lsSets[k]));
+    set('hide-awkward-algs', 'checked', view.hideAwkwardAlgs !== false);
   }
 
   function bindViewControls() {
@@ -578,9 +615,20 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     // (or taken from the memo, if it was searched with that setting before).
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
     // the last layer's settings only change what is suggested
-    const relist = () => { saveViewPrefs(); syncViewControls(); lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); };
+    const relist = () => { saveViewPrefs(); syncViewControls(); syncLastLayerPrefs(); lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); };
     on('ll-method', 'change', (e) => { view.llMethod = e.target.value; relist(); });
-    on('last-slot', 'change', (e) => { view.lastSlot = e.target.checked; relist(); });
+    on('hide-awkward-algs', 'change', (e) => { view.hideAwkwardAlgs = e.target.checked; relist(); });
+    // a last-slot set changes the results too: the last two pairs at once are hidden while one is on
+    for (const k of LS_SET_IDS) {
+      on(`ls-${k}`, 'change', (e) => {
+        view.lsSets[k] = e.target.checked;
+        syncLastLayerPrefs();
+        lastSlotMemo.clear();
+        // full OLS: its other ~7,600 cases load now
+        if (k === 'ols' && e.target.checked && llAvailable()) LastLayer.loadOlsMore().then(() => { lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); });
+        refine();
+      });
+    }
   }
 
 
@@ -602,7 +650,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     shownPartial = partial;
     // No counts or other numbers on screen (developer, 2026-10-11): the
     // tree-searcher says when it is thinking; the line only speaks up when it must.
-    const final = !partial || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
+    // (a look-ahead whose first candidates are in only grows quietly from here)
+    const final = !partial || results.lookaheadPending === 0
+      || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
     shownFinal = final;
     if (results.failedCalls) setStatus(caption('solve.someFailed'), 'error');
     else if (final && !results.length) setStatus(caption('solve.noResults'), 'done');
@@ -619,16 +669,29 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const scheduler = createSearchScheduler();
   const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
 
+  // nodes of the tree by id (the finishing check of the last-slot rule)
+  let nodeById = null;
+  function finishesF2l(r) {
+    if (!prunedTree) return false;
+    if (!nodeById || nodeById.tree !== prunedTree) { nodeById = new Map(prunedTree.nodes.map(n => [n.id, n])); nodeById.tree = prunedTree; }
+    const node = nodeById.get(r.targetNodeId);
+    return !!node && (node.state.corners || []).length >= 4;
+  }
+
   function resultFilter() {
     const simple = pseudoOn() && view.simplePseudo;
     const orthodox = view.hideUnorthodox;
     const single = !view.multislot;
     const noWide = !view.wideMoves;
-    if (!simple && !orthodox && !single && !noWide) return { fn: null, key: '' };
+    // a last-slot set on: the last pair is always one pair on its own, so the
+    // last two pairs are never solved at once, multislot or not (developer, 2026-10-13)
+    const lastTwo = !single && lastSlotOn();
+    if (!simple && !orthodox && !single && !noWide && !lastTwo) return { fn: null, key: '' };
     return {
       fn: r => !(simple && r.fullPseudoOnly) && !(orthodox && r.unorthodox)
-        && !(single && r.multislot) && !(noWide && isWideAlg(r.coreAlg)),
-      key: [simple ? 'simple' : '', orthodox ? 'orthodox' : '', single ? 'single' : '', noWide ? 'nowide' : ''].join(''),
+        && !(single && r.multislot) && !(noWide && isWideAlg(r.coreAlg))
+        && !(lastTwo && r.multislot && (r.corners || []).length > 1 && finishesF2l(r)),
+      key: [simple ? 'simple' : '', orthodox ? 'orthodox' : '', single ? 'single' : '', noWide ? 'nowide' : '', lastTwo ? 'lastslot' : ''].join(''),
     };
   }
 
@@ -825,6 +888,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     for (const st of read.steps) { session.commit(st.row); changed = true; }
     reading = read;
     llRead = readLastLayer(session);
+    if (llRead) { try { markTypedKnown(session); } catch (e) { /* the marking is a convenience */ } }
     if (changed || atNode !== session.committedRows.length) {
       persistSessionState();
       runSearch();
@@ -899,6 +963,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function ensureLastLayerData() {
     if (llLoading || !llAvailable()) return llLoading;
     llLoading = Promise.all(AlgSets.SETS.map(s => LastLayer.load(s.id, AlgSets.dataUrl(s.id)).catch(() => null)))
+      .then(() => (view.lsSets && view.lsSets.ols ? LastLayer.loadOlsMore() : null))
       .then(() => {
         lastSlotMemo.clear();
         if (reading) {
@@ -1011,6 +1076,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function commitSuggestion(r) {
     const session = getOrCreateSession(activeIndex);
     if (!committable(r)) return;
+    // steps taken from the tree-searcher (the critique notices a solve made only of them)
+    (session._followed = session._followed || new Set()).add(rowTokens(r, session.isAtRoot).join(' '));
     const label = labelFor(session, r) + (r.lastSlot ? ` (${r.lastSlot.name})` : '');
     const node = session.nodeMap.get(r.targetNodeId);
     const end = node && (node.state.corners || []).length >= 4 ? '' : '\n'; // the last pair ends the text
@@ -1052,6 +1119,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const before = textBeforeTail();
     let solved = false;
     try { solved = LastLayer.stageOf(applyAlgorithm(llRead.cube, s.toks.join(' '))) === 'done'; } catch (e) { solved = false; }
+    tabbedLL.add(s.toks.join(' '));
     setEditorText(`${before}${s.toks.join(' ')} // ${s.label}${solved ? '' : '\n'}`);
     editor.focus();
   }
@@ -1139,12 +1207,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return LastLayer.stageOf(f);
       } catch (e) { return null; }
     };
-    const ols = rows.find(r => r.lastSlot.setId === 'ols');
+    // the solver's own alg for the case first (README "Algorithm sets": main algs)
+    const ofSet = setId => rows.find(r => r.lastSlot.setId === setId && r.lastSlot.main) || rows.find(r => r.lastSlot.setId === setId);
+    const ols = ofSet('ols');
     const pickStages = picks.map(p => leaves(p.r));
     if (ols && !pickStages.some(st => st === 'oriented' || st === 'auf' || st === 'done')) {
       return { r: ols, role: 'lastslot.ols', reasons: [{ key: 'ls.skipsOll', vars: { label: ols.lastSlot.name } }] };
     }
-    const zbls = rows.find(r => r.lastSlot.setId === 'zbls');
+    const zbls = ofSet('zbls');
     if (zbls && view.llMethod === 'zbll' && !pickStages.some(st => st && st !== 'f2l')) {
       return { r: zbls, role: 'lastslot.zbls', reasons: [{ key: 'ls.edgesForZbll', vars: { label: zbls.lastSlot.name } }] };
     }
@@ -1173,7 +1243,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const LS_PER_SET = 4; // algs per set and case
   function lastSlotRows() {
     const session = sessions.get(activeIndex);
-    if (!session || session.isComplete || session.isAtRoot || !view.lastSlot || !llAvailable()) return [];
+    if (!session || session.isComplete || session.isAtRoot || !lastSlotOn() || !llAvailable()) return [];
     if ((session.currentNode.state.corners || []).length !== 3) return [];
     const key = `${activeIndex}|${session.scoredPath}|${session.rotation}`;
     if (lastSlotMemo.has(key)) return lastSlotMemo.get(key);
@@ -1185,7 +1255,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const row = userStepRow(session, ls.toks);
       if (!row) continue;
       row.coreAlg = ls.toks.join(' ');
-      row.lastSlot = { setId: ls.setId, name: ls.name };
+      row.lastSlot = { setId: ls.setId, name: ls.name, caseId: ls.caseId, alg: ls.alg, main: ls.main, tags: ls.tags };
       rows.push(row);
     }
     rows.sort((a, b) => a.tpp - b.tpp);
@@ -1482,7 +1552,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       pixelCube.zoomBy(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
     }, { passive: false });
     stage.addEventListener('dblclick', (e) => { if (!e.target.closest('button')) pixelCube.resetView(); });
-    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', (e) => { if (previewing && /^pb-/.test(id)) endPreview(); fn(e); }); };
     on('zoom-in', () => pixelCube.zoomBy(1.2));
     on('zoom-out', () => pixelCube.zoomBy(1 / 1.2));
     on('pb-start', () => player.seek(0));
@@ -1629,6 +1699,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (cont && list && !prefixMatches(list, reading.tail.tokens, reading.tail.partial, session.isAtRoot).length) pickList = cont;
     }
     if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'searcher.thinking'); return; }
+    // a new step, new words (the same step keeps saying the same)
+    CAPTION_CONTEXT.seed = session.committedRows.length * 31 + activeIndex;
     let picks = searcherPicks(pickList, pickContext(session));
     if (reading && reading.tail.tokens.length) {
       // only picks that start like what is typed
@@ -1641,22 +1713,41 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
+      const why = p.reasons.slice(0, CAPTION_CONTEXT.chat === 'chatty' ? 2 : 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
       b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
       b.addEventListener('mouseenter', () => previewCandidate(p.r));
       b.addEventListener('mouseleave', endPreview);
-      picksEl.appendChild(b);
+      // a last-slot alg can become the solver's own for its case (README "Algorithm sets")
+      const ls = p.r.lastSlot;
+      if (ls && ls.caseId && ls.alg && !ls.main) {
+        const row = document.createElement('div');
+        row.className = 'pick-row';
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = 'px-btn quiet star';
+        star.textContent = '★';
+        star.title = caption('searcher.ll.makeMain');
+        star.setAttribute('aria-label', star.title);
+        star.addEventListener('click', () => { setMainAlg(ls.caseId, ls.alg.alg); commitSuggestion(p.r); });
+        row.append(b, star);
+        picksEl.appendChild(row);
+      } else picksEl.appendChild(b);
     });
   }
 
   /**
-   * After the F2L: the case on the cube and up to three algs -- the fastest
-   * of the method's set, the community's favourite when it is another one,
-   * and the fastest of the other set that applies (a whole last layer when
-   * the edges are oriented). Every pick says why, in words.
+   * After the F2L: the case on the cube and its algs. The solver's main alg
+   * for the case is the only pick ("your alg for this case"); otherwise two
+   * to four picks -- the fastest of the method's set (for this solver's
+   * style), the community's favourite when it is another one, the fastest of
+   * the other set that applies -- each with a star that uses it and makes it
+   * the solver's main alg, and "neither" for more (developer, 2026-10-13).
    */
+  // "neither": page 0 is the usual picks (or the main alg), pages 1.. the case's other algs, three at a time
+  let llMore = { caseId: null, page: 0 };
+  const LL_PAGE = 3;
   function renderLastLayerPicks(session, say, picksEl, title, actions) {
     if (!Object.keys(LastLayer.LOADED).length) { say.textContent = caption('searcher.thinking'); ensureLastLayerData(); return; }
     if (llRead.finished) { say.textContent = caption('searcher.ll.stepDone', { label: llRead.finished.label }); return; }
@@ -1665,28 +1756,77 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const fits = tokenPrefixMatches(pool, tokens, partial);
     if (!pool.length) { say.textContent = caption('searcher.ll.unknown'); return; }
     if (!fits.length) { say.textContent = caption('searcher.keepGoing'); return; }
-    const picks = [];
-    const add = (m, role, why) => { if (m && !picks.some(p => p.m === m)) picks.push({ m, role, why }); };
     const firstSet = fits[0].setId;
     const own = fits.filter(m => m.setId === firstSet);
-    // a new find only when the community has algs for the case and it beats them
-    const caseHasDb = pool.some(m => m.setId === firstSet && m.src === 'db');
-    const isNew = own[0].src === 'gen' && caseHasDb && pool.filter(m => m.setId === firstSet)[0] === own[0];
-    add(own[0], 'll.best', isNew ? 'll.new' : 'll.fastest');
-    const fav = own.filter(m => m.src === 'db').sort((a, b) => (b.alg.votes || 0) - (a.alg.votes || 0))[0];
-    if (fav && fav !== own[0]) add(fav, 'll.favourite', 'll.favourite');
-    const other = fits.find(m => m.setId !== firstSet);
-    if (other) add(other, `ll.set.${other.setId}`, other.setId === 'zbll' ? 'll.whole' : other.setId === 'oll' ? 'll.twoLook' : 'll.other');
+    const cid = own[0].caseId;
+    if (llMore.caseId !== cid) llMore = { caseId: cid, page: 0 };
+    const picks = [];
+    const add = (m, role, why) => { if (m && picks.length < 4 && !picks.some(p => p.m.alg === m.alg && p.m.setId === m.setId)) picks.push({ m, role, why }); };
+    const main = own.find(m => m.main);
+    // the picks of page 0 (computed always: later pages leave them out)
+    const first = [];
+    if (main) first.push(main);
+    else {
+      first.push(own[0]);
+      const weight = m => (m.alg.votes || 0) + Math.max(0, (m.alg.from || []).length - 1);
+      const fav = own.filter(m => m.src === 'db').sort((a, b) => weight(b) - weight(a))[0];
+      if (fav && fav !== own[0]) first.push(fav);
+      if (first.length < 2 && own[1]) first.push(own[1]);
+    }
+    const others = own.filter(m => !first.includes(m));
+    const pages = 1 + Math.ceil(others.length / LL_PAGE);
+    if (llMore.page >= pages) llMore.page = 0;
+    if (main && !llMore.page) {
+      add(main, 'll.main', 'll.main');
+    } else if (llMore.page) {
+      // each with a fact: shorter than the fastest, or the community's
+      const stm0 = LastLayer.stmOf(own[0].alg.alg);
+      others.slice((llMore.page - 1) * LL_PAGE, llMore.page * LL_PAGE).forEach((m) => {
+        const d = stm0 - LastLayer.stmOf(m.alg.alg);
+        add(m, 'll.more', d >= 1 ? 'll.shorter' : m.src === 'db' ? 'll.community' : 'll.other');
+      });
+    } else {
+      add(own[0], 'll.best', 'll.fastest');
+      const weight = m => (m.alg.votes || 0) + Math.max(0, (m.alg.from || []).length - 1);
+      const fav = own.filter(m => m.src === 'db').sort((a, b) => weight(b) - weight(a))[0];
+      if (fav && fav !== own[0]) add(fav, 'll.favourite', 'll.favourite');
+      const other = fits.find(m => m.setId !== firstSet);
+      if (other) add(other, `ll.set.${other.setId}`, other.setId === 'zbll' ? 'll.whole' : other.setId === 'oll' ? 'll.twoLook' : 'll.other');
+      // never fewer than two
+      for (const m of own) { if (picks.length >= 2) break; add(m, 'll.next', 'll.next'); }
+    }
     title.textContent = fits[0].label;
-    say.textContent = caption('searcher.ll.case', { label: fits[0].label });
+    say.textContent = caption(main && !llMore.page ? 'searcher.ll.yours' : llMore.page ? 'searcher.ll.others' : 'searcher.ll.case', { label: fits[0].label });
     picks.forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'pick-row';
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
       b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span>`;
       b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
-      picksEl.appendChild(b);
+      row.appendChild(b);
+      if (!p.m.main) {
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = 'px-btn quiet star';
+        star.textContent = '★';
+        star.title = caption('searcher.ll.makeMain');
+        star.setAttribute('aria-label', caption('searcher.ll.makeMain'));
+        star.addEventListener('click', () => { setMainAlg(p.m.caseId, p.m.alg.alg); commitLastLayer({ toks: p.m.toks, label: p.m.label }); });
+        row.appendChild(star);
+      }
+      picksEl.appendChild(row);
     });
+    // "neither of these": more algs of the case (from the start again at the end)
+    if (pages > 1) {
+      const neither = document.createElement('button');
+      neither.type = 'button';
+      neither.className = 'px-btn quiet';
+      neither.textContent = caption(main && !llMore.page ? 'searcher.ll.change' : 'searcher.ll.neither');
+      neither.addEventListener('click', () => { llMore.page = (llMore.page + 1) % pages; renderSearcher(); });
+      actions.appendChild(neither);
+    }
     // every alg of the case, on the algs page
     const more = document.createElement('a');
     more.className = 'px-btn quiet';
@@ -1695,6 +1835,44 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     more.rel = 'noopener';
     more.textContent = caption('searcher.ll.more');
     actions.appendChild(more);
+  }
+
+  /** Makes an alg the solver's main alg for a case (profile), and re-ranks. */
+  function setMainAlg(caseId, alg) {
+    const p = profile();
+    if (!p || !cubeProfiles) return;
+    cubeProfiles.setMainAlg(p.id, caseId, alg);
+    syncLastLayerPrefs();
+    lastSlotMemo.clear();
+  }
+
+  /**
+   * Last-layer steps the solver typed themselves (not taken with tab or a
+   * pick): they know that case, so it is marked known (developer,
+   * 2026-10-13: track which algs a solver knows without asking).
+   */
+  const tabbedLL = new Set(); // alg texts written by tab or a pick
+  function markTypedKnown(session) {
+    if (!llRead || !cubeProfiles || !profile()) return;
+    // the steps already there when the text was loaded (a reload) are not new typing
+    if (!session._llBaseline) { session._llBaseline = new Set(llRead.steps.map(st => st.toks.join(' '))); return; }
+    if (!llRead.steps.length) return;
+    let cube = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
+    const ids = [];
+    for (const st of llRead.steps) {
+      const text = st.toks.join(' ');
+      if (!tabbedLL.has(text) && !session._llBaseline.has(text)) {
+        for (const f of LastLayer.casesOf(cube, LastLayer.LOADED)) {
+          if (st.label.startsWith(LastLayer.caseLabel(f.setId, LastLayer.LOADED, f.case))) ids.push(LastLayer.caseId(f.setId, f.case));
+        }
+      }
+      try { cube = applyAlgorithm(cube, text); } catch (e) { return; }
+    }
+    const known = LastLayer.PREFS.known || {};
+    const fresh = ids.filter(id => !known[id]);
+    if (!fresh.length) return;
+    cubeProfiles.setKnown(profile().id, fresh, true);
+    syncLastLayerPrefs();
   }
 
   function bindSearcher() {
@@ -1725,6 +1903,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     actions.innerHTML = '';
     critiqueShown = { key: `${activeIndex}|${session.scoredPath}`, items: null };
     if (!session.committedRows.length) { say.textContent = caption('critique.needSolve'); return; }
+    CAPTION_CONTEXT.seed++;
+    // every step one of the tree-searcher's own suggestions: it declines, jokingly
+    const followed = session._followed || new Set();
+    const allFollowed = session.committedRows.length >= 2
+      && session.committedRows.every((row, i) => followed.has(rowTokens(row, i === 0).join(' ')))
+      && (!llRead || llRead.steps.every(st => tabbedLL.has(st.toks.join(' '))));
+    if (allFollowed) {
+      say.textContent = caption('critique.egg');
+      const ok = document.createElement('button');
+      ok.type = 'button';
+      ok.className = 'px-btn';
+      ok.textContent = 'ok';
+      ok.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
+      actions.appendChild(ok);
+      return;
+    }
     say.textContent = caption('critique.working');
     setThinking(true);
     let h;
@@ -1741,6 +1935,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return job.promise;
       },
       answers: answers(),
+      // only what the solver has switched on, and their level allows, is suggested
+      allow: (r) => {
+        const f = resultFilter().fn;
+        return (!f || f(r)) && !(r.multislot && typeof goalAllowed === 'function' && !goalAllowed('multislot', answers()));
+      },
     });
     setThinking(false);
     if (!critiqueShown || critiqueShown.key !== myKey) return;
@@ -1754,8 +1953,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       li.addEventListener('click', () => {
         if (!player) return;
         manualPlayback = true;
+        // the cube glides to the alternative, or (no alternative) to where the step starts
+        if (item.altRow) { previewCandidateAt(session, item.stepIndex, item.altRow); return; }
+        endPreview();
         player.seek(item.startMove);
-        if (item.altRow) previewCandidateAt(session, item.stepIndex, item.altRow);
       });
       ol.appendChild(li);
     }
@@ -1770,6 +1971,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         li.addEventListener('click', () => {
           if (!player) return;
           manualPlayback = true;
+          endPreview();
           player.seek(f2lMoves + item.at);
         });
         ol.appendChild(li);
@@ -1789,35 +1991,65 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /**
-   * The last pair: when the user's step leaves the last layer further on
-   * than the quicker alternative (the edges or the whole layer oriented, a
-   * ZBLS or OLS), the critique says so -- a fact found by replaying both.
+   * The last pair. Done with a last-slot alg of a set the solver has on
+   * (README "Algorithm sets"), it is judged against that set's algs for the
+   * case, not against a plain insert (developer, 2026-10-13: never "but I
+   * wanted the one I switched on"). Otherwise, when it still leaves the last
+   * layer further on than the quicker alternative, the critique says so.
    */
   function creditLastSlot(session, report) {
     if (!llAvailable() || !session.isComplete) return;
     const k = session.committedRows.length - 1;
     const item = report.items.find(x => x.stepIndex === k);
-    if (!item || !item.altRow) return;
+    if (!item) return;
     const toks = solutionTokens(session);
     const mine = rowTokens(session.committedRows[k], k === 0);
     const before = applyAlgorithm(scrambledState(session.scramble), toks.slice(0, toks.length - mine.length).join(' '));
+    const myStage = LastLayer.stageOf(applyAlgorithm(before, mine.join(' ')));
+    if (!myStage) return;
+    const rank = LastLayer.STAGE_RANK[myStage];
+    const setId = rank >= LastLayer.STAGE_RANK.oriented ? 'ols' : rank >= LastLayer.STAGE_RANK.eo ? 'zbls' : null;
+    const algs = setId ? LastLayer.lastSlotAlgs(before, LastLayer.LOADED, 12).filter(a => a.setId === setId) : [];
+    if (algs.length) {
+      const label = item.label;
+      const tags = algs[0].tags || [];
+      const set = setId === 'zbls' ? 'zbls' : ['wv', 'sv', 'vls', 'hls'].find(t => tags.includes(t)) || 'ols';
+      const at = algs.findIndex(a => a.toks.join(' ') === mine.join(' '));
+      const first = algs[0];
+      let body = mine.join(' ');
+      const myScore = at >= 0 ? LastLayer.styledScore(algs[at].alg) : AlgSets.llScore(body, null, setId) + 0;
+      if (at === 0) item.text = caption(first.main ? 'critique.ls.yours' : 'critique.ls.best', { label, set });
+      else if (at > 0 && myScore <= LastLayer.styledScore(first.alg) + 3) item.text = caption('critique.ls.good', { label, set });
+      else {
+        item.text = caption('critique.ls.slower', { label, set });
+        item.alt = caption('critique.ls.alt', { alg: first.toks.join(' ') });
+        item.altRow = { coreAlg: first.toks.join(' '), rotation: '' };
+        return;
+      }
+      item.alt = '';
+      item.altRow = null;
+      item.why = [];
+      return;
+    }
+    if (!item.altRow) return;
     let altStage = null;
     try { altStage = LastLayer.stageOf(applyAlgorithm(before, rowTokens(item.altRow, k === 0).join(' '))); } catch (e) { return; }
-    const myStage = LastLayer.stageOf(applyAlgorithm(before, mine.join(' ')));
-    if (!myStage || !altStage || LastLayer.STAGE_RANK[myStage] <= LastLayer.STAGE_RANK[altStage]) return;
-    const key = LastLayer.STAGE_RANK[myStage] >= LastLayer.STAGE_RANK.oriented ? 'critique.ls.oriented' : 'critique.ls.edges';
+    if (!altStage || rank <= LastLayer.STAGE_RANK[altStage]) return;
+    const key = rank >= LastLayer.STAGE_RANK.oriented ? 'critique.ls.oriented' : 'critique.ls.edges';
     item.text = `${item.text} ${caption(key)}`;
   }
 
-  /** Shows the cube after the critique's alternative for step `k` (instead of the user's step). */
+  /** The cube glides to the critique's alternative for step `k` (instead of the user's step). */
   function previewCandidateAt(session, k, row) {
-    if (!pixelCube) return;
-    const toks = [...playbackTokens(session.scramble)];
+    if (!player) return;
+    const toks = [];
     session.committedRows.slice(0, k).forEach((r, i) => toks.push(...rowTokens(r, i === 0)));
     toks.push(...rowTokens(row, k === 0));
-    pixelCube.setFacelets(applyAlgorithm(SOLVED_FACELETS, toks.join(' ')));
+    previewing = true;
+    player.pause();
+    player.setSequence(toks, [], toks.length, scrambledState(session.scramble));
     const note = $('stage-note');
-    if (note) note.textContent = 'my alternative · press > to go back';
+    if (note) note.textContent = 'my alternative';
   }
 
   // ---------------------------------------------------------------------
@@ -1861,6 +2093,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function bindSettings() {
+    // hint sentences in the page come from captions.js
+    document.querySelectorAll('[data-caption]').forEach((el) => { el.textContent = caption(el.dataset.caption); });
     const dialog = $('settings');
     const btn = $('settings-btn');
     if (!dialog || !btn || typeof dialog.showModal !== 'function') return;

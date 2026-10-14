@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-12 (thirty-seventh pass).*
+*Last updated 2026-10-13 (thirty-eighth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,106 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-eighth pass (2026-10-13): the developer's list -- last slot and
+last layer, the solution bar, the cube, the tree-searcher, the algs page.**
+Tree clean at the start (only `docs/metric_info.txt` untracked), every fast
+suite passing. What was done, in the brief's order (README is the spec):
+
+1. **Last-slot sets, each on its own.** Full **OLS** (every pair placement:
+   8,054 cases = the wiki's 8,112 with the 57 OLL cases and the solved
+   state; the old OLS was the 432 of VLS + HLS). Subsets by placement, found
+   from the data, not assumed: **VLS** = the connected pair (solved by
+   R U' R'), **WV** = VLS with the LL edges oriented (27; jperm.net: "only
+   works if the pair can be inserted with R U' R'"), **HLS** = the split pair
+   (R U R'), **SV** = HLS with edges oriented (27) (`AlgSets.olsSubsets`;
+   counts tested). Settings: ZBLS / WV / SV / VLS / HLS / full OLS, each a
+   switch, worded by what the pair looks like with the acronym beside it.
+   With any on, the step that solves the last two pairs at once is hidden
+   (resultFilter `lastslot`), multislot or not. White/blue collar: the
+   per-move style cost of `LastLayer.styledScore` (+1.2 / -0.6 per move).
+   Data: `ols.json` (WV/SV/VLS/HLS) and `ols-more.json` (the rest, loaded
+   only when full OLS is on or "every pair" is opened).
+2. **Look-ahead breadth** setting removed: the breadth grows (3 first, then
+   one at a time) while the step is on screen, the page visible and no other
+   search wants the engines; it yields by finishing and resumes when the
+   scheduler is idle, keeping every finished look-ahead (`options.bests`)
+   and the step's list (`stepResults`). Browser (CPU shared with four
+   generator processes): 156 candidates looked at in 3 min at the 3rd pair;
+   the tree-searcher stops "thinking" once the first three are in.
+3. **More databases** (`tools/alg-sources.js`, `data/ll/sources.json`):
+   Speedsolving wiki (OLL, PLL, CxLL pages, SV), CubingApp (OLL, OLLCP, PLL,
+   COLL, ZBLL, WV), J Perm (OLL, PLL, COLL, WV) and the community ZBLS
+   spreadsheet (Batten/Yu, via the MIT npm package @moishy/algsets).
+   SpeedCubeDB has no ZBLS page. Cases are not parsed: every move run on a
+   page is kept only if it solves a case of the page's set (mirror for left
+   slots). 7,763 verified algs; each built alg carries `from` (its
+   databases). No "new find" and no "found by the tree-searcher" anywhere.
+4. **Separate LL rankings** (`AlgSets.llParams(set)`, `LL_FITTED`) and
+   **pro tuning** (`tools/ll-pros.js` -> `data/ll/pro_ll.json`: 15,795
+   LL/LS steps verified by replay, from a scan of every reco.nz solve, ids
+   1-14,300; `tools/ll-tune.js`: each pro step ranked among its case's full
+   raw pool, top 400 + community algs + the pro's alg). What worked: each
+   set's naturalness model also learns from its pro's algs of the *other*
+   cases (leave-case-out; `ll-build.js PRO_LM`). Mean log2 rank of the pro's
+   alg, before -> after:
+   OLL (Yiheng, weight 1) 1.093 -> 0.825, first 50.9% -> 59.7%;
+   PLL (Yiheng, 1) 2.364 -> 2.121, then slices 0.5 -> 2.075;
+   ZBLL (Xuanyi, 3) 1.152 -> 1.119, first 47.7% -> 50.2%;
+   ZBLS (everyone who uses it, 62 steps; 3) 2.165 -> 2.018;
+   COLL (pooled, 225 steps; 8) 1.606 -> 1.485.
+   OLS: 3 steps in all of reco.nz (WV 2, VLS/OLS 1): it keeps the
+   vote-fitted constants. What did not hold: refitting a set's constants
+   (first all eighteen, then ten with the votes as a regulariser) did worse
+   on held-out cases every time (OLL 0.825 -> 0.847, PLL 2.121 -> 2.459;
+   2-fold CV over cases), so the constants stay shared except PLL's slice
+   penalty (3.5 -> 0.5: Yiheng's M-slice H/Z perms; his rank 2.121 -> 2.075
+   and the votes 62.8% -> 63.8%, one parameter). Votes overall unchanged
+   (79.3% of clearly ordered pairs; 79.4% before). Generated alg first:
+   OLL 6 of 57 cases (14 before), PLL 11/21, COLL 4/40, ZBLL 75/472.
+5. **Awkward algs** (`AlgSets.awkwardness`): flow (time per turn) above the
+   95th percentile of the top-voted community algs (2.6), an unusual move
+   (B, wide f/b/u/d, S, E) or two rotations; hidden ("hide awkward algs", on)
+   where the case's community favourite is not awkward (`awkOk`), dropped
+   from the data beyond the 99th percentile (3.7) or with 3+ unusual moves
+   unless voted for (a 21-move "l b d' ... S M r u E" T perm entry, for one).
+6. **Solution bar**: Tab, delete, Tab no longer doubles a comment (nothing
+   is offered right of a comment; Tab on a finished commented line only adds
+   the newline); the step that finishes the F2L, and a last-layer line that
+   solves the cube, need no newline after them; a PLL typed without its AUF
+   gets "U' // pll gd" with Tab.
+7. **Cube**: `CubePlayer.goTo/setSequence` glide (back to the shared moves,
+   then forward, ~0.5 s for any jump, retargets continue the turn under way;
+   300 random retargets and a per-frame invariant in test/pixel-cube.test.js)
+   for typing, Tab, caret, hover previews, playback, scrub, critique. The
+   fullscreen button is gone. The rare "bright blue stickers" glitch on the
+   algs page could not be reproduced (every OLS/ZBLS tile rendered and
+   scanned: no blue pixel; colour counts kept by all 15,893 alg replays);
+   removed the two plausible causes (two animations driving one cube when
+   another alg was clicked mid-play; tiles copied through a shared canvas).
+8. **Algs page redesign** from UI_references: a terminal-style set menu
+   with counts, the set as a window with a title tab and corner studs,
+   subsets as an inventory row of slots, cases as slots with known/main
+   marks and a hover card, all / to learn / known, "mark what I know"
+   (sweep across slots), algs as move buttons with sources and move count,
+   ★ main per case, "I know this case".
+9. **Tree-searcher**: two to four picks (a "nearly as quick" pick when only
+   one is quantifiable); last layer: the main alg alone ("your alg for this
+   case"), otherwise picks with a ★ (use it and make it main) and "neither
+   of these" paging; last-slot picks prefer and can set the main alg.
+   Critique: alternatives only from what the solver has on and their level
+   allows; within 6% of the best = "a solid choice"; another goal only when
+   10%+ faster, said softly; a last pair done with an enabled last-slot set
+   judged against that set's algs; an easter egg when every step was one of
+   its suggestions; caption variants per context, per level ("key#building")
+   and per chattiness ("key#brief"). Known cases: marked by hand, from the
+   onboarding answer (knownSets), and automatically for LL algs typed
+   without Tab (`markTypedKnown`, baseline at load so a reload marks nothing).
+10. **Onboarding**: three more questions -- the last layer (2-look / full /
+    COLL / ZBLL -> method and known sets), last-slot tricks (each switches
+    its set on), how chatty the tree-searcher is.
+11. Also: the settings' cross colours showed none checked when the saved
+    list was empty (the search used white): the form now shows white.
 
 **Thirty-seventh pass (2026-10-12): the last slot and the last layer.**
 Tree clean at the start (only the developer's `docs/metric_info.txt`
@@ -496,28 +596,33 @@ every fast suite passed at the start.
 
 ### For the final audit (next session)
 
-What this pass added, to test on a real device (the dev machine is slow;
-timings here understate an iPad):
+What this pass added, to test on a real device (timings here understate an
+iPad; the generator shared the CPU for most of the browser checks):
 
-- **algs.html**: first paint and tab switches (the set's file loads first,
-  the rest behind it; ZBLL 606 KB / 80 KB gzipped), scrolling the ZBLL
-  grid (472 top views) and the OLS/ZBLS grids (432 / 302 3D pictures drawn
-  as they scroll in), search as you type (names; moves with the ghost, Tab,
-  arrows, Enter; "this alg solves"), the case dialog's playback, deep links
-  (`algs.html#zbll/zbll-t-12`), phone width, all four themes.
-- **Solving screen**: finish an F2L, then type or Tab last-layer steps
-  (labels "oll 27", "pll t", "zbll s 34", "coll s 5", "auf"); the three
-  methods (settings -> last layer); undo of a last-layer line; copy / copy
-  all / move count with the last layer; the critique with last-layer steps;
-  at the last pair: the OLS pick ("skips the oll"), the ZBLS pick (zbll
-  method, edges unoriented), a left slot (mirrored left-hand algs), "last
-  slot algs" off; "all algs for this case" opens the algs page.
-- **Judgement calls** (see "Algorithm sets"): generated vs community order
-  (A, H, Z perms), the left-hand penalty, the "new find" label.
-- **Copy**: the new caption keys (`algs.*`, `searcher.ll.*`,
-  `searcher.pick.ll.*`, `searcher.pick.lastslot.*`, `reason.ll.*`,
-  `reason.ls.*`, `critique.ll.*`, `critique.ls.*`, `info.lastlayer.*`,
-  `solve.noSetup`) are drafts.
+- **Solution bar**: tab, delete, tab on a finished step (one comment, then
+  the newline); the last pair and the last LL line without a newline; a PLL
+  typed without its AUF + tab; the LL ghost starting on a new line.
+- **Cube**: the glide everywhere (typing, tab, caret moves, hovering picks,
+  scrub bar, |< >|, critique items); "animation off" still cuts by design.
+- **Look-ahead** at depth 2/3: the list should settle after the first three
+  and keep re-ranking quietly; switch scrambles or type to see it yield.
+- **Settings -> last slot**: each switch; WV/SV/VLS/HLS picks at a matching
+  last pair; full OLS (loads ols-more.json); no last-two-pairs multislot
+  while one is on (browser: 0 such results vs 517 with all off).
+- **Algs page**: the new look in all four themes and on a phone; OLS
+  tiers and pair pictures; "mark what I know" sweeps; ★ main in the dialog
+  and as the tree-searcher's only pick; the known counts.
+- **Tree-searcher**: two to four picks; "neither of these"; the critique's
+  softer wording and the easter egg (take every step from its picks, then
+  ask for a critique); captions per level and chattiness (onboarding).
+- **Judgement calls** (developer's to confirm): WV = connected pair /
+  R U' R' (from the SpeedCubeDB setups, matches jperm.net); the awkward
+  thresholds; pooled pros for ZBLS and COLL; style weights (+1.2 / -0.6
+  per move); "8,000+" in the onboarding caption; all new captions are
+  drafts in `captions.js` (`settings.ls.*`, `algs.*`, `searcher.ll.*`,
+  `critique.*` variants, `lastlayer.*`, `lastslot.*`, `chat.*`).
+- Not reproduced: the "bright blue stickers" glitch (see item 7 above). If
+  it shows again, a screenshot and which page/case would pin it down.
 
 ## Layout
 
@@ -536,6 +641,9 @@ cube_tree_website/          the site (GitHub Pages root)
   js/last-layer.js          the last layer on the solving screen: steps by replay, suggestions, critique
   data/ll/<set>.json        each set's cases and ranked algs (tools/ll-build.js)
   data/ll/scdb.json         SpeedCubeDB's algs, names and votes (tools/algdb.js)
+  data/ll/sources.json      wiki, CubingApp, J Perm, ZBLS-sheet algs, verified (tools/alg-sources.js)
+  data/ll/pro_ll.json       pros' LL/LS steps from reco.nz, verified (tools/ll-pros.js; tuning only)
+  data/ll/ols-more.json     OLS beyond VLS/HLS (~7,600 cases, loaded on demand)
   js/solve-editor.js        solution bar: text -> steps by replay, prefix matches
   js/suggest.js             the tree-searcher's three picks and reasons
   js/critique.js            whole-solution critique
@@ -591,7 +699,9 @@ the search tree), `test/solver-bridge-e2e.js --pseudo --scrambles 2`
 Browser: headless Chrome over CDP (`--headless=new --remote-debugging-port`,
 Node's WebSocket), site served with `python3 -m http.server`.
 
-Alg-set tools: `algdb.js fetch|parse` (SpeedCubeDB import), `ll-gen.js
+Alg-set tools: `alg-sources.js fetch|parse <dir>` (the other databases,
+by replay), `ll-pros.js extract <raw.json>...` (pros' steps), `ll-tune.js
+eval|fit <set> [--solver Name|all]` (pro ranks, CV fits), `algdb.js fetch|parse` (SpeedCubeDB import), `ll-gen.js
 build|run <set>|case <set> <i>` (the generator; work dir `$LLGEN_WORK`,
 default `cube_tree_website/llgen-work/`, git-ignored: binary, ~2 GB of
 pruning tables, raw solutions), `ll-build.js eval|build [sets]` (rank,
@@ -801,6 +911,26 @@ Data: 1.5 MB in all (197 KB gzipped; ZBLL 606 KB). Browser-checked
 deep links, phone width, paper and violet themes; the solving screen in
 each method (oll 27 -> pll t; "zbll s 34" with the two-look alternative;
 "coll s 5"), the OLS pick at a Winter Variation last pair.
+
+**Thirty-eighth pass (2026-10-13)**: full OLS, more sources, per-set pro
+models, awkward flags (README "Algorithm sets"; details in "Where we left
+off"). Generator: OLS beyond VLS/HLS uses `PLAN_REST` (one move less of
+slack in RUFr, RUFD, RUDr, RUFSf, RUFL; RUD/RUL cost nothing where they
+cannot orient the edges): 8,054 cases in ~4.5 h on four processes; llgen's
+table cache now writes through a per-process temp file (parallel runs).
+Every OLS case has algs (first alg median 12 STM, max 16).
+
+| set | cases | algs kept | generated first (cases with community algs) | community algs none | awkward (flagged) | STM first alg | STM community favourite |
+|---|---|---|---|---|---|---|---|
+| OLL | 57 | 735 | 6 of 57 | 0 | 101 | 9.9 | 9.7 |
+| PLL | 21 | 283 | 11 of 21 | 0 | 45 | 15.4 | 13.2 |
+| COLL | 42 | 518 | 4 of 40 | 2 | 35 | 11.6 | 11.3 |
+| ZBLL | 472 | 5,861 | 75 of 472 | 0 | 385 | 14.7 | 14.5 |
+| OLS | 8,054 | 64,787 | 80 of 248 | 7,806 | 7,916 | 12.0 | 9.8 |
+| ZBLS | 302 | 3,456 | 120 of 294 | 8 | 365 | 9.2 | 9.2 |
+
+Data: `ols.json` 488 KB, `ols-more.json` 6.0 MB (773 KB gzipped, only
+loaded on demand), `sources.json` 807 KB, `pro_ll.json` 1.7 MB (tools only).
 
 ## Complete search
 
@@ -1203,7 +1333,10 @@ planned on them unless the developer asks.
 0. **Visual redesign** -- DONE (thirty-fifth pass, from UI_references/).
    Waiting on the developer: captions.js copy, tree-searcher art, bracket
    thresholds.
-00. **Alg sets** -- built (thirty-seventh pass). For the developer's audit:
+00. **Alg sets** -- built (thirty-seventh pass); full OLS, more databases,
+   per-set pro models, main/known algs and the algs page redesign in the
+   thirty-eighth. OLS rankings wait for professional data (3 steps on
+   reco.nz). For the developer's audit:
    the ranking of generated against community algs cannot be checked on
    votes (A perms: x R' U R' D2 R U' R' D2 R2 x' ranks ~14th behind RU+D
    algs; H and Z: RU algs ahead of the M-slice ones, which MCC itself

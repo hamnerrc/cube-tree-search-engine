@@ -80,8 +80,8 @@ const CaseDiagram = (() => {
   }
 
   /** The picture of a case of a set: its stored state (face letters), masked. */
-  function draw(canvas, setId, stateLabels, opts) {
-    const labels = AlgSets.maskedLabels(setId, AlgSets.toCubie(stateLabels));
+  function draw(canvas, setId, stateLabels, opts = {}) {
+    const labels = AlgSets.maskedLabels(opts.mask || setId, AlgSets.toCubie(stateLabels));
     if (AlgSets.SET_BY_ID[setId].slot) cubeView(canvas, labels, opts);
     else topView(canvas, labels, opts);
   }

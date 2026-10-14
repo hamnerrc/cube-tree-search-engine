@@ -30,7 +30,7 @@ const AlgSets = (() => {
   const EDGE_COLORS = EDGE_NAMES.map(n => [...n]);
   const SOLVED_LABELS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
   // the data files' cache-buster: bump it whenever data/ll/*.json are rebuilt
-  const DATA_VERSION = '20261015b';
+  const DATA_VERSION = '20261016a';
   const dataUrl = setId => `data/ll/${setId}.json?v=${DATA_VERSION}`;
 
   /** Facelets (any colours) -> the same cube in face letters, by its centres. */
@@ -135,8 +135,9 @@ const AlgSets = (() => {
     { id: 'zbll', name: 'ZBLL', title: 'the whole last layer, edges oriented', goal: 0,
       accepts: c => f2lSolved(c) && llEO(c) && !cornersOriented(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') },
-    { id: 'ols', name: 'OLS', title: 'last slot + orientation (VLS, HLS)', goal: 1, slot: true,
-      accepts: c => lsReady(c),
+    // (a solved pair is an OLL case, not an OLS one)
+    { id: 'ols', name: 'OLS', title: 'last slot + orientation', goal: 1, slot: true,
+      accepts: c => lsReady(c) && !pairSolved(c),
       key: c => lsKey(c, true) },
     // (a solved pair with only edges to flip is not a ZBLS case: 302 cases)
     { id: 'zbls', name: 'ZBLS', title: 'last slot + edge orientation', goal: 3, slot: true,
@@ -187,7 +188,10 @@ const AlgSets = (() => {
       }
     }
   }
-  // OLS: VLS (the pair ready for R U' R') and HLS (ready for R U R'), every LL orientation
+  // OLS: the last pair and the orientation of the last layer at once, for
+  // every placement of the pair (developer, 2026-10-13: "full OLS"). VLS (the
+  // pair connected, ready for R U' R') and HLS (split, ready for R U R') come
+  // first, as before; their edge-oriented cases are WV and SV.
   const OLS_INSERTS = [{ group: 'VLS', insert: "R U' R'" }, { group: 'HLS', insert: "R U R'" }];
   function* olsStates() {
     for (const { group, insert } of OLS_INSERTS) {
@@ -198,6 +202,45 @@ const AlgSets = (() => {
         yield c;
       }
     }
+    for (const c of zblsStates()) {
+      // every twist of the four LL corners on top of each ZBLS placement and flip
+      for (const tw of TWISTS) {
+        const s = { cp: c.cp.slice(), co: c.co.slice(), ep: c.ep.slice(), eo: c.eo.slice() };
+        const ll = LS_CORNERS.filter(p => s.cp[p] !== 4);
+        ll.forEach((p, k) => { s.co[p] = tw[k]; });
+        // the corner twists sum to 0 mod 3 (the pair corner's twist counts)
+        const sum = s.co.reduce((a, b) => a + b, 0) % 3;
+        s.co[ll[3]] = (s.co[ll[3]] + 3 - sum) % 3;
+        yield s;
+      }
+    }
+  }
+
+  // The OLS subsets a case belongs to, from its pair placement (any pre-AUF)
+  // and, for WV and SV, the LL edges oriented once the pair goes in.
+  let LS_SUBSETS = null;
+  function lsSubsetTables() {
+    if (LS_SUBSETS) return LS_SUBSETS;
+    const place = c => { const pc = c.cp.indexOf(4), pe = c.ep.indexOf(8); return `${pc}/${c.co[pc]} ${pe}/${c.eo[pe]}`; };
+    LS_SUBSETS = [
+      { id: 'vls', edges: 'wv', insert: algCubie("R U' R'"), place: place(algCubie("R U R'")) },
+      { id: 'hls', edges: 'sv', insert: algCubie("R U R'"), place: place(algCubie("R U' R'")) },
+    ].map(s => ({ ...s, placeOf: place }));
+    return LS_SUBSETS;
+  }
+  /** ['vls', 'wv'], ['hls'], ... : the named OLS subsets a last-slot state is in ([] for the rest of OLS). */
+  function olsSubsets(c) {
+    const out = [];
+    for (const s of lsSubsetTables()) {
+      for (const u of uPowers()) {
+        const v = mul(c, u);
+        if (s.placeOf(v) !== s.place) continue;
+        out.push(s.id);
+        if (llEO(mul(v, s.insert))) out.push(s.edges);
+        break;
+      }
+    }
+    return out;
   }
   function invertAlg(alg) {
     return String(alg).trim().split(/\s+/).filter(Boolean).reverse()
@@ -278,7 +321,8 @@ const AlgSets = (() => {
   // ---- what a case diagram shows ----------------------------------------------
   // per set: show the last layer's pieces in full ('full'), only their U
   // stickers ('top'), or not at all ('none'); corners, edges
-  const MASKS = { oll: ['top', 'top'], ols: ['top', 'top'], zbls: ['none', 'top'], coll: ['full', 'top'], pll: ['full', 'full'], zbll: ['full', 'full'] };
+  // ('pair': only the last pair shows, for a picture of the pair's placement)
+  const MASKS = { oll: ['top', 'top'], ols: ['top', 'top'], zbls: ['none', 'top'], coll: ['full', 'top'], pll: ['full', 'full'], zbll: ['full', 'full'], pair: ['none', 'none'] };
   /**
    * The facelets of a case as its set sees them: face letters, '.' where a
    * sticker does not matter (an LL piece's side the set ignores).
@@ -408,24 +452,70 @@ const AlgSets = (() => {
    * priced slice PLLs far down (M is rare in F2L); on pairs of a slice alg
    * and a face-turn alg the votes still favour the face turns.
    */
-  let LL_PENALTIES = null; // STEP_PENALTIES' shape (script.js loads first)
   const LL_LEFT = 2.5;
   const LL_NATURAL = 1.25;
-  function llScore(body, model = null) {
-    if (!LL_PENALTIES) LL_PENALTIES = { ...STEP_PENALTIES, D: 1.75, F: 2.25, B: 3.5, wideRL: 0, wideUDFB: 3.5, wideOther: 3.5, natural: 0 };
+  // Each set has its own constants (developer, 2026-10-13: separate
+  // rankings for everything in the last layer), fitted on what professionals
+  // execute (tools/ll-tune.js; data/ll/pro_ll.json): `mcc` (script.js's
+  // ALG_SPEED_DEFAULTS' shape), `pen` (move penalties), `left` (per left-hand
+  // turn), `natural` (per bit of last-layer surprise). Sets without fitted
+  // values use the vote-fitted ones above.
+  // PLL: slices cost 0.5 instead of 3.5 (tools/ll-tune.js: Yiheng Wang's
+  // PLLs 2.121 -> 2.075 mean log2 rank, the community's votes 62.8 -> 63.8%;
+  // he turns the M-slice H and Z perms). Full refits of a set's constants
+  // did worse on held-out cases (OLL 0.825 -> 0.847, PLL 2.121 -> 2.459).
+  const LL_FITTED = { pll: { pen: { wideOther: 0.5 } } };
+  let LL_BASE = null;
+  /** The ranking constants of a set ({ mcc, pen, left, natural }). */
+  function llParams(setId) {
+    if (!LL_BASE) {
+      LL_BASE = {
+        mcc: { ...ALG_SPEED_DEFAULTS },
+        pen: { ...STEP_PENALTIES, D: 1.75, F: 2.25, B: 3.5, wideRL: 0, wideUDFB: 3.5, wideOther: 3.5, natural: 0 },
+        left: LL_LEFT, natural: LL_NATURAL,
+      };
+    }
+    const f = LL_FITTED[setId];
+    if (!f) return LL_BASE;
+    return { mcc: { ...LL_BASE.mcc, ...f.mcc }, pen: { ...LL_BASE.pen, ...f.pen }, left: f.left ?? LL_BASE.left, natural: f.natural ?? LL_BASE.natural };
+  }
+  const MCC_ORDER = ['wristMult', 'pushMult', 'ringMult', 'destabilize', 'addRegrip', 'double', 'sesliceMult', 'overWorkMult', 'moveblock', 'rotation'];
+  function llScore(body, model = null, setId = null) {
+    const P = llParams(setId);
     let left = 0;
     for (const t of String(body).split(' ')) if (t[0] === 'L' || t[0] === 'l') left++;
-    let s = algSpeed(body, false, true) + stepPenalty(body, LL_PENALTIES) + LL_LEFT * left;
-    if (model) s += LL_NATURAL * model.surprise(body);
+    let s = algSpeed(body, false, true, ...MCC_ORDER.map(k => P.mcc[k])) + stepPenalty(body, P.pen) + P.left * left;
+    if (model) s += P.natural * model.surprise(body);
     return s;
   }
 
+  // ---- awkward algs (developer, 2026-10-13) --------------------------------------
+  // An alg is awkward when it uses an unusual move type (B, a wide f/b/u/d,
+  // S, E), rotates twice, or turns slowly for its length: MCC time per turn
+  // above the 95th percentile of the community's top-voted algs (1.95; the
+  // move penalties are left out, so a slice alg is not awkward for being one).
+  // Awkward algs are hidden in a case whose community favourite is not
+  // awkward itself. Algs awkward beyond doubt -- three unusual moves, or
+  // above 3.0 per turn (the 99th percentile is 2.4) -- are left out of the
+  // data unless they are the case's favourite (tools/ll-build.js): a 21-move
+  // "l b d' ... S M r u E" T perm with 34 joke votes, for one.
+  const AWK_FLOW = 1.95, AWK_DROP_FLOW = 3.0;
+  function awkwardness(body) {
+    const toks = String(body).split(' ').filter(Boolean);
+    const turns = toks.filter(t => !/^[xyz]/.test(t)).length || 1;
+    const odd = toks.filter(t => /^[BbfudSE]/.test(t)).length;
+    const rotations = toks.filter(t => /^[xyz]/.test(t)).length;
+    const flow = algSpeed(body, false, true) / turns;
+    return { flow, odd, rotations, awkward: flow > AWK_FLOW || odd > 0 || rotations >= 2, drop: flow > AWK_DROP_FLOW || odd >= 3 };
+  }
+
   return {
-    DATA_VERSION, dataUrl, llScore, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
+    awkwardness, AWK_FLOW, AWK_DROP_FLOW,
+    DATA_VERSION, dataUrl, llScore, llParams, LL_FITTED, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
     CORNER_FACELETS, EDGE_FACELETS, CORNER_NAMES, EDGE_NAMES, SOLVED_LABELS,
     labelsOf, toCubie, fromCubie, identity, mul, sameCubie, algCubie, faceletCubie, uPowers,
     SETS, SET_BY_ID, enumerateCases, aufVariants, caseKeyOf, invertAlg, reachesGoal, solves, normalizeAlg,
-    f2lSolved, lsReady, llOriented, llEO, PERMS4, TWISTS, FLIPS, llState,
+    f2lSolved, lsReady, llOriented, llEO, PERMS4, TWISTS, FLIPS, llState, olsSubsets, pairSolved,
   };
 })();
 

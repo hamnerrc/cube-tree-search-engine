@@ -53,8 +53,10 @@ function solvedSession() {
         const mine = rows[k];
         const other = { ...mine, coreAlg: "R U R'", tpp: mine.tpp - 0.5, targetNodeId: mine.targetNodeId };
         const elsewhere = { ...mine, coreAlg: "L' U' L", tpp: mine.tpp - 1, targetNodeId: 'elsewhere' };
-        if (k === 0) return [elsewhere, { ...mine, rotation: "x2 y'" }]; // the same inspection, written otherwise
-        if (k === 1) return [elsewhere, other, { ...mine }];
+        // (another goal is only brought up when it is clearly faster)
+        if (k === 0) return [{ ...elsewhere, tpp: mine.tpp * 0.5 }, { ...mine, rotation: "x2 y'" }]; // the same inspection, written otherwise
+        // (clearly slower: a step within a few percent of the best is "a solid choice")
+        if (k === 1) return [{ ...elsewhere, tpp: mine.tpp * 0.7 }, { ...other, tpp: mine.tpp * 0.8 }, { ...mine }];
         if (k === 3) return [other]; // the pro's 12-turn last pair is not in the list
         return [{ ...mine }];
       },
@@ -66,13 +68,15 @@ function solvedSession() {
     assert.strictEqual(a.altRow.targetNodeId, 'elsewhere', 'the best cross, but another goal was faster');
     assert.strictEqual(b.rank, 2);
     assert.strictEqual(b.total, 2, 'same goal only');
-    assert.ok(Math.abs(b.gap - 1) < 1e-9, 'gap to the best result overall');
+    assert.ok(Math.abs(b.gap - rows[1].tpp * 0.3) < 1e-9, 'gap to the best result overall');
     assert.ok(b.alt.includes("R U R'"), 'the better step of the same goal, not the other goal');
     assert.ok(b.why.length > 0);
     assert.strictEqual(c.text, caption('critique.step.top', { label: '3rd pair' }));
     assert.strictEqual(d.outside, '12 turns > limit 10');
     assert.strictEqual(d.why[0], 'outside.long');
-    for (const x of [...report.items.flatMap(i => [i.text, i.alt.replace(/try .*?:|: .*$/, '')]), report.total]) {
+    // (an alt's alg is moves, not a number: it is taken out first)
+    const noAlg = (i) => (i.altRow ? i.alt.replace([...(i.stepIndex === 0 ? String(i.altRow.rotation || '').split(' ').filter(Boolean) : []), ...String(i.altRow.coreAlg).split(' ')].join(' '), '') : i.alt);
+    for (const x of [...report.items.flatMap(i => [i.text, noAlg(i)]), report.total]) {
       assert.ok(!/\d/.test(x.replace(/(1st|2nd|3rd|4th)/g, '')), `no numbers: ${x}`);
     }
   });

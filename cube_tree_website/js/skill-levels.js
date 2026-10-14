@@ -55,6 +55,31 @@ const STYLE_OPTIONS = [
 
 const CROSS_COLOURS = ['white', 'yellow', 'green', 'blue', 'red', 'orange'];
 
+// The last layer the solver uses (developer, 2026-10-13: more questions to
+// tailor the site): the solving screen's method and the sets they know.
+const LAST_LAYER_OPTIONS = [
+  { id: 'twolook', caption: 'lastlayer.twolook', method: 'oll', knownSets: [] },
+  { id: 'full', caption: 'lastlayer.full', method: 'oll', knownSets: ['oll', 'pll'] },
+  { id: 'coll', caption: 'lastlayer.coll', method: 'coll', knownSets: ['oll', 'pll', 'coll'] },
+  { id: 'zbll', caption: 'lastlayer.zbll', method: 'zbll', knownSets: ['oll', 'pll'] },
+];
+// Last-slot tricks they use (each switches its set on; none: all off).
+const LAST_SLOT_OPTIONS = [
+  { id: 'wv', caption: 'lastslot.wv' },
+  { id: 'sv', caption: 'lastslot.sv' },
+  { id: 'vls', caption: 'lastslot.vls' },
+  { id: 'hls', caption: 'lastslot.hls' },
+  { id: 'ols', caption: 'lastslot.ols' },
+  { id: 'zbls', caption: 'lastslot.zbls' },
+];
+// How much the tree-searcher talks.
+const CHAT_OPTIONS = [
+  { id: 'chatty', caption: 'chat.chatty' },
+  { id: 'normal', caption: 'chat.normal' },
+  { id: 'brief', caption: 'chat.brief' },
+];
+const lastLayerOption = id => LAST_LAYER_OPTIONS.find(o => o.id === id) || null;
+
 /** Index into SKILL_LEVELS for an average time (seconds); unknown -> the intermediate bracket. */
 function levelFor(seconds) {
   const t = Number(seconds);
@@ -98,6 +123,10 @@ function settingsFromAnswers(answers) {
     for (const x of g.settings.advanced || []) advanced.add(x);
     Object.assign(view, g.settings.view || {});
   }
+  // the last layer and the last slot (when the questions were answered)
+  const ll = lastLayerOption(a.lastLayer);
+  if (ll) view.llMethod = ll.method;
+  if (Array.isArray(a.lastSlot)) view.lsSets = Object.fromEntries(LAST_SLOT_OPTIONS.map(o => [o.id, a.lastSlot.includes(o.id)]));
   const colors = (a.colours || []).filter(c => CROSS_COLOURS.includes(c));
   const order = ['xcross', 'xxcross', 'xxxcross', 'full_pseudo'];
   return {
@@ -109,7 +138,7 @@ function settingsFromAnswers(answers) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, CROSS_COLOURS,
+    SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, CROSS_COLOURS, LAST_LAYER_OPTIONS, LAST_SLOT_OPTIONS, CHAT_OPTIONS, lastLayerOption,
     inspectionOption, levelFor, goalsFor, goalAllowed, settingsFromAnswers,
   };
 }

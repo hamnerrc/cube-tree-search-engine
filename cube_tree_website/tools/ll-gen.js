@@ -40,6 +40,12 @@ const PLAN = {
   ols: { maxLen: 16, sets: [['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 2], ['RUFD', 1], ['RUDr', 1], ['RUFSf', 1], ['RUFL', 1]] },
   zbls: { maxLen: 16, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 2], ['RUFD', 1], ['RUDr', 1], ['RUB', 1]] },
 };
+// OLS beyond VLS and HLS (its first 432 cases): every other pair placement,
+// 7,622 cases, one move less of slack in the slower move sets (~3 s a case;
+// RUD and RUL cost nothing where they cannot orient the edges)
+const PLAN_REST = { ols: { from: 432, plan: { maxLen: 16, sets: [['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 1], ['RUFD', 1], ['RUDr', 1], ['RUFSf', 1], ['RUFL', 1]] } } };
+/** The plan of case `i` of a set. */
+const planOf = (setId, i) => (PLAN_REST[setId] && i >= PLAN_REST[setId].from ? PLAN_REST[setId].plan : PLAN[setId]);
 const MAX_SOLS = 20000;     // per case and move set
 const NODE_LIMIT = Number(process.env.LLGEN_NODES) || 1.5e8; // per case and move set (~1 min)
 
@@ -144,12 +150,14 @@ async function runSet(setId, from = 0, to = Infinity) {
   }
   // grouped by move set, so each move set's tables are loaded once; a move
   // set's result already on disk is kept (a run can be stopped and resumed)
-  const plan = PLAN[setId];
-  for (const [ms, slack] of plan.sets) {
+  const moveSets = [...new Set(todo.flatMap(i => planOf(setId, i).sets.map(([ms]) => ms)))];
+  for (const ms of moveSets) {
     const lines = [];
     for (const i of todo) {
-      if (fs.existsSync(path.join(dir, `${i}.${ms}.json`))) continue;
-      lines.push(caseLines(setId, i, cases[i].rep, { maxLen: plan.maxLen, sets: [[ms, slack]] })[0]);
+      const plan = planOf(setId, i);
+      const entry = plan.sets.find(([m]) => m === ms);
+      if (!entry || fs.existsSync(path.join(dir, `${i}.${ms}.json`))) continue;
+      lines.push(caseLines(setId, i, cases[i].rep, { maxLen: plan.maxLen, sets: [entry] })[0]);
     }
     if (!lines.length) continue;
     const t0 = Date.now();
@@ -164,7 +172,7 @@ async function runSet(setId, from = 0, to = Infinity) {
   // set waits for the next run)
   let incomplete = 0;
   for (const i of todo) {
-    const files = plan.sets.map(([ms]) => path.join(dir, `${i}.${ms}.json`));
+    const files = planOf(setId, i).sets.map(([ms]) => path.join(dir, `${i}.${ms}.json`));
     if (!files.every(f => fs.existsSync(f))) { incomplete++; continue; }
     fs.writeFileSync(path.join(dir, `${i}.json`), JSON.stringify(files.map(f => JSON.parse(fs.readFileSync(f, 'utf8')))));
     for (const f of files) fs.unlinkSync(f);
@@ -174,7 +182,7 @@ async function runSet(setId, from = 0, to = Infinity) {
 
 async function oneCase(setId, index) {
   const cases = AlgSets.enumerateCases(setId);
-  const lines = caseLines(setId, index, cases[index].rep);
+  const lines = caseLines(setId, index, cases[index].rep, planOf(setId, index));
   for (const l of lines) {
     const t0 = Date.now();
     await runLlgen([l], (r) => {
@@ -192,4 +200,4 @@ if (require.main === module) {
   else console.log('usage: node tools/ll-gen.js build | run <set> [from] [to] | case <set> <index>');
 }
 
-module.exports = { MOVE_SETS, PLAN, TOKENS, humanCubie, frames, header, caseLines, runLlgen, WORK };
+module.exports = { MOVE_SETS, PLAN, PLAN_REST, planOf, TOKENS, humanCubie, frames, header, caseLines, runLlgen, WORK };

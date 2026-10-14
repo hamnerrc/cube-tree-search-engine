@@ -27,6 +27,26 @@ const CAPTIONS = {
   'onboard.goals.later': 'later',
   'onboard.goals.basics': 'basics',
   'onboard.goals.settings': 'you can enable more advanced solutions in settings any time!',
+  'onboard.lastlayer.title': 'how do you solve the last layer?',
+  'onboard.lastlayer.text': 'I’ll suggest algs from what you use.',
+  'onboard.lastslot.title': 'any last-slot tricks?',
+  'onboard.lastslot.text': 'algs that do more while the last pair goes in. pick the ones you use.',
+  'onboard.lastslot.none': 'none of these? that’s fine, skip it. they are all in settings.',
+  'onboard.chat.title': 'how much should your tree-searcher talk?',
+  'onboard.chat.text': '',
+  'lastlayer.twolook': '2-look: oll in two steps, then pll in two',
+  'lastlayer.full': 'full oll, then full pll',
+  'lastlayer.coll': 'full oll and pll, plus coll when the edges are oriented',
+  'lastlayer.zbll': 'zbll when the edges are oriented (some or all of it)',
+  'lastslot.wv': 'winter variation (wv): connected pair, orient the corners',
+  'lastslot.sv': 'summer variation (sv): split pair, orient the corners',
+  'lastslot.vls': 'vls: connected pair, orient everything',
+  'lastslot.hls': 'hls: split pair, orient everything',
+  'lastslot.ols': 'full ols: any pair, orient everything (8,000+ algs!)',
+  'lastslot.zbls': 'zbls: any pair, orient the edges',
+  'chat.chatty': 'chatty: tell me all the reasons',
+  'chat.normal': 'normal',
+  'chat.brief': 'brief: just the moves, mostly',
   'onboard.colours.title': 'which cross colours?',
   'onboard.colours.text': 'the solver searches these.',
   'onboard.done': 'let’s solve',
@@ -75,26 +95,61 @@ const CAPTIONS = {
   'solve.noSetup': 'nothing to solve yet: sign in (or answer the questions again) to set up your search.',
 
   // --- searcher: the three picks and their reasons ---
-  'searcher.greeting': 'here are my picks.',
-  'searcher.thinking': 'let me think…',
-  'searcher.solved': 'all done! want a critique?',
+  'searcher.greeting': [
+    'here are my picks.',
+    'a few ways to go:',
+    'take your pick!',
+    'these look good to me.',
+    'here’s what I found.',
+  ],
+  'searcher.thinking': [
+    'let me think…',
+    'hmm, let me look…',
+    'searching the branches…',
+    'one sec, climbing the tree…',
+  ],
+  'searcher.solved': [
+    'all done! want a critique?',
+    'solved! shall I go through it?',
+    'nice, that’s it! want my thoughts?',
+  ],
   'searcher.offNode': 'I can’t see a step starting like that, but you can continue without me!',
   'searcher.following': 'ooh, let me see where that goes…',
   'searcher.stepDone': 'that finishes the {label}! press tab (or enter) and I’ll look at the next one.',
   'searcher.lastDone': 'that’s the last pair! press tab (or enter) to finish.',
-  'searcher.greetingOne': 'this is the one.',
-  'searcher.keepGoing': 'go on, I’m following.',
+  'searcher.greetingOne': [
+    'this is the one.',
+    'only one stands out here.',
+  ],
+  'searcher.keepGoing': [
+    'go on, I’m following.',
+    'keep going, I’m watching.',
+    'carry on!',
+  ],
   'searcher.pick.best': 'my favourite',
   'searcher.pick.style.efficiency': 'shortest',
   'searcher.pick.style.tps': 'smoothest',
   'searcher.pick.setup': 'sets you up',
+  'searcher.pick.next': 'also quick',
   // --- searcher: the last layer and the last slot (README "Algorithm sets") ---
-  'searcher.ll.case': 'here is how I would solve this one.',
+  'searcher.ll.case': [
+    'here is how I would solve this one.',
+    'I know this one: {label}.',
+    '{label}! here are some ways.',
+  ],
   'searcher.ll.stepDone': 'that finishes the {label}! press tab (or enter) to write it down.',
   'searcher.ll.unknown': 'I don’t know an alg for this one. finish it your way!',
   'searcher.ll.auf': 'one last turn of the top!',
   'searcher.ll.more': 'all algs for this case ›',
+  'searcher.ll.yours': 'your alg for this case.',
+  'searcher.ll.others': 'some other ways to do {label}.',
+  'searcher.ll.makeMain': 'use it, and make it my main alg for this case',
+  'searcher.ll.neither': 'neither of these ›',
+  'searcher.ll.change': 'other algs ›',
   'searcher.pick.ll.best': 'my favourite',
+  'searcher.pick.ll.main': 'yours',
+  'searcher.pick.ll.more': 'another',
+  'searcher.pick.ll.next': 'also quick',
   'searcher.pick.ll.favourite': 'community favourite',
   'searcher.pick.ll.set.zbll': 'whole last layer',
   'searcher.pick.ll.set.oll': 'two-look',
@@ -103,7 +158,10 @@ const CAPTIONS = {
   'searcher.pick.lastslot.ols': 'skips the oll',
   'searcher.pick.lastslot.zbls': 'sets up zbll',
   'reason.ll.fastest': 'the fastest alg I know for {label}.',
-  'reason.ll.new': 'a new find: faster than the community’s algs for {label}.',
+  'reason.ll.main': 'the alg you picked for {label}.',
+  'reason.ll.next': 'nearly as quick, a different way.',
+  'reason.ll.shorter': 'fewer moves than my favourite.',
+  'reason.ll.community': 'one the community uses.',
   'reason.ll.favourite': 'the one most cubers use.',
   'reason.ll.whole': 'the edges are oriented: this solves the whole last layer ({label}).',
   'reason.ll.twoLook': 'or the two-look way: orient first ({label}), then pll.',
@@ -111,6 +169,7 @@ const CAPTIONS = {
   'reason.ls.skipsOll': 'inserts the pair and orients the whole last layer ({label}): no oll.',
   'reason.ls.edgesForZbll': 'inserts the pair and orients the edges ({label}): then zbll.',
   'reason.fastest': 'fastest to execute here.',
+  'reason.nearly': 'nearly as quick, a different way to go.',
   'reason.free_pair': 'sets up a free pair. fancy!',
   'reason.edges_good': 'leaves the edges oriented: fewer rotations later.',
   'reason.no_rotation': 'no rotation needed.',
@@ -126,14 +185,25 @@ const CAPTIONS = {
   'critique.button': 'critique',
   'critique.title': 'how did it go?',
   'critique.intro': 'here is what I noticed. tap a step to see it on the cube.',
-  'critique.step.top': '{label}: nice, exactly what I would do!',
+  'critique.step.top': [
+    '{label}: nice, exactly what I would do!',
+    '{label}: spot on.',
+    '{label}: that’s my pick too.',
+    '{label}: couldn’t do better myself.',
+  ],
   'critique.step.goodOutside': '{label}: what!?! That is one I don’t even search for, and nothing I found beats it! Nice!',
   'critique.step.slower': '{label}: {why}',
-  'critique.step.bestOfKind': '{label}: the best one of its kind.',
+  'critique.step.bestOfKind': [
+    '{label}: the best one of its kind.',
+    '{label}: a fine choice.',
+  ],
   'critique.why.rotation': 'the rotation costs you time.',
   'critique.why.longer': 'it takes the long way round.',
   'critique.why.awkward': 'the turns don’t flow well together.',
-  'critique.why.no_free_pair': 'it leaves nothing set up for the next pair.',
+  'critique.why.no_free_pair': [
+    'the next pair is a bit harder to find after it.',
+    'it leaves less set up for the next pair.',
+  ],
   'critique.why.edges': 'it leaves a lot of bad edges.',
   'critique.why.slower': 'something a little quicker fits here.',
   'critique.outside.long': 'it is longer than I would ever look for here.',
@@ -143,11 +213,26 @@ const CAPTIONS = {
   'critique.outside.root_rotation': 'a rotation in the middle of the cross costs time.',
   'critique.alt.similar': 'try {alg}: it starts the same way.',
   'critique.alt.samePieces': 'try {alg}: it solves the same pieces.',
-  'critique.alt.otherGoal': 'but you could do even more here: {alg} ({other}).',
+  'critique.alt.otherGoal': [
+    'if you like, {alg} ({other}) is another way to go here.',
+    '{alg} ({other}) is also worth a look here, if it suits you.',
+  ],
   'critique.step.unsolved': 'this part doesn’t finish a step.',
-  'critique.total.great': 'a great solve. I would not change a thing!',
-  'critique.total.good': 'a good solve, with a couple of spots to polish.',
-  'critique.total.work': 'a few steps have quicker options. have a look at the ones above!',
+  'critique.total.great': [
+    'a great solve. I would not change a thing!',
+    'clean all the way through. nice!',
+    'that’s a solve I’d be proud of.',
+  ],
+  'critique.total.good': [
+    'a good solve, with a couple of spots to polish.',
+    'solid! just a couple of places to look at.',
+    'nicely done. a few small things above.',
+  ],
+  'critique.total.work': [
+    'a few steps have quicker options. have a look at the ones above!',
+    'some room to grow here: the steps above have quicker options.',
+    'there’s speed to find in a few steps. no rush, one at a time!',
+  ],
   'critique.ls.edges': 'but yours orients the edges too, which the quicker one doesn’t.',
   'critique.ls.oriented': 'but yours orients the whole last layer too, which the quicker one doesn’t.',
   'critique.ll.best': '{label}: my favourite alg for it!',
@@ -155,24 +240,72 @@ const CAPTIONS = {
   'critique.ll.slower': '{label}: there is a quicker alg for this case.',
   'critique.ll.alt': 'try {alg}',
   'critique.ll.unknown': '{label}: I don’t know this one well enough to say.',
+  'critique.ll.main': '{label}: your alg, done right.',
+  'critique.ll.notMain': '{label}: not the alg you picked for it.',
+  'critique.ll.yourAlt': 'yours is {alg}',
+  'critique.step.fine': [
+    '{label}: a solid choice.',
+    '{label}: works well.',
+    '{label}: good, that’s a perfectly fine way.',
+  ],
+  'critique.alt.optional': [
+    'another option: {alg}.',
+    'there’s also {alg}, if you like it.',
+  ],
+  'critique.egg': [
+    'wait… you did every single thing I said. I can’t critique my own homework!',
+    'every step was one of my picks. this is just me grading myself, and I give me an A+.',
+    'you followed me all the way. critiquing that would be awkward for both of us!',
+  ],
+  'critique.ls.best': '{label}: your {set} alg is the fastest one I know.',
+  'critique.ls.good': '{label}: a great {set} alg for this case.',
+  'critique.ls.slower': '{label}: a quicker {set} alg fits here.',
+  'critique.ls.alt': 'try {alg}',
+  'critique.ls.yours': '{label}: your {set} alg, done right.',
+  'critique.intro#building': 'here is what I noticed. tap a step to see it on the cube. no stress: one thing at a time!',
+  'critique.intro#professional': 'here’s the breakdown. tap a step to see it.',
+  'critique.total.work#building': [
+    'some quicker options above. pick one and practise it, that’s how it grows!',
+    'a few places to look at. one step at a time!',
+  ],
+  'critique.total.great#professional': [
+    'clean. nothing to add.',
+    'textbook.',
+  ],
+  'critique.why.longer#brief': 'longer than needed.',
+  'critique.why.rotation#brief': 'the rotation costs time.',
+  'critique.why.awkward#brief': 'the turns don’t flow.',
+  'critique.why.slower#brief': 'a quicker one fits.',
+  'searcher.greeting#brief': 'picks:',
+  'searcher.thinking#brief': '…',
   'critique.needSolve': 'type a solution (or finish this one) and I’ll go through it.',
   'critique.working': 'going through it…',
 
   // --- the alg sets page (algs.html) ---
   'algs.search.placeholder': 'search: oll 27, t perm, sune, zbll as 3, or type moves',
-  'algs.legend': 'algs are ranked by how fast they are to turn, the way I rank f2l steps. "community" algs come from speedcubedb; the others I found myself.',
   'algs.group.all': 'all',
-  'algs.newTag': 'new find',
+  'algs.searchTab': 'search',
+  'algs.progress': '{known} of {total} known',
+  'algs.allKnown': 'you know every case here. nice!',
+  'algs.noneKnown': 'none marked yet: press “mark what I know”, then sweep over the cases you know.',
+  'algs.learn.button': '✓ mark what I know',
+  'algs.learn.hint': 'tap a case to mark it known, or drag across many. tap the button again when done.',
+  'algs.known.yes': '✓ I know this case',
+  'algs.known.no': 'mark this case as known',
+  'algs.main': 'yours',
+  'algs.main.set': 'make this my alg for the case',
+  'algs.main.clear': 'not my alg any more',
+  'algs.card.more': '+{n} more algs',
   'algs.loading': 'loading the algs…',
   'algs.loadFailed': 'the alg sets could not be loaded. reload to try again. sorry!',
   'algs.empty': 'no case by that name.',
   'algs.noMatch': 'no alg starts like that.',
   'algs.note.solves': 'this alg solves',
   'algs.note.none': 'this alg doesn’t solve a case of these sets.',
-  'algs.src.db': 'community',
-  'algs.src.dbTop': 'community favourite',
-  'algs.src.gen': 'found by the tree-searcher',
-  'algs.src.genNew': 'new find: faster than the community’s',
+
+  // --- settings hints ---
+  'settings.ls.intro': 'algs that do more while the last pair goes in. turn on the ones you use.',
+  'settings.ls.rule': 'while any of these is on, the last two pairs are never solved at once.',
 
   // --- info dialog sections (title, text) ---
   'info.how.title': 'how it works',
@@ -197,12 +330,30 @@ const CAPTIONS = {
 
 const INFO_SECTION_KEYS = ['how', 'profile', 'cube', 'ranking', 'filters', 'lookahead', 'critique', 'lastlayer', 'background'];
 
+// Who is reading (solver-ui.js sets it from the profile): a caption can
+// have a version per speed bracket ("key#professional") or per how much the
+// solver wants the tree-searcher to talk ("key#brief", "key#chatty"); the
+// plain key is the fallback. `seed` changes which variant of a list is said
+// (a new step, a new critique) while the same screen keeps saying the same.
+const CAPTION_CONTEXT = { level: '', chat: '', seed: 0 };
+
+function captionHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
 function caption(key, vars) {
-  const text = Object.prototype.hasOwnProperty.call(CAPTIONS, key) ? CAPTIONS[key] : key;
+  const has = k => Object.prototype.hasOwnProperty.call(CAPTIONS, k);
+  const c = CAPTION_CONTEXT;
+  const found = [c.level && `${key}#${c.level}`, c.chat && `${key}#${c.chat}`, key].find(k => k && has(k));
+  let text = found ? CAPTIONS[found] : key;
+  // a list: one of its variants, the same for the same context
+  if (Array.isArray(text)) text = text[captionHash(`${key}|${c.seed}|${vars ? JSON.stringify(vars) : ''}`) % text.length];
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { CAPTIONS, INFO_SECTION_KEYS, caption };
+  module.exports = { CAPTIONS, INFO_SECTION_KEYS, caption, CAPTION_CONTEXT };
 }

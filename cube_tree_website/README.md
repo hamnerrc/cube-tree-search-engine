@@ -30,6 +30,34 @@ pair at once, a multislot two pairs at once).
    again from the new node.
 4. This repeats until Cross + F2L is solved.
 
+### The solution bar, the cube, the tree-searcher
+
+- **Steps** are read off the typed text by replaying it; a step ends at its
+  line's end, except the last one: the step that finishes the F2L (or a
+  last-layer line that solves the cube) needs no newline after it, and Tab
+  writes none. A line never gets a second comment: nothing is offered to
+  the right of a comment, and Tab on a finished, commented line only goes
+  to the next line.
+- **The cube never cuts** to a new state: it glides through the moves
+  between what it shows and where it should be -- back to the moves both
+  share, then forward -- in about half a second however far (one move: one
+  turn), for typing, Tab, the caret, hovering a pick, the playback buttons
+  and the critique. No fullscreen button.
+- **Look-ahead** has only a depth (off, 2, 3). Its breadth grows by itself:
+  the best three candidates first, then one more at a time for as long as
+  the step is on screen and no other search needs the engines.
+- **The tree-searcher** makes two to four picks, each with a reason, and
+  speaks to the solver's level and to how much they want it to talk
+  (onboarding). Its **critique** only suggests what the solver has switched
+  on and their level allows, calls a step within a few percent of the best
+  "a solid choice" (pair choice is often taste), brings up other pieces only
+  when they are clearly faster, and declines, jokingly, when every step was
+  one of its own suggestions.
+- **Onboarding** asks, besides speed, inspection, style, goals and cross
+  colours: the last layer they use (2-look, full OLL/PLL, COLL, ZBLL), their
+  last-slot tricks (each switches its set on) and how chatty the
+  tree-searcher should be.
+
 ### Look
 
 The interface follows `UI_references/`: one-bit pixel art, pixel buttons,
@@ -68,44 +96,75 @@ them by hand; code never writes user-facing prose itself.
 
 ## Algorithm sets
 
-cube⑂tree also covers the last slot and the last layer with six standard
-algorithm sets, meant to replace an alg database: **OLL** (57 cases),
-**PLL** (21), **COLL** (42), **ZBLL** (472), **OLS** (VLS and HLS: the pair
-ready for R U' R' or R U R' while the last layer is oriented, 216 + 216)
-and **ZBLS** (302: the last pair inserted while the edges are oriented).
+cube⑂tree also covers the last slot and the last layer with algorithm sets,
+meant to replace an alg database: **OLL** (57 cases), **PLL** (21),
+**COLL** (42), **ZBLL** (472), **OLS** and **ZBLS** (302: the last pair
+inserted while the edges are oriented).
 
+- **OLS** solves the last pair and orients the whole last layer at once,
+  for **every** placement of the pair: 8,054 cases (with the 57 OLL cases of
+  a solved pair and the solved state, the 8,112 of the Speedsolving wiki).
+  Its named subsets: **VLS** (216: the pair connected, ready for R U' R'),
+  **HLS** (216: the pair split, ready for R U R'), and within them **WV**
+  (27: VLS with the last-layer edges oriented) and **SV** (27: HLS with the
+  edges oriented). VLS and HLS are in `ols.json`; the other ~7,600 cases in
+  `ols-more.json`, loaded only where they are wanted.
 - **Cases** are enumerated from every state a set allows, so each list is
   complete; states that differ by a U turn before the alg or after it are
   one case. A case is shown as a pixel picture: the top view for the last
   layer, a small cube for the last slot; stickers a set does not look at
   are grey.
-- **Algorithms** come from two sources: the community's (SpeedCubeDB, with
-  its case names and votes) and the **tree-searcher's own**, generated for
-  every case in the move groups good algs use (RU, RUF, RUD, RUL, RUFD,
-  r and M variants...), a few moves past the shortest in each. Every alg is
-  replayed on the cube before it is kept.
-- **Ranking**: the solver's own step ranking (alg speed, move penalties,
-  naturalness), without the AUFs. A generated alg that ranks above every
-  community alg of its case is marked as a new find. The ranking is never
-  shown as a number; each alg shows its move count and where it is from.
-- **The algs page** (`algs.html`): the sets as tabs, subsets as chips, the
-  cases as a grid. One search box finds cases by name ("oll 27", "t perm",
-  "sune"), autocompletes moves like the solution bar (the algs that start
-  with what is typed; Tab takes the ghost) and recognises a typed alg: the
-  cases it solves, in every set. A case opens with its cube, which plays
-  the chosen alg, and its algs.
+- **Algorithms** come from the community's databases -- SpeedCubeDB (with
+  its votes), the Speedsolving wiki, CubingApp, J Perm, and the community
+  ZBLS spreadsheet (Chad Batten, Tao Yu) -- and from the tree-searcher's
+  generator, run for every case in the move groups good algs use (RU, RUF,
+  RUD, RUL, RUFD, r and M variants...), a few moves past the shortest in
+  each. Every alg is replayed on the cube before it is kept. Nothing is
+  labelled as found by the tree-searcher or as new; a community alg shows
+  where it is listed.
+- **Ranking**: each set has its own constants (alg speed, move penalties,
+  left-hand turns, naturalness), fitted on what professionals execute
+  (reco.nz reconstructions): OLL and PLL on Yiheng Wang, ZBLL and ZBLS on
+  Xuanyi Geng; sets without enough professional data keep the constants
+  fitted on the community's votes. Each set's naturalness model learns from
+  the community's algs and its professional's algs of the other cases. The
+  ranking is never shown as a number; each alg shows its move count.
+- **Style**: a "white collar" solver (efficiency) sees shorter algs a little
+  higher, a "blue collar" one (fast turning) faster-turning ones.
+- **Awkward algs**: an alg that turns slowly for its length, uses an unusual
+  move (B, a wide f/b/u/d, S, E) or rotates twice is awkward. "Hide awkward
+  algs" (on by default) hides them in every case whose community favourite
+  is not awkward itself; algs awkward beyond doubt are not kept at all,
+  unless the community voted for them.
+- **Main and known algs**: a solver can make any alg their **main** alg for
+  its case (★, on the algs page and in the tree-searcher's picks); it is
+  then the only suggestion ("your alg for this case") and the ghost. They
+  mark the cases they **know** (one by one, by sweeping across the case
+  grid in "mark what I know", or by answering which last layer they use);
+  a last-layer alg they type themselves on the solving screen marks its
+  case known on its own. The algs page counts what they know of each set.
+- **The algs page** (`algs.html`): the sets as a menu with the known count,
+  the set as a window, its subsets as a row of slots (OLS: wv, sv, vls, hls,
+  every pair, then the pair's placement), the cases as a grid with a hover
+  card for the first alg; filters all / to learn / known. One search box
+  finds cases by name ("oll 27", "t perm", "sune"), autocompletes moves like
+  the solution bar (Tab takes the ghost) and recognises a typed alg. A case
+  opens with its cube, which plays the chosen alg, and its algs as buttons.
 - **On the solving screen**: once the F2L is solved, lines typed after it
   are read as last-layer steps by replaying them (oll, pll, coll, zbll,
   auf), labelled with their case ("oll 27", "pll t"). The ghost and the
   tree-searcher offer the algs of the case on the cube, in the solver's
   last-layer method (settings: oll + pll, coll or zbll when the edges are
-  oriented). At the last pair, ZBLS and OLS algs that fit the cube are
-  offered too (a left slot gets the mirrored, left-hand algs), scored like
-  any step, and the tree-searcher picks one only with a fact for it: it
-  skips the OLL, or it orients the edges for a ZBLL solver. The critique
-  goes through the last-layer steps too (each against its case's algs, by
-  the same ranking) and says when a last pair also orients the edges or
-  the whole layer, which the quicker alternative does not.
+  oriented): two to four picks, each with a star to use it and make it
+  main, and "neither of these" for more. A PLL typed without its AUF gets
+  the AUF with Tab.
+- **Last slot**: each set is switched on by itself in the settings (ZBLS;
+  WV, SV, VLS, HLS, full OLS), described in words with the acronym beside
+  them. At the last pair the algs of the sets that are on are offered
+  (a left slot gets the mirrored, left-hand algs). While any of them is on,
+  the last two pairs are never solved at once, multislot or not: the last
+  pair stays one pair. The critique judges a last pair done with one of
+  these sets against that set's algs, not against a plain insert.
 
 ## Out of scope (for now)
 
@@ -129,7 +188,15 @@ engines. Notices and the list of changes to vendored code are in
   credited by its solve id in `data/reco_solves.txt`.
 - Community algorithms and case names: [SpeedCubeDB](https://www.speedcubedb.com)
   (OLL, PLL, COLL, ZBLL, VLS, Summer Variation, F2L names), imported with
-  `tools/algdb.js` into `data/ll/scdb.json` with their vote counts.
+  `tools/algdb.js` into `data/ll/scdb.json` with their vote counts; the
+  [Speedsolving wiki](https://www.speedsolving.com/wiki), [CubingApp](https://cubingapp.com/algorithms),
+  [J Perm](https://jperm.net/algs) and the community ZBLS spreadsheet (Chad
+  Batten, Tao Yu; via [@moishy/algsets](https://jsr.io/@moishy/algsets), MIT),
+  imported with `tools/alg-sources.js` into `data/ll/sources.json` (each alg
+  with the databases that list it).
+- Last-layer tuning data: the last-slot and last-layer steps of reco.nz
+  reconstructions (`tools/ll-pros.js`, `data/ll/pro_ll.json`, each credited
+  by its solve id).
 - Fonts: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) and
   [VT323](https://fonts.google.com/specimen/VT323) (SIL Open Font License),
   loaded from Google Fonts.

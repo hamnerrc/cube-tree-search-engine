@@ -89,14 +89,21 @@ test('mirror: every token has one, a mirrored alg makes the mirrored cube, mirro
   }
 });
 
-const EXPECTED = { oll: 57, pll: 21, coll: 42, zbll: 472, ols: 432, zbls: 302 };
+const EXPECTED = { oll: 57, pll: 21, coll: 42, zbll: 472, ols: 8054, zbls: 302 };
 const CASES = {};
-test('case counts: OLL 57, PLL 21, COLL 42, ZBLL 472, OLS 432 (VLS 216 + HLS 216), ZBLS 302', () => {
+test('case counts: OLL 57, PLL 21, COLL 42, ZBLL 472, OLS 8054 (VLS 216 with WV 27, HLS 216 with SV 27), ZBLS 302', () => {
   for (const [id, n] of Object.entries(EXPECTED)) {
     CASES[id] = A.enumerateCases(id);
     assert.strictEqual(CASES[id].length, n, id);
   }
   assert.strictEqual(CASES.ols.filter(c => c.group === 'VLS').length, 216);
+  // full OLS: every pair placement; with the 57 OLL cases (pair solved) and
+  // the solved state, the wiki's 8,112 (speedsolving.com/wiki OLS)
+  assert.strictEqual(CASES.ols.length + 57 + 1, 8112);
+  const tags = {};
+  for (const c of CASES.ols) for (const t of A.olsSubsets(c.rep)) tags[t] = (tags[t] || 0) + 1;
+  assert.deepStrictEqual(tags, { vls: 216, wv: 27, hls: 216, sv: 27 });
+  assert.ok(CASES.ols.filter(c => c.group === 'VLS').every(c => A.olsSubsets(c.rep).includes('vls')), 'the old VLS cases are the vls subset');
   // classes are disjoint
   for (const [id, cs] of Object.entries(CASES)) {
     const seen = new Set();
@@ -149,6 +156,9 @@ for (const id of Object.keys(EXPECTED)) {
   const file = path.join(__dirname, '..', 'data', 'll', `${id}.json`);
   if (!fs.existsSync(file)) { console.log(`SKIP: data/ll/${id}.json not built`); continue; }
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // OLS beyond VLS and HLS is in its own file
+  const more = path.join(__dirname, '..', 'data', 'll', `${id}-more.json`);
+  if (fs.existsSync(more)) data.cases.push(...JSON.parse(fs.readFileSync(more, 'utf8')).cases);
   test(`data/ll/${id}.json: every case once, every alg replayed solves its case with its AUFs`, () => {
     assert.strictEqual(data.cases.length, EXPECTED[id]);
     const names = new Set();

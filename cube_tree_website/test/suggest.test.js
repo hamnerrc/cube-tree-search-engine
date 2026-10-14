@@ -39,13 +39,16 @@ test('pick 1 is the best; pick 2 only when quantified; families differ', () => {
   assert.strictEqual(eff[1].role, 'style.efficiency');
   // TPS: nothing in the top three is more than two moves above optimal and longer than the fastest
   const tps = searcherPicks(list, { style: 'tps', answers: { speed: 7 } });
-  assert.strictEqual(tps.length, 1, 'only the fastest: no smoother step to claim');
+  assert.ok(!tps.some(p => p.role === 'style.tps'), 'no smoother step to claim');
+  assert.strictEqual(tps.length, 2, 'never fewer than two: the next fastest of another family');
+  assert.strictEqual(tps[1].role, 'next');
+  assert.strictEqual(tps[1].reasons[0].key, 'nearly');
   const smooth = [row("R U R' U'", 1.0), row("R U R' U' R U R'", 1.02), row("F R' F' R", 1.05), row("y R U R'", 1.06)];
   const t2 = searcherPicks(smooth, { style: 'tps', answers: { speed: 7 } });
   assert.strictEqual(t2[1].r, smooth[1], '7 moves > 4 + 2 and longer than the fastest, in the top three');
   assert.strictEqual(t2[1].reasons[0].key, 'smoother');
   const far = [row("R U R' U'", 1.0), row("F R' F' R", 1.01), row("y R U R'", 1.02), row("R U R' U' R U R'", 1.03)];
-  assert.strictEqual(searcherPicks(far, { style: 'tps', answers: { speed: 7 } }).length, 1, 'the long one is 4th: not in the top three');
+  assert.ok(!searcherPicks(far, { style: 'tps', answers: { speed: 7 } }).some(p => p.role === 'style.tps'), 'the long one is 4th: not in the top three');
   const fams = eff.map(p => pickFamily(p.r));
   assert.strictEqual(new Set(fams).size, fams.length, 'families differ');
 });
@@ -66,7 +69,8 @@ test('pick 3: the fastest step leaving a free pair, none when the fastest does; 
   views.get(list[3]).connected = 0;
   views.get(list[4]).connected = 0;
   const none = searcherPicks(list, { style: 'tps', answers: { speed: 7 }, viewOf: r => views.get(r), before: { ...neutral } });
-  assert.strictEqual(none.length, 1, 'no free pair anywhere: no setup pick');
+  assert.ok(!none.some(x => x.role === 'setup'), 'no free pair anywhere: no setup pick');
+  assert.strictEqual(none.length, 2, 'but two picks: the next fastest');
   const la = list.map((r, i) => ({ ...r, lookaheadTpp: [3, 2.9, 2.5, 2.8, 3][i], lookaheadAlgs: ["R U R'"] }));
   const q = searcherPicks(la, { style: 'efficiency', answers: { speed: 7 }, lookahead: true });
   assert.strictEqual(q[q.length - 1].r, la[2]);

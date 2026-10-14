@@ -17,6 +17,9 @@ const ROOT = path.join(__dirname, '..');
 for (const f of ['script.js', 'facelet-cube.js']) Object.assign(global, require(path.join(ROOT, 'js', f)));
 const { AlgSets } = require(path.join(ROOT, 'js', 'alg-sets.js'));
 const SCDB = require(path.join(ROOT, 'data', 'll', 'scdb.json'));
+// the other databases (tools/alg-sources.js): Speedsolving Wiki, CubingApp, J Perm, the ZBLS sheet
+const SOURCES_FILE = path.join(ROOT, 'data', 'll', 'sources.json');
+const EXTRA = fs.existsSync(SOURCES_FILE) ? JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf8')) : { sources: {}, algs: [] };
 
 const DB_SETS = { oll: ['oll'], pll: ['pll'], coll: ['coll'], zbll: ['zbll'], ols: ['vls', 'hls'] };
 const LL_SETS = new Set(['oll', 'pll', 'coll', 'zbll']);
@@ -88,13 +91,51 @@ function llCorpus() {
   return CORPUS;
 }
 const MODELS = new Map();
-/** The last-layer naturalness model for a case (its algs left out; '' = the whole corpus). */
-function llModel(key = '') {
-  if (!MODELS.has(key)) {
+// Each set's model also learns from what its professional executes in the
+// other cases (data/ll/pro_ll.json, tools/ll-pros.js): leave-case-out, that
+// put the pro's own alg first more often (tools/ll-tune.js; OLL 50.9% ->
+// 59.8% of Yiheng Wang's steps). `weight`: how many times their algs count.
+const PRO_LM = {
+  oll: { solver: 'Yiheng Wang', weight: 1 },
+  pll: { solver: 'Yiheng Wang', weight: 1 },
+  zbll: { solver: 'Xuanyi Geng', weight: 3 },
+  // ZBLS and COLL: everyone who uses them (62 and 225 steps on reco.nz; one
+  // pro alone is too few). OLS has 3 steps in all of reco.nz: none.
+  zbls: { solver: null, weight: 3 },
+  coll: { solver: null, weight: 8 },
+};
+const PRO_FILE = path.join(ROOT, 'data', 'll', 'pro_ll.json');
+const PRO_CASES = {}; // set -> [{ i (case index), body }] of its pro
+function proAlgs(setId) {
+  if (PRO_CASES[setId]) return PRO_CASES[setId];
+  const lm = PRO_LM[setId];
+  if (!lm || !fs.existsSync(PRO_FILE)) return (PRO_CASES[setId] = []);
+  const byKey = new Map();
+  AlgSets.enumerateCases(setId).forEach((c, i) => c.members.forEach((v, k) => byKey.set(k, i)));
+  PRO_CASES[setId] = JSON.parse(fs.readFileSync(PRO_FILE, 'utf8')).rows
+    // one professional, or (solver null) everyone who uses the set
+    .filter(r => r.set === setId && (!lm.solver || r.solver === lm.solver) && byKey.has(r.key))
+    .map(r => ({ i: byKey.get(r.key), body: r.body }));
+  return PRO_CASES[setId];
+}
+/**
+ * The last-layer naturalness model for a case: the community's algs without
+ * the case's own (`key`; '' = the whole corpus), plus the set's pro's algs
+ * of every other case (`setId`, `caseIndex`: enumerateCases order).
+ */
+function llModel(key = '', setId = null, caseIndex = -1) {
+  const lm = setId && PRO_LM[setId];
+  const id = lm ? `${key}|${setId}:${caseIndex}` : key;
+  if (!MODELS.has(id)) {
     if (MODELS.size > 4) MODELS.delete(MODELS.keys().next().value);
-    MODELS.set(key, buildNaturalnessModel({ corpus: llCorpus().filter(x => x.key !== key).map(x => x.body) }));
+    const corpus = llCorpus().filter(x => x.key !== key).map(x => x.body);
+    if (lm) {
+      const extra = proAlgs(setId).filter(x => x.i !== caseIndex).map(x => x.body);
+      for (let k = 0; k < lm.weight; k++) corpus.push(...extra);
+    }
+    MODELS.set(id, buildNaturalnessModel({ corpus }));
   }
-  return MODELS.get(key);
+  return MODELS.get(id);
 }
 
 // ---- scores ---------------------------------------------------------------------
@@ -166,6 +207,7 @@ function evaluate() {
 
 // ---- building the sets ------------------------------------------------------------
 const MAX_ALGS = 12;          // algorithms kept per case
+const MAX_ALGS_OLS_MORE = 8;  // ... for the ~7,600 OLS cases beyond VLS and HLS
 const MAX_DB = 4;             // ... always including up to this many database ones (by votes)
 const MAX_SLOWER = 2.5;       // nothing scoring above this many times the case's best
 const WORK = path.resolve(process.env.LLGEN_WORK || path.join(ROOT, 'llgen-work'));
@@ -210,10 +252,18 @@ function namedCases(setId) {
       Object.assign(c, { name: diag ? 'O diagonal' : 'O adjacent', group: 'O', order: diag ? 1e6 + 1 : 1e6 });
     }
   }
+  // the other databases' algs, by the case their key belongs to
+  for (const a of EXTRA.algs) {
+    if (a.set !== setId) continue;
+    const i = byKey.get(a.key);
+    if (i === undefined) continue;
+    (out[i].extra = out[i].extra || []).push(a);
+  }
   if (setId === 'ols') {
+    for (const c of out) { c.tags = AlgSets.olsSubsets(c.state); if (!c.tags.length) c.maxAlgs = MAX_ALGS_OLS_MORE; }
     const sv = out.find(c => c.group === 'SV');
     const svPair = pairKey(sv.state);
-    const fresh = out.filter(c => !c.name);
+    const fresh = out.filter(c => !c.name && c.tags.includes('hls'));
     for (const c of fresh) c.state = preRotated(c.state, s => pairKey(s) === svPair);
     // like VLS's subsets: by the flipped LL edges (one, two, all three)
     const flips = c => flipDesc(c.state).split(' ').filter(Boolean);
@@ -223,6 +273,24 @@ function namedCases(setId) {
     fresh.forEach((c, k) => {
       const f = flips(c);
       Object.assign(c, { name: `HLS ${28 + k}`, group: f.length === 3 ? 'HLS no edges' : `HLS ${f.join(' ')}`, order: 1e6 + k });
+    });
+    // every other pair placement (full OLS): named after its F2L case, then
+    // numbered within it by the flipped edges and the corner twists
+    const f2l = SCDB.sets.f2l.map(d => ({ name: d.name, pair: pairKey(AlgSets.algCubie(AlgSets.normalizeAlg(d.setup))) }));
+    const rest = out.filter(c => !c.name);
+    for (const c of rest) {
+      let hit = null;
+      c.state = preRotated(c.state, s => (hit = f2l.find(f => f.pair === pairKey(s))));
+      if (!c.state) throw new Error('ols: a pair placement with no F2L case');
+      c.f2l = hit.name;
+    }
+    const num = n => +((/(\d+)\s*$/.exec(n) || [])[1] || 0); // "F2L 17" -> 17 (not the 2 of "F2L")
+    rest.sort((a, b) => num(a.f2l) - num(b.f2l) || flips(a).length - flips(b).length || flips(a).join().localeCompare(flips(b).join())
+      || a.state.co.join('').localeCompare(b.state.co.join('')));
+    const counter = {};
+    rest.forEach((c, k) => {
+      counter[c.f2l] = (counter[c.f2l] || 0) + 1;
+      Object.assign(c, { name: `${c.f2l} · ${counter[c.f2l]}`, group: c.f2l, order: 2e6 + k });
     });
   }
   // the database's order (OLL 1-57, ZBLL by subset and number...); cases it
@@ -237,7 +305,7 @@ function namedCases(setId) {
       const f = flipDesc(c.state);
       Object.assign(c, { name: f ? `${hit.name} · flip ${f}` : hit.name, group: hit.name });
     }
-    const num = n => +n.match(/\d+/)[0];
+    const num = n => +((/(\d+)\s*$/.exec(n) || [])[1] || 0); // "F2L 17" -> 17 (not the 2 of "F2L")
     out.sort((a, b) => num(a.group) - num(b.group) || a.name.length - b.name.length || a.name.localeCompare(b.name));
   }
   return out;
@@ -257,13 +325,24 @@ function buildSet(setId, { requireRaw = true } = {}) {
   let missing = 0, genBest = 0, dbBest = 0, withDb = 0, rejected = 0;
   const outCases = cases.map((c) => {
     const cand = new Map();
-    const model = llModel(c.dbKey || '');
-    const add = (body, pre, src, votes) => {
+    const model = llModel(c.dbKey || '', setId, c.index);
+    const add = (body, pre, src, votes, from = []) => {
       const old = cand.get(body);
-      if (old) { if (src === 'db') Object.assign(old, { src, votes: Math.max(old.votes || 0, votes || 0) }); return; }
-      cand.set(body, { body, pre, src, votes, score: AlgSets.llScore(body, model) });
+      if (old) {
+        if (src === 'db') Object.assign(old, { src, votes: Math.max(old.votes || 0, votes || 0) });
+        for (const f of from) if (!old.from.includes(f)) old.from.push(f);
+        return;
+      }
+      cand.set(body, { body, pre, src, votes, from: from.slice(), score: AlgSets.llScore(body, model, setId) });
     };
-    for (const a of c.db) add(a.body, a.pre, 'db', a.votes);
+    for (const a of c.db) add(a.body, a.pre, 'db', a.votes, ['scdb']);
+    for (const a of c.extra || []) {
+      const { body } = splitAlg(a.alg, setId);
+      if (!body) continue;
+      const p = preAufFor(setId, c.state, body);
+      if (p < 0) { rejected++; continue; }
+      add(body, p, 'db', 0, a.from);
+    }
     const raw = rawSolutions(setId, c.index);
     if (!raw) missing++;
     for (const part of raw || []) {
@@ -274,22 +353,32 @@ function buildSet(setId, { requireRaw = true } = {}) {
         add(body, p, 'gen');
       }
     }
-    // far slower than the best (a few community entries are jokes): out,
-    // unless the community voted for them
+    // far slower than the best (a few community entries are jokes), or
+    // awkward beyond doubt: out, unless the community voted for them
+    for (const a of cand.values()) a.awk = AlgSets.awkwardness(a.body);
+    // (an alg several databases list counts as a vote from each of the others)
+    const weight = a => (a.votes || 0) + Math.max(0, a.from.length - 1);
+    // the case's community favourite (votes, then how many databases list it)
+    const fav = [...cand.values()].filter(a => a.src === 'db').sort((a, b) => weight(b) - weight(a) || a.score - b.score)[0];
+    // awkward beyond doubt: out, whatever the votes, unless it is the favourite
+    const voted = a => a.src === 'db' && a.votes > 0 && !a.awk.drop;
     const sorted = [...cand.values()].sort((a, b) => a.score - b.score);
-    const all = sorted.filter(a => a.score <= MAX_SLOWER * sorted[0].score || (a.src === 'db' && a.votes > 0));
-    const keep = all.slice(0, MAX_ALGS);
+    const all = sorted.filter(a => a === fav || (a.score <= MAX_SLOWER * sorted[0].score && !a.awk.drop) || voted(a));
+    const keep = all.slice(0, c.maxAlgs || MAX_ALGS);
     // the community's algs with a vote always stay (a 0-vote one competes on speed)
-    const dbTop = all.filter(a => a.src === 'db' && a.votes > 0).sort((a, b) => b.votes - a.votes).slice(0, MAX_DB);
+    const dbTop = all.filter(a => a.src === 'db' && weight(a) > 0 && (a === fav || !a.awk.drop)).sort((a, b) => weight(b) - weight(a)).slice(0, MAX_DB);
     for (const a of dbTop) if (!keep.includes(a)) keep.push(a);
     keep.sort((a, b) => a.score - b.score);
     if (keep.length && c.db.length) {
       withDb++;
       if (keep[0].src === 'gen') genBest++; else dbBest++;
     }
+    const awkOk = !!(fav && fav.awk.awkward);
     return {
-      name: c.name, group: c.group, state: AlgSets.fromCubie(c.state),
-      algs: keep.map(a => ({ alg: a.body, pre: a.pre, post: postAuf(setId, c.state, a.pre, a.body), score: Math.round(a.score * 10) / 10, src: a.src, ...(a.src === 'db' ? { votes: a.votes } : {}) })),
+      name: c.name, group: c.group, state: AlgSets.fromCubie(c.state), ...(c.tags && c.tags.length ? { tags: c.tags } : {}),
+      ...(awkOk ? { awkOk: 1 } : {}),
+      algs: keep.map(a => ({ alg: a.body, pre: a.pre, post: postAuf(setId, c.state, a.pre, a.body), score: Math.round(a.score * 10) / 10, src: a.src,
+        ...(a.src === 'db' ? { votes: a.votes || 0, from: a.from } : {}), ...(a.awk.awkward ? { awk: 1 } : {}) })),
     };
   });
   if (requireRaw && missing) throw new Error(`${setId}: ${missing} cases have no generated solutions in ${WORK}`);
@@ -298,10 +387,19 @@ function buildSet(setId, { requireRaw = true } = {}) {
 }
 
 function build(setIds, opts) {
-  const meta = { version: 1, built: new Date().toISOString().slice(0, 10), source: SCDB.source, fetched: SCDB.fetched };
+  const meta = { version: 2, built: new Date().toISOString().slice(0, 10), source: SCDB.source, fetched: SCDB.fetched,
+    sources: { scdb: { name: 'SpeedCubeDB', url: 'https://www.speedcubedb.com' }, ...EXTRA.sources } };
   for (const setId of setIds) {
     const set = AlgSets.SET_BY_ID[setId];
     const cases = buildSet(setId, opts);
+    if (setId === 'ols') {
+      // OLS: WV, SV, VLS and HLS in ols.json; every other pair placement
+      // (~7,600 cases) in ols-more.json, loaded only where it is wanted
+      const write = (file, list) => fs.writeFileSync(path.join(OUT_DIR, file), JSON.stringify({ ...meta, set: setId, name: set.name, title: set.title, cases: list }));
+      write('ols.json', cases.filter(c => c.tags));
+      write('ols-more.json', cases.filter(c => !c.tags));
+      continue;
+    }
     fs.writeFileSync(path.join(OUT_DIR, `${setId}.json`), JSON.stringify({ ...meta, set: setId, name: set.name, title: set.title, cases }));
   }
 }
@@ -313,4 +411,4 @@ if (require.main === module) {
   else console.log('usage: node tools/ll-build.js eval | build [sets...] [--partial]');
 }
 
-module.exports = { splitAlg, cancelTurns, preAufFor, dbCases, SCORES, namedCases, buildSet, llModel, llCorpus };
+module.exports = { splitAlg, cancelTurns, preAufFor, dbCases, SCORES, namedCases, buildSet, llModel, llCorpus, rawSolutions, EXTRA, PRO_LM };

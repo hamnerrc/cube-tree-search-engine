@@ -20,6 +20,12 @@
 'use strict';
 
 const isRotationTok = t => /^[xyz]/.test(t);
+// A step this close to the best of its kind is a fine choice, not a slow one
+// (developer, 2026-10-13: pair choices are often a matter of taste; the
+// critique must not sound more sure than the numbers are).
+const FINE_MARGIN = 0.06;
+// Another goal (other pieces) is brought up only when it is clearly faster.
+const OTHER_GOAL_MARGIN = 0.10;
 
 /** Why a step cannot be in the complete search's list (null: it could be). */
 function outsideReason(row, isRoot, session) {
@@ -89,7 +95,9 @@ function whySlower(mine, alt, ctx) {
 
 /**
  * { items: [{ text, alt, altRow, stepIndex, startMove, rank, total, gap, outside, why }], total }.
- * opts: { search(fork, { multislot }) -> Promise<results>, answers, onProgress(done, total) }.
+ * opts: { search(fork, { multislot }) -> Promise<results>, answers, onProgress(done, total),
+ *   allow(r) -> false for a result the solver has switched off or is above
+ *   their level (never suggested as the alternative) }.
  */
 async function critiqueSolve(session, opts = {}) {
   const rows = session.committedRows.slice();
@@ -113,7 +121,9 @@ async function critiqueSolve(session, opts = {}) {
     if (opts.onProgress) opts.onProgress(k + 1, rows.length);
     const sameGoal = results.filter(r => r.targetNodeId === row.targetNodeId);
     const at = sameGoal.findIndex(r => sameStep(r, row, isRoot));
-    const best = results[0] || null;
+    // what may be suggested: what the solver has switched on (and their level allows)
+    const allowed = opts.allow ? results.filter(r => sameStep(r, row, isRoot) || opts.allow(r)) : results;
+    const best = allowed[0] || null;
     const myTpp = at >= 0 ? sameGoal[at].tpp : row.tpp;
     const gap = best && Number.isFinite(myTpp) ? Math.max(0, myTpp - best.tpp) : 0;
     const why = at >= 0 ? null : outsideReason(row, isRoot, session);
@@ -125,14 +135,23 @@ async function critiqueSolve(session, opts = {}) {
       } catch (err) { return null; }
     };
     // the similar better step: the same pieces, starting like mine the longest, then the fastest
-    const better = sameGoal.filter(r => !sameStep(r, row, isRoot) && Number.isFinite(r.tpp) && !(Number.isFinite(myTpp) && r.tpp >= myTpp - 1e-9));
+    const better = sameGoal.filter(r => !sameStep(r, row, isRoot) && Number.isFinite(r.tpp) && !(Number.isFinite(myTpp) && r.tpp >= myTpp - 1e-9)
+      && (!opts.allow || opts.allow(r)));
+    const bestSame = better.reduce((b, r) => (!b || r.tpp < b.tpp ? r : b), null);
+    const fine = !!bestSame && Number.isFinite(myTpp) && myTpp <= bestSame.tpp * (1 + FINE_MARGIN);
     let alt = null;
     let shared = 0;
     for (const r of better) {
       const n = sharedStart(mine, tokensOf(r, isRoot));
       if (!alt || n > shared || (n === shared && r.tpp < alt.tpp)) { alt = r; shared = n; }
     }
-    if (alt) {
+    if (alt && fine && !why) {
+      // close to the best: a fine choice; the quicker one only as an option
+      item.text = caption('critique.step.fine', { label });
+      item.alt = caption('critique.alt.optional', { alg: tokensOf(alt, isRoot).join(' ') });
+      item.altRow = alt;
+      item.fine = true;
+    } else if (alt) {
       const keys = why ? [`outside.${outsideKey(why)}`] : [];
       for (const w of whySlower(row, alt, {
         mineView: viewOf(row), altView: viewOf(alt), finishing: after >= 4, edgesAllowed,
@@ -141,7 +160,7 @@ async function critiqueSolve(session, opts = {}) {
       item.text = caption('critique.step.slower', { label, why: item.why.map(x => caption(`critique.${x}`)).join(' ') });
       item.alt = caption(shared > 0 ? 'critique.alt.similar' : 'critique.alt.samePieces', { alg: tokensOf(alt, isRoot).join(' ') });
       item.altRow = alt;
-    } else if (best && best.targetNodeId !== row.targetNodeId && Number.isFinite(myTpp) && best.tpp < myTpp - 1e-9) {
+    } else if (best && best.targetNodeId !== row.targetNodeId && Number.isFinite(myTpp) && best.tpp < myTpp * (1 - OTHER_GOAL_MARGIN)) {
       // the best of its kind, but another goal was faster here (a cross where an xcross was there)
       const bestNode = session.nodeMap.get(best.targetNodeId);
       const bestAfter = bestNode ? (bestNode.state.corners || []).length : after;
@@ -162,5 +181,5 @@ async function critiqueSolve(session, opts = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { critiqueSolve, outsideReason, outsideKey, whySlower, sharedStart };
+  module.exports = { critiqueSolve, outsideReason, outsideKey, whySlower, sharedStart, FINE_MARGIN };
 }

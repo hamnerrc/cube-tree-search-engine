@@ -13,7 +13,9 @@
  * 3. the **free pair setup**: the fastest step within SETUP_MARGIN that
  *    leaves more free pairs than there are now (or the look-ahead's best
  *    when look-ahead is on).
- * Otherwise there are fewer picks. Picks differ in family (not the same
+ * 4. when only one of those exists, the next fastest of another family
+ *    (developer, 2026-10-13: always two to four suggestions).
+ * Picks differ in family (not the same
  * moves after an AUF or rotation), and nothing above the solver's level is
  * suggested unless they chose to learn it.
  *
@@ -31,6 +33,7 @@ const ROLE_REASONS = {
   efficiency: ['shorter', 'multislot', 'no_rotation', 'cancels'],
   tps: ['smoother', 'wide_ergonomic', 'no_rotation', 'shorter'],
   setup: ['lookahead_best', 'free_pair', 'edges_good', 'back_slots', 'multislot', 'no_rotation'],
+  next: ['nearly', 'no_rotation', 'shorter', 'free_pair', 'cancels'],
 };
 const SETUP_MARGIN = 0.16;
 
@@ -86,6 +89,7 @@ function reasonsFor(r, ctx) {
   const allowed = id => typeof goalAllowed !== 'function' || goalAllowed(id, ctx.answers);
   const best = ctx.best;
   if (ctx.rank === 0) out.push({ key: 'fastest' });
+  if (ctx.role === 'next') out.push({ key: 'nearly' });
   if (r.multislot && allowed('multislot')) {
     const n = (r.corners || []).length;
     if (n > 1) out.push({ key: 'multislot', vars: { n } });
@@ -153,6 +157,12 @@ function searcherPicks(results, ctx = {}) {
       .find(r => leavesFreePair(ctx.before, ctx.viewOf(r))) || null;
   }
   if (third) picks.push({ r: third, role: 'setup', lookaheadBest });
+  // never fewer than two (developer, 2026-10-13: between two and four
+  // suggestions): the next fastest of another family, nearly as quick
+  if (picks.length < 2) {
+    const next = list.slice(1, 60).find(r => fresh(r) && !picks.some(p => p.r === r));
+    if (next) { picks.push({ r: next, role: 'next' }); families.add(pickFamily(next)); }
+  }
   // reasons, led by what the pick is for; a reason another pick already
   // leads with goes to the back
   const used = new Set();
@@ -160,10 +170,10 @@ function searcherPicks(results, ctx = {}) {
     const rank = list.indexOf(p.r);
     const after = ctx.viewOf ? ctx.viewOf(p.r) : null;
     const reasons = reasonsFor(p.r, {
-      best, rank, before: ctx.before, after, stepAlgs: ctx.stepAlgs, answers: ctx.answers,
+      role: p.role, best, rank, before: ctx.before, after, stepAlgs: ctx.stepAlgs, answers: ctx.answers,
       lookahead: ctx.lookahead, lookaheadBest: p.lookaheadBest, optimalStm, isRoot: ctx.isRoot,
     });
-    const lead = ROLE_REASONS[p.role === 'best' ? 'best' : p.role === 'setup' ? 'setup' : ctx.style === 'efficiency' ? 'efficiency' : 'tps'];
+    const lead = ROLE_REASONS[p.role === 'best' || p.role === 'setup' || p.role === 'next' ? p.role : ctx.style === 'efficiency' ? 'efficiency' : 'tps'];
     const order = (x) => {
       const i = lead.indexOf(x.key);
       return (used.has(x.key) ? 100 : 0) + (i < 0 ? 50 : i);

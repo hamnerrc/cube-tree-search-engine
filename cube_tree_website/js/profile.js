@@ -108,6 +108,7 @@ function createProfileStore(storage = defaultProfileStorage()) {
         onboarded: !!fields.onboarded,
         answers: { ...(fields.answers || {}) },
         prefs: { ...PROFILE_DEFAULT_PREFS, ...(fields.prefs || {}) },
+        algs: { main: {}, known: {} },
       };
       s.profiles[id] = profile;
       s.activeId = id;
@@ -139,6 +140,35 @@ function createProfileStore(storage = defaultProfileStorage()) {
       s.activeId = id;
       save(s);
       return true;
+    },
+    /**
+     * The solver's algs (README "Algorithm sets"): `main` case id -> their
+     * own alg for it, `known` case id -> true (the cases they have learned).
+     */
+    algs(id) {
+      const p = load().profiles[id];
+      const a = (p && p.algs) || {};
+      return { main: { ...(a.main || {}) }, known: { ...(a.known || {}) } };
+    },
+    /** Makes `alg` the solver's main alg for a case (null: none); a main alg is a known one. */
+    setMainAlg(id, caseId, alg) {
+      const s = load();
+      const p = s.profiles[id];
+      if (!p) return null;
+      p.algs = { main: { ...((p.algs || {}).main || {}) }, known: { ...((p.algs || {}).known || {}) } };
+      if (alg) { p.algs.main[caseId] = alg; p.algs.known[caseId] = true; } else delete p.algs.main[caseId];
+      save(s);
+      return p.algs;
+    },
+    /** Marks cases known or not (`caseIds` one id or several). */
+    setKnown(id, caseIds, on = true) {
+      const s = load();
+      const p = s.profiles[id];
+      if (!p) return null;
+      p.algs = { main: { ...((p.algs || {}).main || {}) }, known: { ...((p.algs || {}).known || {}) } };
+      for (const c of [].concat(caseIds)) { if (on) p.algs.known[c] = true; else delete p.algs.known[c]; }
+      save(s);
+      return p.algs;
     },
     signOut() {
       const s = load();
@@ -188,6 +218,7 @@ function createProfileStore(storage = defaultProfileStorage()) {
         onboarded: !!p.onboarded,
         answers: { ...(p.answers || {}) },
         prefs: { ...PROFILE_DEFAULT_PREFS, ...(p.prefs || {}) },
+        algs: { main: { ...((p.algs || {}).main || {}) }, known: { ...((p.algs || {}).known || {}) } },
       };
       s.activeId = id;
       save(s);

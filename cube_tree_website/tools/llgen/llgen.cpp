@@ -50,6 +50,7 @@
 #include <iostream>
 #include <algorithm>
 #include <sys/stat.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -209,7 +210,8 @@ static bool loadTable(const string &file, Nib &t, size_t N) {
   return r == t.d.size();
 }
 static void saveTable(const string &file, const Nib &t) {
-  string tmp = file + ".tmp";
+  // a temporary file per process: parallel runs may build the same table
+  string tmp = file + ".tmp" + std::to_string(getpid());
   FILE *f = fopen(tmp.c_str(), "wb"); if (!f) return;
   fwrite(t.d.data(), 1, t.d.size(), f); fclose(f);
   rename(tmp.c_str(), file.c_str());

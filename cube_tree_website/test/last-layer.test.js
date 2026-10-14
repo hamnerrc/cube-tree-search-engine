@@ -129,6 +129,7 @@ else {
   }
   let seed2 = 11;
   const rand2 = n => { seed2 = (seed2 * 1103515245 + 12345) & 0x7fffffff; return seed2 % n; };
+  L.setPrefs({ lastSlot: { zbls: true, ols: true, vls: true, hls: true, wv: true, sv: true } });
   test('last-slot algs for every slot (y turns, mirror) solve the pair and reach their goal', () => {
     let checked = 0;
     for (let n = 0; n < 80; n++) {
@@ -142,12 +143,65 @@ else {
       assert.ok(found.some(f => f.setId === setId), `${setId} ${kase.name} (${rot}) not found`);
       for (const f of found) {
         const end = L.stageOf(applyAlgorithm(cube, f.toks.join(' ')));
-        const want = f.setId === 'ols' ? ['oriented', 'auf', 'done'] : ['eo', 'oriented', 'epll', 'auf', 'done'];
+        // (an OLS alg may solve the corners too: epll is an oriented layer)
+        const want = f.setId === 'ols' ? ['oriented', 'epll', 'auf', 'done'] : ['eo', 'oriented', 'epll', 'auf', 'done'];
         assert.ok(want.includes(end), `${f.name}: ${f.toks.join(' ')} -> ${end}`);
         checked++;
       }
     }
     assert.ok(checked > 80);
+  });
+}
+
+if (slotReady) {
+  const ols = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'ols.json'), 'utf8'));
+  const zbls = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'zbls.json'), 'utf8'));
+  const data = { ols: { data: ols, index: A.indexSet('ols', ols) }, zbls: { data: zbls, index: A.indexSet('zbls', zbls) } };
+  test('each last-slot set on its own: wv alone offers wv cases only; zbls off offers no zbls', () => {
+    const vlsOnly = ols.cases.find(c => (c.tags || []).includes('vls') && !c.tags.includes('wv'));
+    const wv = ols.cases.find(c => (c.tags || []).includes('wv'));
+    assert.ok(vlsOnly && wv, 'the data has subset tags');
+    L.setPrefs({ lastSlot: { wv: true } });
+    assert.ok(L.lastSlotAlgs(A.fromCubie(A.toCubie(wv.state)), data, 2).some(f => f.setId === 'ols'), 'a wv case with wv on');
+    assert.ok(!L.lastSlotAlgs(A.fromCubie(A.toCubie(vlsOnly.state)), data, 2).some(f => f.setId === 'ols'), 'a vls case with only wv on');
+    assert.ok(!L.lastSlotAlgs(A.fromCubie(A.toCubie(vlsOnly.state)), data, 2).some(f => f.setId === 'zbls'), 'zbls off');
+    L.setPrefs({ lastSlot: { vls: true } });
+    assert.ok(L.lastSlotAlgs(A.fromCubie(A.toCubie(vlsOnly.state)), data, 2).some(f => f.setId === 'ols'), 'vls on');
+    L.setPrefs({ lastSlot: { zbls: true, ols: true, vls: true, hls: true, wv: true, sv: true } });
+  });
+}
+
+const ollReady = fs.existsSync(path.join(DATA_DIR, 'oll.json'));
+if (ollReady) {
+  const d = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'oll.json'), 'utf8'));
+  const data = { oll: { data: d, index: A.indexSet('oll', d) } };
+  const sune = after(A.invertAlg(SUNE));
+  test('the solver\'s main alg comes first (and is the ghost); styles move shorter algs; awkward algs hide', () => {
+    const kase = d.cases.find(c => c.name === 'OLL 27');
+    const id = L.caseId('oll', kase);
+    const last = kase.algs[kase.algs.length - 1].alg;
+    L.setPrefs({ main: { [id]: last }, hideAwkward: false });
+    const sug = L.suggestions(sune, data, 'oll');
+    assert.strictEqual(L.bodyOf(sug[0].toks), last);
+    assert.ok(sug[0].main);
+    L.setPrefs({ main: {} });
+    // white collar: each move costs more, so the order can only move shorter algs up
+    L.setPrefs({ style: 'tps' });
+    const tps = L.orderedAlgs('oll', kase).map(a => a.alg);
+    L.setPrefs({ style: 'efficiency' });
+    const eff = L.orderedAlgs('oll', kase).map(a => a.alg);
+    const stm = a => a.split(' ').length;
+    const shortest = tps.slice().sort((a, b) => stm(a) - stm(b))[0];
+    assert.ok(eff.indexOf(shortest) <= tps.indexOf(shortest));
+    L.setPrefs({ style: 'tps' });
+    // awkward algs: hidden unless the case's favourite is awkward itself
+    for (const c of d.cases) {
+      L.setPrefs({ hideAwkward: true });
+      const shown = L.orderedAlgs('oll', c);
+      if (!c.awkOk) assert.ok(shown.every(a => !a.awk), `${c.name}: an awkward alg shown`);
+      else assert.strictEqual(shown.length, c.algs.length);
+    }
+    L.setPrefs({ hideAwkward: true });
   });
 }
 

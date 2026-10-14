@@ -30,7 +30,7 @@
     return c;
   };
 
-  const SCREENS = ['welcome', 'speed', 'inspection', 'style', 'goals', 'colours'];
+  const SCREENS = ['welcome', 'speed', 'inspection', 'style', 'goals', 'lastlayer', 'lastslot', 'chat', 'colours'];
   const params = new URLSearchParams(location.search);
   let draft = null; // { editingId, name, searcher, theme, answers }
   let screen = 0;
@@ -48,6 +48,9 @@
         inspection: inspectionOption(a.inspection).id,
         style: a.style || 'tps',
         goals: (a.goals || []).slice(),
+        lastLayer: (lastLayerOption(a.lastLayer) || LAST_LAYER_OPTIONS[1]).id,
+        lastSlot: Array.isArray(a.lastSlot) ? a.lastSlot.slice() : [],
+        chat: a.chat || 'normal',
         colours: (a.colours && a.colours.length ? a.colours : ['white']).slice(),
       },
     };
@@ -217,6 +220,21 @@
       }
       body.append(el('p', { class: 'sub', text: caption('onboard.goals.settings') }));
     },
+    lastlayer(body) {
+      body.append(...heading('lastlayer'), choiceList('lastlayer', LAST_LAYER_OPTIONS, draft.answers.lastLayer, false, (id) => { draft.answers.lastLayer = id; }));
+    },
+    lastslot(body) {
+      const toggle = (id, on) => {
+        const set = new Set(draft.answers.lastSlot);
+        if (on) set.add(id); else set.delete(id);
+        draft.answers.lastSlot = LAST_SLOT_OPTIONS.map(o => o.id).filter(x => set.has(x));
+      };
+      body.append(...heading('lastslot'), choiceList('lastslot', LAST_SLOT_OPTIONS, draft.answers.lastSlot, true, toggle),
+        el('p', { class: 'sub', text: caption('onboard.lastslot.none') }));
+    },
+    chat(body) {
+      body.append(...heading('chat'), choiceList('chat', CHAT_OPTIONS, draft.answers.chat, false, (id) => { draft.answers.chat = id; }));
+    },
     colours(body) {
       const row = el('div', { class: 'colour-row', role: 'group', 'aria-label': 'cross colours' });
       const HEX = { white: '#f4f4f4', yellow: '#ffd500', green: '#13c447', blue: '#1e5bff', red: '#e8231c', orange: '#ff8a00' };
@@ -263,10 +281,11 @@
 
   /** Saves the profile and its settings (scoped to it), then opens the main screen. */
   function finish() {
+    const ll = lastLayerOption(draft.answers.lastLayer);
     const fields = {
       name: draft.name.trim() || 'cuber',
       searcher: draft.searcher,
-      answers: { ...draft.answers, speed: draft.answers.speed || null },
+      answers: { ...draft.answers, speed: draft.answers.speed || null, knownSets: ll ? ll.knownSets.slice() : [] },
       onboarded: true,
     };
     const profile = draft.editingId

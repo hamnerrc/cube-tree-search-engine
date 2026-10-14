@@ -2507,10 +2507,12 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   const keyOf = c => `${c.rotation || ''}|${c.coreAlg}|${c.targetNodeId}`;
   const bests = [];
   let next = 0; // candidates [0, next) are looked at (or being looked at)
+  const planned = Math.min(breadth, results.length); // the first ones, pending from the start
   const rerank = (final) => {
     const done = [];
     const pending = [];
-    results.slice(0, next).forEach((cand, i) => {
+    const upto = Math.max(next, planned);
+    results.slice(0, upto).forEach((cand, i) => {
       // a growing candidate still being looked at keeps its place below
       if (bests[i] === undefined) { if (i < breadth) pending.push({ ...cand, lookaheadPending: true }); return; }
       done.push({
@@ -2523,7 +2525,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
       });
     });
     done.sort((a, b) => a.lookaheadTpp - b.lookaheadTpp); // stable: ties keep single-step order
-    const rest = results.slice(0, next).filter((c, i) => bests[i] === undefined && i >= breadth).concat(results.slice(next));
+    const rest = results.slice(0, upto).filter((c, i) => bests[i] === undefined && i >= breadth).concat(results.slice(upto));
     const out = done.concat(pending, rest);
     if (results.hiddenCount) out.hiddenCount = results.hiddenCount;
     if (results.truncatedCalls) out.truncatedCalls = results.truncatedCalls;
@@ -2531,7 +2533,7 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
     if (done.some(r => r.lookaheadTruncated)) out.lookaheadTruncated = true;
     if (!final) out.lookaheadPending = pending.length;
     out.lookaheadCount = done.length;
-    if (next < results.length) out.lookaheadMore = true;
+    if (upto < results.length) out.lookaheadMore = true;
     // the step's own list, for a later round (not enumerable: copies leave it)
     Object.defineProperty(out, 'stepResults', { value: results, enumerable: false });
     return out;
@@ -2553,6 +2555,9 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
         if (onUpdate) onUpdate(rerank(false));
       });
   };
+  // the step's list first, its first candidates pending: a caller that is
+  // done with the step once it has the list starts no follow-up search
+  if (onUpdate) onUpdate(rerank(false));
   await new Promise((resolve, reject) => {
     let running = 0;
     const pump = () => {
@@ -2566,7 +2571,6 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
       if (!running) resolve();
     };
     pump();
-    if (onUpdate) onUpdate(rerank(false));
   });
   return rerank(true);
 }

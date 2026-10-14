@@ -169,7 +169,8 @@ function restoreCheckboxState() {
         });
     };
 
-    checkMatching('#colors-group input[type="checkbox"]', colors);
+    // no colour saved: the search uses white (solver-ui.js getCheckedColors), and so does the form
+    checkMatching('#colors-group input[type="checkbox"]', colors.length ? colors : ['white']);
     checkMatching('#advanced-group input[type="checkbox"]', advanced);
 }
 
@@ -1750,6 +1751,7 @@ if (typeof document !== 'undefined') {
             // an imported profile): the search its answers give, as
             // onboarding saves it, with a fresh random-state scramble
             criteria = criteriaFromProfile(criteria);
+            if (criteria) restoreCheckboxState(); // the form shows the search just saved
         }
         if (!criteria) {
             const display = document.getElementById('scramble-display');
