@@ -458,31 +458,54 @@ function playbackTokens(text) {
     .split(/\s+/).filter(t => t && moveGeometry(t));
 }
 
+// A jump of several moves turns through every one of them in about
+// GLIDE_MS (developer, 2026-10-13: the cube never cuts to a new state); one
+// move takes TURN_MS. The animation speed setting scales both.
+const GLIDE_MS = 500;
+const TURN_MS = 150;
+const PLAY_MS = 190;  // a move of the playback
+const pcInvert = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
+
 class CubePlayer {
   constructor(cube, onChange = () => {}) {
     this.cube = cube;
     this.onChange = onChange;
     this.tokens = [];
     this.marks = [];   // [{ at, label }] step starts, for the scrub bar
-    this.pos = 0;      // moves applied
+    this.pos = 0;      // the position the cube shows (or is gliding to)
     this.start = SOLVED_FACELETS; // the cube before the first move (the scrambled cube)
     this.states = [SOLVED_FACELETS];
+    this.at = [];      // the moves the cube shows applied to `start`
+    this.atState = SOLVED_FACELETS;
+    this.glide = null; // the running glide
     this.playing = false;
     this.speed = 1;
+    this.animated = true; // false: every change is drawn at once (animation off)
     this._run = 0;
   }
 
-  /** A new sequence from `start` (default: solved); jumps to `pos` (default: the end) without animating. */
-  setSequence(tokens, marks = [], pos = tokens.length, start = SOLVED_FACELETS) {
-    const same = start === this.start && tokens.length >= this.tokens.length && this.tokens.every((t, i) => t === tokens[i]);
-    if (!same) {
+  /**
+   * A new sequence from `start` (default: solved), then position `pos`
+   * (default: the end). The cube glides there from what it shows, unless
+   * the start changed (another scrambled cube) or `instant`.
+   */
+  setSequence(tokens, marks = [], pos = tokens.length, start = SOLVED_FACELETS, { instant = false } = {}) {
+    let keep = 0;
+    if (start === this.start) {
+      const n = Math.min(tokens.length, this.tokens.length);
+      while (keep < n && tokens[keep] === this.tokens[keep]) keep++;
+    } else {
       this.start = start;
-      this.states = [start];
+      this.at = [];
+      this.atState = start;
+      instant = true;
     }
+    this.states.length = Math.min(this.states.length, keep + 1);
+    if (!this.states.length) this.states = [start];
+    this.states[0] = start;
     this.tokens = tokens.slice();
     this.marks = marks;
-    this.states.length = Math.min(this.states.length, this.tokens.length + 1);
-    this.seek(pos, false);
+    return this.goTo(pos, { instant });
   }
 
   stateAt(k) {
@@ -495,59 +518,140 @@ class CubePlayer {
 
   get length() { return this.tokens.length; }
 
-  async seek(k, animate = true) {
-    const run = ++this._run;
-    k = Math.max(0, Math.min(this.tokens.length, k));
-    if (animate && Math.abs(k - this.pos) === 1) {
-      const forward = k > this.pos;
-      const tok = forward ? this.tokens[this.pos] : invertToken(this.tokens[k]);
-      if (!forward) this.cube.setFacelets(this.stateAt(this.pos));
-      await this.cube.animateMove(tok, 150 / this.speed);
-      if (run !== this._run) return;
-    }
+  /** The moves from the path `path` to position k: back to the shared prefix, then forward. */
+  _route(path, k) {
+    const n = Math.min(path.length, k);
+    let c = 0;
+    while (c < n && path[c] === this.tokens[c]) c++;
+    const route = [];
+    for (let i = path.length - 1; i >= c; i--) route.push({ tok: pcInvert(path[i]), back: true });
+    for (let i = c; i < k; i++) route.push({ tok: this.tokens[i], back: false });
+    return { route, shared: c };
+  }
+
+  /** Applies one route move to the shown path. */
+  _apply(m) {
+    if (m.back) this.at.pop(); else this.at.push(m.tok);
+    this.atState = this.at.length <= this.tokens.length && this.at.every((t, i) => t === this.tokens[i])
+      ? this.stateAt(this.at.length) : applyAlgorithm(this.atState, m.tok);
+  }
+
+  /** The cube at once at position k (no animation). */
+  _settle(k) {
+    this._stopGlide();
+    this.at = this.tokens.slice(0, k);
+    this.atState = this.stateAt(k);
     this.pos = k;
-    this.cube.setFacelets(this.stateAt(k));
+    this.cube.anim = null;
+    this.cube.setFacelets(this.atState);
     this.onChange(this);
+  }
+
+  _stopGlide() {
+    const g = this.glide;
+    if (!g) return;
+    if (g.raf) cancelAnimationFrame(g.raf);
+    this.glide = null;
+    g.resolve();
+  }
+
+  /**
+   * Glides to position k; resolves when it is there (or another glide took
+   * over). `ms`: the duration for one move (default TURN_MS).
+   */
+  goTo(k, { instant = false, ms = 0 } = {}) {
+    k = Math.max(0, Math.min(this.tokens.length, k));
+    if (instant || !this.animated || typeof requestAnimationFrame === 'undefined') { this._settle(k); return Promise.resolve(); }
+    // a glide under way: continue from its turn in progress where possible
+    let carry = 0;
+    const g = this.glide;
+    if (g && g.frac > 0 && g.done < g.route.length) {
+      const m = g.route[g.done];
+      const from0 = this._route(this.at, k).route[0];
+      if (from0 && from0.tok === m.tok && from0.back === m.back) carry = g.frac;
+      else {
+        this._apply(m); // the other side of the turn
+        const from1 = this._route(this.at, k).route[0];
+        if (from1 && from1.tok === pcInvert(m.tok)) carry = 1 - g.frac;
+        else if (g.frac < 0.5) this._apply({ tok: pcInvert(m.tok), back: !m.back, undo: true });
+      }
+    }
+    this._stopGlide();
+    const { route, shared } = this._route(this.at, k);
+    if (!route.length) { this._settle(k); return Promise.resolve(); }
+    const left = route.length - carry;
+    const one = (ms || TURN_MS) / this.speed;
+    const T = left <= 1 ? one * left : Math.min(GLIDE_MS / Math.sqrt(this.speed), one * left);
+    return new Promise((resolve) => {
+      const glide = { route, shared, k, carry, T, t0: performance.now(), done: 0, frac: carry, resolve, raf: 0 };
+      this.glide = glide;
+      this.pos = k;
+      const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+      const frame = (now) => {
+        if (this.glide !== glide) return;
+        const p = glide.T > 0 ? Math.min(1, (now - glide.t0) / glide.T) : 1;
+        const x = carry + left * ease(p);
+        const whole = Math.min(route.length, Math.floor(x + 1e-9));
+        while (glide.done < whole) this._apply(route[glide.done++]);
+        glide.frac = glide.done < route.length ? x - whole : 0;
+        if (glide.frac > 0) {
+          const geo = moveGeometry(route[glide.done].tok);
+          this.cube.anim = geo ? { axis: geo.axis, layers: geo.layers, angle: geo.quarters * Math.PI / 2 * glide.frac } : null;
+        } else this.cube.anim = null;
+        this.cube.setFacelets(this.atState);
+        if (p >= 1) {
+          this.glide = null;
+          this.cube.anim = null;
+          this.at = this.tokens.slice(0, k);
+          this.atState = this.stateAt(k);
+          this.cube.setFacelets(this.atState);
+          this.onChange(this);
+          resolve();
+          return;
+        }
+        glide.raf = requestAnimationFrame(frame);
+      };
+      this.onChange(this);
+      glide.raf = requestAnimationFrame(frame);
+    });
+  }
+
+  /** Goes to position k (gliding unless `animate` is false); stops the playback. */
+  seek(k, animate = true) {
+    this._stopPlay();
+    return this.goTo(k, { instant: !animate });
   }
 
   step(d) { return this.seek(this.pos + d, true); }
 
-  /** Animates forward from the current position to `k`. */
+  /** Animates forward from the current position to `k`, move by move. */
   async playTo(k) {
     const run = ++this._run;
     k = Math.min(k, this.tokens.length);
-    while (this.pos < k && run === this._run) {
-      await this.cube.animateMove(this.tokens[this.pos], 140 / this.speed);
-      if (run !== this._run) return;
-      this.pos++;
-      this.cube.setFacelets(this.stateAt(this.pos));
-      this.onChange(this);
-    }
+    while (this.pos < k && run === this._run) await this.goTo(this.pos + 1, { ms: PLAY_MS * 140 / 190 });
   }
 
   async play() {
     if (this.playing) { this.pause(); return; }
-    if (this.pos >= this.tokens.length) await this.seek(0, false);
+    const run = ++this._run;
     this.playing = true;
     this.onChange(this);
-    const run = ++this._run;
-    while (this.playing && this.pos < this.tokens.length && run === this._run) {
-      const tok = this.tokens[this.pos];
-      await this.cube.animateMove(tok, 190 / this.speed);
+    if (this.pos >= this.tokens.length) await this.goTo(0);
+    while (this.playing && run === this._run && this.pos < this.tokens.length) {
+      await this.goTo(this.pos + 1, { ms: PLAY_MS });
       if (run !== this._run) break;
-      this.pos++;
-      this.cube.setFacelets(this.stateAt(this.pos));
-      this.onChange(this);
       await new Promise(r => setTimeout(r, 30 / this.speed));
-      this._run = run;
     }
-    this.playing = false;
+    if (run === this._run) this.playing = false;
     this.onChange(this);
   }
 
-  pause() { this.playing = false; this._run++; this.cube.stop(); this.cube.setFacelets(this.stateAt(this.pos)); this.onChange(this); }
+  _stopPlay() { this.playing = false; this._run++; }
+
+  /** Stops the playback; the move under way finishes. */
+  pause() { this._stopPlay(); this.onChange(this); }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { PC_STICKERS, PC_FACES, moveGeometry, geometryPerm, rotateVec, playbackTokens, PC_RESOLUTIONS };
+  module.exports = { PC_STICKERS, PC_FACES, moveGeometry, geometryPerm, rotateVec, playbackTokens, PC_RESOLUTIONS, CubePlayer, GLIDE_MS };
 }

@@ -356,7 +356,6 @@ a.px-btn { color: inherit; text-decoration: none; display: inline-flex; align-it
 }
 .cube-stage:active { cursor: grabbing; }
 .cube-stage canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
-.cube-stage:fullscreen { background: var(--bg); }
 .cube-stage .stage-note {
     position: absolute; left: 12px; bottom: 8px;
     font-size: 16px; color: var(--dim);

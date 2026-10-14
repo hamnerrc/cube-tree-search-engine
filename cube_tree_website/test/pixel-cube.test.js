@@ -11,7 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const { MOVE_TABLE, applyAlgorithm, SOLVED_FACELETS } = require(path.join(__dirname, '..', 'js', 'facelet-cube.js'));
-const { geometryPerm, moveGeometry, PC_STICKERS, playbackTokens } = require(path.join(__dirname, '..', 'js', 'pixel-cube.js'));
+const { geometryPerm, moveGeometry, PC_STICKERS, playbackTokens, CubePlayer } = require(path.join(__dirname, '..', 'js', 'pixel-cube.js'));
 
 let failures = 0;
 const test = (name, fn) => {
@@ -60,6 +60,51 @@ test('half turns are two quarters; primes negate', () => {
 
 test('playbackTokens drops comments and non-moves', () => {
   assert.deepStrictEqual(playbackTokens("z2 y // inspection\nD' L D2 // cross\n\nR U R' foo"), ['z2', 'y', "D'", 'L', 'D2', 'R', 'U', "R'"]);
+});
+
+test('CubePlayer glides: every frame shows a real path; retargets mid-turn settle exactly', () => {
+  // a fake clock and animation frames drive the glides
+  Object.assign(global, require(path.join(__dirname, '..', 'js', 'facelet-cube.js')));
+  let now = 0;
+  const queue = [];
+  global.performance = { now: () => now };
+  global.requestAnimationFrame = (f) => { queue.push(f); return queue.length; };
+  global.cancelAnimationFrame = () => {};
+  const cube = { anim: null, f: null, setFacelets(f) { this.f = f; } };
+  const player = new CubePlayer(cube);
+  let frames = 0;
+  const run = (ms) => {
+    const end = now + ms;
+    while (now < end) {
+      now += 16;
+      queue.splice(0).forEach(f => f(now));
+      frames++;
+      assert.strictEqual(player.atState, applyAlgorithm(SOLVED_FACELETS, player.at.join(' ')), 'the state shown is its move path');
+      assert.strictEqual(cube.f, player.atState);
+    }
+  };
+  const seqs = ["R U R2 F D' L B2 U2", "R U F' r U2 M' y x2", "L D R U2 F B' R2 x y"].map(t => t.split(' '));
+  let seed = 7;
+  const rand = n => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+  for (let i = 0; i < 400; i++) {
+    const seq = seqs[i % 3];
+    const k = rand(seq.length + 1);
+    if (rand(2)) player.setSequence(seq, [], k, SOLVED_FACELETS); else player.goTo(k);
+    run(rand(90));
+  }
+  player.setSequence(seqs[0], [], 5, SOLVED_FACELETS);
+  run(800);
+  assert.strictEqual(cube.f, applyAlgorithm(SOLVED_FACELETS, seqs[0].slice(0, 5).join(' ')));
+  assert.strictEqual(cube.anim, null);
+  // a jump of eight moves takes about half a second, not eight turns
+  player.goTo(0);
+  run(600);
+  player.goTo(8);
+  const t0 = now;
+  run(2000);
+  assert.ok(frames > 100);
+  assert.strictEqual(cube.f, applyAlgorithm(SOLVED_FACELETS, seqs[0].join(' ')));
+  assert.ok(now - t0 >= 500);
 });
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }

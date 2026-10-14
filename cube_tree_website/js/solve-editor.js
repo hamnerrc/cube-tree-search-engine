@@ -173,10 +173,10 @@ function readSolution(session, text, candidates = []) {
     const nx = flat[i + 1];
     if (nx ? nx.line > flat[i].line : String(text).slice(flat[i].end).includes('\n')) lineEnds.add(i);
   }
-  for (let i = from; i < flat.length; i++) {
-    if (!lineEnds.has(i)) continue;
+  // a step: the tokens flat[from..i] read as one, committed when they finish
+  // one (`final`: only when they finish the whole F2L)
+  const tryStep = (i, final) => {
     const toks = flat.slice(from, i + 1).map(t => normTok(t.tok));
-    if (s.isComplete) break;
     let row = null;
     // the list belongs to the session's current step: only for the first new step right after it
     const cand = candidates.length && steps.length === 0 && keep === rows.length ? candidates.find(c => {
@@ -185,7 +185,11 @@ function readSolution(session, text, candidates = []) {
     }) : null;
     if (cand) row = committableRow(cand);
     else row = userStepRow(s, toks);
-    if (!row) continue;
+    if (!row) return false;
+    if (final) {
+      const node = s.nodeMap.get(row.targetNodeId);
+      if (!node || (node.state.corners || []).length < 4) return false;
+    }
     const before = s.isAtRoot ? 0 : (s.currentNode.state.corners || []).length;
     const first = s.isAtRoot;
     s.commit(row);
@@ -197,7 +201,16 @@ function readSolution(session, text, candidates = []) {
     if (first && firstLine < lastLine && lines[firstLine].tokens.every(t => SE_ROTATION.test(t.tok))) info[firstLine].label = 'inspection';
     steps.push({ row, firstLine, lastLine });
     from = i + 1;
+    return true;
+  };
+  for (let i = from; i < flat.length; i++) {
+    if (!lineEnds.has(i)) continue;
+    if (s.isComplete) break;
+    tryStep(i, false);
   }
+  // the step that finishes the F2L needs no line end after it (developer,
+  // 2026-10-13: a finished solution has no empty line under it)
+  if (from < flat.length && !s.isComplete && !lineEnds.has(flat.length - 1)) tryStep(flat.length - 1, true);
   const tailTokens = flat.slice(from);
   const endsInSpace = /\s$/.test(String(text)) || !String(text).length;
   for (const t of tailTokens) if (info[t.line].kind === 'empty') info[t.line] = { kind: 'tail', label: null };

@@ -74,9 +74,9 @@ const CaseDiagram = (() => {
     cube.setFacelets(toColours(labels));
     canvas.width = src.width;
     canvas.height = src.height;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(src, 0, 0);
+    // the renderer's pixels themselves, not a copy of its canvas (one less
+    // GPU canvas-to-canvas copy; a rare wrong-colour tile was reported)
+    canvas.getContext('2d').putImageData(cube.img, 0, 0);
   }
 
   /** The picture of a case of a set: its stored state (face letters), masked. */

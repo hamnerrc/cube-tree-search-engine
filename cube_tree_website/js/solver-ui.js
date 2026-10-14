@@ -827,13 +827,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function readLastLayerOf(session, reading, text) {
     if (!session.isComplete || !reading || !llAvailable()) return null;
     ensureLastLayerData();
-    const first = reading.tail.onNewLine ? reading.parsed.length - 1 : reading.tail.line;
+    // the lines after the F2L's last step (it may end the text: no newline after it)
+    let lastF2l = -1;
+    reading.lines.forEach((x, li) => { if (x.kind === 'step' || x.kind === 'merged') lastF2l = li; });
+    const first = reading.tail.tokens.length ? reading.tail.line : lastF2l + 1;
     const parsed = reading.parsed.slice(first);
-    // the last line is still being typed unless the text ends with a newline
-    const done = text.endsWith('\n') ? parsed.length : parsed.length - 1;
     const lineToks = l => l.tokens.filter(t => t.valid).map(t => normTok(t.tok));
     const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
-    const r = LastLayer.readSteps(start, parsed.slice(0, done).map(l => ({ tokens: lineToks(l) })), LastLayer.LOADED);
+    const readLines = n => LastLayer.readSteps(start, parsed.slice(0, n).map(l => ({ tokens: lineToks(l) })), LastLayer.LOADED);
+    // the last line is still being typed unless the text ends with a newline,
+    // or it solves the cube (a finished solution has no empty line under it)
+    let done = text.endsWith('\n') ? parsed.length : Math.max(0, parsed.length - 1);
+    let r = readLines(done);
+    if (done < parsed.length) {
+      const all = readLines(parsed.length);
+      if (all.stage === 'done' && !all.tail.tokens.length) { done = parsed.length; r = all; }
+    }
     for (const st of r.steps) {
       for (let li = st.firstLine; li <= st.lastLine; li++) {
         reading.lines[first + li] = { kind: li === st.lastLine ? 'step' : 'merged', label: li === st.lastLine ? st.label : null };
@@ -849,7 +858,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         const after = applyAlgorithm(r.cube, tailTokens.join(' '));
         const next = LastLayer.stageOf(after);
         if (next && r.stage && LastLayer.STAGE_RANK[next] > LastLayer.STAGE_RANK[r.stage]) {
-          finished = { label: LastLayer.stepLabel(r.cube, r.stage, next, LastLayer.LOADED), stage: next };
+          // a pll (or zbll) that leaves only the auf: tab writes the auf too
+          const auf = next === 'auf' ? (LastLayer.suggestions(after, LastLayer.LOADED)[0] || {}).toks || [] : [];
+          finished = { label: LastLayer.stepLabel(r.cube, r.stage, next, LastLayer.LOADED), stage: auf.length ? 'done' : next, auf };
         }
       } catch (e) { finished = null; }
     }
@@ -933,6 +944,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const { tokens: typed, partial } = typedTail();
     const rest = top.toks.slice(typed.length - (partial ? 1 : 0));
     if (!rest.length) return '';
+    // the next step always starts its own line
+    if (!typed.length && text && !text.endsWith('\n')) return '\n' + rest.join(' ');
     if (partial) {
       const first = rest[0].slice(partial.length);
       return first + (rest.length > 1 ? ' ' + rest.slice(1).join(' ') : '');
@@ -975,11 +988,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const session = getOrCreateSession(activeIndex);
     if (!committable(r)) return;
     const label = labelFor(session, r) + (r.lastSlot ? ` (${r.lastSlot.name})` : '');
+    const node = session.nodeMap.get(r.targetNodeId);
+    const end = node && (node.state.corners || []).length >= 4 ? '' : '\n'; // the last pair ends the text
     const lines = session.isAtRoot && r.rotation
-      ? `${r.rotation} // inspection\n${r.coreAlg} // ${label}\n`
-      : `${r.coreAlg} // ${label}\n`;
+      ? `${r.rotation} // inspection\n${r.coreAlg} // ${label}${end}`
+      : `${r.coreAlg} // ${label}${end}`;
     const before = textBeforeTail();
-    animateFrom = player ? player.length : 0;
     setEditorText(before + lines);
     editor.focus();
   }
@@ -992,11 +1006,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
    */
   function acceptSuggestion() {
     const s = suggestions[activeIdx >= 0 ? activeIdx : 0];
-    if (!s) return false;
+    if (!s) {
+      // a finished step whose line already has its comment (the newline was
+      // deleted): tab only goes to the next line
+      if (finishedTailCommented()) { setEditorText(`${editor.value.replace(/[ \t]+$/, '')}\n`); return true; }
+      return false;
+    }
     if (s.kind === 'comment') {
       const text = editor.value.replace(/\s+$/, '');
-      animateFrom = null;
-      setEditorText(`${text} ${s.text}\n`);
+      if (lastLineOf(text).includes('//')) return false; // never a second comment on a line
+      setEditorText(`${text} ${s.text}${s.final ? '' : '\n'}`);
       return true;
     }
     if (s.kind === 'll') { commitLastLayer(s); return true; }
@@ -1007,25 +1026,48 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /** Writes a last-layer alg (with its AUFs) and its label as the next line. */
   function commitLastLayer(s) {
     const before = textBeforeTail();
-    animateFrom = player ? player.length : 0;
-    setEditorText(`${before}${s.toks.join(' ')} // ${s.label}\n`);
+    let solved = false;
+    try { solved = LastLayer.stageOf(applyAlgorithm(llRead.cube, s.toks.join(' '))) === 'done'; } catch (e) { solved = false; }
+    setEditorText(`${before}${s.toks.join(' ')} // ${s.label}${solved ? '' : '\n'}`);
     editor.focus();
   }
 
   /** The suggestions after what is typed (the ghost, Tab and ↑/↓ use them; nothing is listed on screen). */
+  const lastLineOf = text => text.slice(text.lastIndexOf('\n') + 1);
+  /** The text ends in a finished step's line that already has a comment (and no newline). */
+  function finishedTailCommented() {
+    const text = editor.value;
+    if (!reading || text.endsWith('\n') || !lastLineOf(text).includes('//')) return false;
+    return !!(tailStep || (llRead && llRead.finished));
+  }
+
   function renderSuggestions() {
     const session = sessions.get(activeIndex);
     suggestions = [];
     tailStep = null;
-    if (session && reading && session.isComplete && llRead && llRead.stage && llRead.stage !== 'done') {
-      // the last layer: the algs of the case on the cube, in the solver's method
-      const { tokens, partial } = typedTail();
-      if (llRead.finished && tokens.length) suggestions.push({ kind: 'comment', text: `// ${llRead.finished.label}` });
-      else {
+    const text = editor ? editor.value : '';
+    const lastLine = reading ? reading.parsed[reading.parsed.length - 1] : null;
+    const lastInfo = reading ? reading.lines[reading.parsed.length - 1] : null;
+    // nothing is offered to the right of a comment (developer, 2026-10-13: tab,
+    // delete, tab wrote the comment twice)
+    const commented = !!lastLine && lastLine.commentStart >= 0 && !text.endsWith('\n');
+    // the last step of the solution ends the text: its comment first
+    if (lastLine && !commented && !text.endsWith('\n') && lastInfo && lastInfo.kind === 'step' && lastInfo.label && lastLine.tokens.length) {
+      suggestions.push({ kind: 'comment', text: `// ${lastInfo.label}`, final: isLastStepFinal(session) });
+    }
+    // the last layer: the algs of the case on the cube, in the solver's method
+    // (an alg that starts a new line may follow a comment)
+    const llTail = session && reading && session.isComplete && llRead && llRead.stage && llRead.stage !== 'done' ? typedTail() : null;
+    if (llTail && (!commented || !llTail.tokens.length)) {
+      const { tokens, partial } = llTail;
+      if (llRead.finished && tokens.length) {
+        const f = llRead.finished;
+        suggestions.push({ kind: 'comment', text: `${f.auf.length ? `${f.auf.join(' ')} ` : ''}// ${f.label}`, final: f.stage === 'done' });
+      } else {
         const pool = LastLayer.suggestions(llRead.cube, LastLayer.LOADED, view.llMethod);
         for (const m of tokenPrefixMatches(pool, tokens, partial)) {
           if (suggestions.length >= 5) break;
-          if (suggestions.some(x => x.toks.join(' ') === m.toks.join(' '))) continue;
+          if (suggestions.some(x => x.toks && x.toks.join(' ') === m.toks.join(' '))) continue;
           suggestions.push({ kind: 'll', toks: m.toks, label: m.label, s: m });
         }
       }
@@ -1036,9 +1078,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       // a tail that finishes a step: suggest its comment (CubeDB-style)
       const done = tail.tokens.length && !tail.onNewLine ? stepFromTail(session, tail.tokens, list) : null;
       tailStep = done;
-      const line = reading.parsed[tail.line];
-      if (done && line && line.commentStart < 0) suggestions.push({ kind: 'comment', text: `// ${done.label}` });
-      const pools = [list, continuationFor(tail), lastSlotRows()].filter(p => p && p.length);
+      if (done && !commented) suggestions.push({ kind: 'comment', text: `// ${done.label}`, final: false });
+      const pools = commented ? [] : [list, continuationFor(tail), lastSlotRows()].filter(p => p && p.length);
       for (const pool of pools) {
         for (const m of prefixMatches(pool, tail.tokens, tail.partial, session.isAtRoot)) {
           if (suggestions.length >= 5) break;
@@ -1051,6 +1092,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     if (activeIdx >= suggestions.length) activeIdx = -1;
     renderEditor();
+  }
+
+  /** Is the text's last step the end of the solution (the F2L with nothing after it, or the solved cube)? */
+  function isLastStepFinal(session) {
+    if (!session || !session.isComplete) return false;
+    if (!llRead || !llRead.steps.length) return true; // the f2l's last pair
+    return llRead.stage === 'done';
   }
 
   /**
@@ -1245,7 +1293,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function bindEditor() {
     editor = $('solution-input');
     if (!editor) return;
-    editor.addEventListener('input', () => { activeIdx = -1; animateFrom = player ? player.length : null; scheduleSync(); });
+    editor.addEventListener('input', () => { activeIdx = -1; scheduleSync(); });
     editor.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
         if (acceptSuggestion()) e.preventDefault();
@@ -1275,8 +1323,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     editor.addEventListener('focus', () => { manualPlayback = false; });
     editor.addEventListener('blur', () => {
       if (manualPlayback || !player || previewing) return;
-      player.pause();
-      player.seek(player.length, false);
+      player.seek(player.length);
     });
   }
 
@@ -1286,7 +1333,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // ---------------------------------------------------------------------
   let pixelCube = null;
   let player = null;
-  let animateFrom = null; // the playback position to animate from after the next change
   let previewing = false;
   let manualPlayback = false; // the playback controls or the cube were used since the bar lost the caret
   const scrambledMemo = new Map();
@@ -1320,9 +1366,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function followCaret() {
     if (!player || previewing || player.playing || !caretInBar()) return;
     const k = Math.min(player.length, caretMoveIndex());
-    if (k !== player.pos) player.seek(k, Math.abs(k - player.pos) === 1 && prefs().animSpeed > 0);
+    if (k !== player.pos) player.goTo(k);
   }
 
+  /** The cube glides to the solution's end, or to the caret while the bar has it. */
   function updatePlayer() {
     if (!player || previewing) return;
     const session = sessions.get(activeIndex);
@@ -1331,15 +1378,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const tail = reading ? reading.tail.tokens.filter(t => isMoveToken(t)) : [];
     const tokens = [...sol, ...tail];
     const target = caretInBar() ? Math.min(tokens.length, caretMoveIndex()) : tokens.length;
-    const from = animateFrom;
-    animateFrom = null;
-    const start = scrambledState(session.scramble);
-    const animate = from !== null && from < tokens.length && target === tokens.length && tokens.length - from <= 24 && prefs().animSpeed > 0
-      && player.start === start && player.tokens.length === from && player.pos === from && tokens.slice(0, from).every((t, i) => t === player.tokens[i]);
-    if (animate) {
-      player.setSequence(tokens, [], from, start);
-      player.playTo(tokens.length);
-    } else player.setSequence(tokens, [], target, start);
+    player.setSequence(tokens, [], target, scrambledState(session.scramble));
   }
 
   function renderPlayback() {
@@ -1354,14 +1393,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (play && player) play.textContent = player.playing ? '||' : '>>';
   }
 
+  /** Hovering a pick: the cube glides through its moves (and back when the pointer leaves). */
   function previewCandidate(r) {
     if (!player || !pixelCube || matchMedia('(hover: none)').matches) return;
     const session = sessions.get(activeIndex);
     if (!session) return;
     previewing = true;
     player.pause();
-    const toks = [...playbackTokens(session.scramble), ...solutionTokens(session), ...rowTokens(r, session.isAtRoot)];
-    pixelCube.setFacelets(applyAlgorithm(SOLVED_FACELETS, toks.join(' ')));
+    const toks = [...solutionTokens(session), ...rowTokens(r, session.isAtRoot)];
+    player.setSequence(toks, [], toks.length, scrambledState(session.scramble));
     const note = $('stage-note');
     if (note) note.textContent = 'preview';
   }
@@ -1371,7 +1411,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     previewing = false;
     const note = $('stage-note');
     if (note) note.textContent = '';
-    if (player) pixelCube.setFacelets(player.stateAt(player.pos));
+    updatePlayer();
   }
 
   function bindCube() {
@@ -1382,6 +1422,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     cubeTheme();
     player = new CubePlayer(pixelCube, renderPlayback);
     player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
+    player.animated = p.animSpeed > 0;
     const stage = $('cube-stage');
     const panel = stage.closest('.cube-panel') || stage;
     // using the cube or its controls keeps the playback where the user put it
@@ -1420,18 +1461,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
     on('zoom-in', () => pixelCube.zoomBy(1.2));
     on('zoom-out', () => pixelCube.zoomBy(1 / 1.2));
-    on('pb-start', () => { player.pause(); player.seek(0, false); });
-    on('pb-end', () => { player.pause(); player.seek(player.length, false); });
-    on('pb-back', () => { player.pause(); player.step(-1); });
-    on('pb-fwd', () => { player.pause(); player.step(1); });
+    on('pb-start', () => player.seek(0));
+    on('pb-end', () => player.seek(player.length));
+    on('pb-back', () => player.step(-1));
+    on('pb-fwd', () => player.step(1));
     on('pb-play', () => player.play());
-    on('pb-full', () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else if (stage.requestFullscreen) stage.requestFullscreen();
-    });
-    document.addEventListener('fullscreenchange', () => setTimeout(() => pixelCube.resize(), 50));
     const scrub = $('scrub');
-    if (scrub) scrub.addEventListener('input', () => { player.pause(); player.seek(parseInt(scrub.value, 10) || 0, false); });
+    if (scrub) scrub.addEventListener('input', () => player.seek(parseInt(scrub.value, 10) || 0));
     let resizeTimer = 0;
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => pixelCube.resize(), 80); });
   }
@@ -1694,8 +1730,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       li.addEventListener('click', () => {
         if (!player) return;
         manualPlayback = true;
-        player.pause();
-        player.seek(item.startMove, false);
+        player.seek(item.startMove);
         if (item.altRow) previewCandidateAt(session, item.stepIndex, item.altRow);
       });
       ol.appendChild(li);
@@ -1711,8 +1746,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         li.addEventListener('click', () => {
           if (!player) return;
           manualPlayback = true;
-          player.pause();
-          player.seek(f2lMoves + item.at, false);
+          player.seek(f2lMoves + item.at);
         });
         ol.appendChild(li);
       }
@@ -1798,7 +1832,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       pixelCube.setBackFaces(p.backFaces);
       cubeTheme();
     }
-    if (player) player.speed = p.animSpeed > 0 ? p.animSpeed : 1;
+    if (player) { player.speed = p.animSpeed > 0 ? p.animSpeed : 1; player.animated = p.animSpeed > 0; }
     drawSearcherSprites();
   }
 
@@ -1967,7 +2001,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (editor) {
       editor.value = session._text !== undefined ? session._text : rowsText(session);
       editorSession = session;
-      animateFrom = null;
     }
     shownResults = null;
     shownOwner = null;

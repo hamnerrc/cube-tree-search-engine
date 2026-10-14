@@ -108,6 +108,22 @@ test('a step whose line is still being typed is the tail; the newline commits it
   assert.ok(closed.tail.onNewLine);
 });
 
+test('the step that finishes the F2L needs no newline after it; other steps do', () => {
+  const session = sessionFor(ref.scramble);
+  const all = textOf(ref).replace(/\n$/, '');
+  const read = readSolution(session, all);
+  assert.strictEqual(read.steps.length, ref.steps.length, 'every step, the last without a newline');
+  assert.deepStrictEqual(read.tail.tokens, []);
+  // only the first move of the last line: not a finished F2L, so a tail
+  const cut = all.slice(0, all.lastIndexOf('\n') + 1) + ref.steps[ref.steps.length - 1].alg.split(' ')[0];
+  const open = readSolution(session, cut);
+  assert.strictEqual(open.steps.length, ref.steps.length - 1);
+  assert.strictEqual(open.tail.tokens.length, 1);
+  // a middle step without its newline stays the tail
+  const two = textOf({ ...ref, steps: ref.steps.slice(0, 2) }).replace(/\n$/, '');
+  assert.strictEqual(readSolution(session, two).steps.length, 1);
+});
+
 test('lines that finish nothing merge into the next step; junk is never refused', () => {
   const session = sessionFor(ref.scramble);
   const alg = ref.steps[0].alg.split(' ');

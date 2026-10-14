@@ -395,6 +395,7 @@
     cube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true });
     player = new CubePlayer(cube, () => {});
     player.speed = Number(profilePref('animSpeed', 1)) || 1;
+    player.animated = Number(profilePref('animSpeed', 1)) > 0;
     return cube;
   }
   function profilePref(key, fallback) {
@@ -409,7 +410,8 @@
     shown.k = k;
     const start = CaseDiagram.toColours(AlgSets.maskedLabels(setId, AlgSets.toCubie(c.state)));
     const toks = [AlgSets.AUF[a.pre], ...a.toks, AlgSets.AUF[a.post]].filter(Boolean);
-    caseCube().stop();
+    caseCube();
+    player.pause();
     player.setSequence(toks, [], 0, start);
     [...$('alg-list').children].forEach((li, j) => li.classList.toggle('active', j === k));
   }
@@ -466,7 +468,8 @@
     const d = await load(m[1]).catch(() => null);
     if (!d) return;
     renderSet();
-    if (!m[2]) return;
+    const dlg = $('case-dialog');
+    if (!m[2]) { if (dlg.open) dlg.close(); return; }
     const i = d.cases.findIndex(c => slug(c.name) === decodeURIComponent(m[2]));
     if (i >= 0) openCase(m[1], i);
   }
@@ -479,7 +482,7 @@
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
     });
     dlg.addEventListener('close', () => { if (player) player.pause(); setHash(view.set); });
-    $('case-reset').addEventListener('click', () => player && player.seek(0, false));
+    $('case-reset').addEventListener('click', () => player && player.seek(0));
     $('case-back').addEventListener('click', () => player && player.step(-1));
     $('case-fwd').addEventListener('click', () => player && player.step(1));
     $('case-play').addEventListener('click', () => player && player.play());
