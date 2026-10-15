@@ -30,7 +30,7 @@ const AlgSets = (() => {
   const EDGE_COLORS = EDGE_NAMES.map(n => [...n]);
   const SOLVED_LABELS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
   // the data files' cache-buster: bump it whenever data/ll/*.json are rebuilt
-  const DATA_VERSION = '20261016a';
+  const DATA_VERSION = '20261017a';
   const dataUrl = setId => `data/ll/${setId}.json?v=${DATA_VERSION}`;
 
   /** Facelets (any colours) -> the same cube in face letters, by its centres. */
@@ -123,24 +123,32 @@ const AlgSets = (() => {
    * `accepts` the states the set's cases come from, `key` what it looks at.
    */
   const SETS = [
-    { id: 'oll', name: 'OLL', title: 'orientation of the last layer', goal: 1,
+    { id: 'oll', name: 'OLL', title: 'Orientation of the last layer', goal: 1,
       accepts: c => f2lSolved(c),
       key: c => c.co.slice(0, 4).join('') + '|' + c.eo.slice(0, 4).join('') },
-    { id: 'pll', name: 'PLL', title: 'permutation of the last layer', goal: 0,
+    { id: 'pll', name: 'PLL', title: 'Permutation of the last layer', goal: 0,
       accepts: c => f2lSolved(c) && llOriented(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') },
-    { id: 'coll', name: 'COLL', title: 'corners of the last layer, edges oriented', goal: 2,
-      accepts: c => f2lSolved(c) && llEO(c),
-      key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') },
-    { id: 'zbll', name: 'ZBLL', title: 'the whole last layer, edges oriented', goal: 0,
+    // COLL on every OLL (developer, 2026-10-14: "doing corners while solving
+    // any of the 57 OLLs"; also called OLLCP): orients the last layer and
+    // solves its corners. Corners oriented with the edges oriented is a PLL
+    // case, not a COLL one.
+    { id: 'coll', name: 'COLL', title: 'The OLL and the corners at once', goal: 2,
+      accepts: c => f2lSolved(c) && !(llEO(c) && cornersOriented(c)),
+      key: c => c.co.slice(0, 4).join('') + '|' + c.eo.slice(0, 4).join('') + '|' + c.cp.slice(0, 4).join('') },
+    { id: 'zbll', name: 'ZBLL', title: 'The whole last layer, edges oriented', goal: 0,
       accepts: c => f2lSolved(c) && llEO(c) && !cornersOriented(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') },
+    // 1LLL: the whole last layer in one alg, from any state (developer, 2026-10-14)
+    { id: '1lll', name: '1LLL', title: 'The whole last layer in one alg', goal: 0,
+      accepts: c => f2lSolved(c),
+      key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') + '|' + c.eo.slice(0, 4).join('') },
     // (a solved pair is an OLL case, not an OLS one)
-    { id: 'ols', name: 'OLS', title: 'last slot + orientation', goal: 1, slot: true,
+    { id: 'ols', name: 'OLS', title: 'Last slot + orientation', goal: 1, slot: true,
       accepts: c => lsReady(c) && !pairSolved(c),
       key: c => lsKey(c, true) },
     // (a solved pair with only edges to flip is not a ZBLS case: 302 cases)
-    { id: 'zbls', name: 'ZBLS', title: 'last slot + edge orientation', goal: 3, slot: true,
+    { id: 'zbls', name: 'ZBLS', title: 'Last slot + edge orientation', goal: 3, slot: true,
       accepts: c => lsReady(c) && !pairSolved(c),
       key: c => lsKey(c, false) },
   ];
@@ -322,7 +330,7 @@ const AlgSets = (() => {
   // per set: show the last layer's pieces in full ('full'), only their U
   // stickers ('top'), or not at all ('none'); corners, edges
   // ('pair': only the last pair shows, for a picture of the pair's placement)
-  const MASKS = { oll: ['top', 'top'], ols: ['top', 'top'], zbls: ['none', 'top'], coll: ['full', 'top'], pll: ['full', 'full'], zbll: ['full', 'full'], pair: ['none', 'none'] };
+  const MASKS = { '1lll': ['full', 'full'], oll: ['top', 'top'], ols: ['top', 'top'], zbls: ['none', 'top'], coll: ['full', 'top'], pll: ['full', 'full'], zbll: ['full', 'full'], pair: ['none', 'none'] };
   /**
    * The facelets of a case as its set sees them: face letters, '.' where a
    * sticker does not matter (an LL piece's side the set ignores).
@@ -472,19 +480,56 @@ const AlgSets = (() => {
       LL_BASE = {
         mcc: { ...ALG_SPEED_DEFAULTS },
         pen: { ...STEP_PENALTIES, D: 1.75, F: 2.25, B: 3.5, wideRL: 0, wideUDFB: 3.5, wideOther: 3.5, natural: 0 },
-        left: LL_LEFT, natural: LL_NATURAL,
+        left: LL_LEFT, natural: LL_NATURAL, lead: LL_LEAD_ROTATION, move: LL_PER_MOVE,
       };
     }
     const f = LL_FITTED[setId];
     if (!f) return LL_BASE;
-    return { mcc: { ...LL_BASE.mcc, ...f.mcc }, pen: { ...LL_BASE.pen, ...f.pen }, left: f.left ?? LL_BASE.left, natural: f.natural ?? LL_BASE.natural };
+    return { mcc: { ...LL_BASE.mcc, ...f.mcc }, pen: { ...LL_BASE.pen, ...f.pen }, left: f.left ?? LL_BASE.left, natural: f.natural ?? LL_BASE.natural, lead: f.lead ?? LL_BASE.lead, move: f.move ?? LL_BASE.move };
+  }
+  // Rotations around an alg (developer, 2026-10-14: the A perms' "x ... x'"
+  // are executed like regrips). An alg wrapped in a rotation and its inverse
+  // ("x ... x'", "x' ... x") takes the first while the hands settle on the
+  // cube: it costs `lead` (a regrip), not a rotation. A rotation an alg ends
+  // with is free where the alg finishes the cube (PLL, ZBLL, 1LLL: the timer
+  // stops first). Any other rotation keeps its full price: a lone leading
+  // rotation ("x R2 F R F' ...", a Ja perm) ranked above the professionals'
+  // rotationless algs when it was cheap (tools/ll-tune.js; first-ranked pro
+  // PLLs 42.1% -> 36.2%). Only the community's algs carry rotations (the
+  // generator turns no rotations).
+  const LL_LEAD_ROTATION = 1.5;
+  // Every turn costs `move` on top (developer, 2026-10-14: the first algs
+  // leaned "blue collar" -- 17-move ZBLLs, a 15-move RU OLL 25 -- where top
+  // solvers turn shorter, odder algs). Checked on every professional's steps
+  // on reco.nz (tools/ll-tune.js; mean log2 rank of the pro's alg, 2-fold CV
+  // over cases): PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 ->
+  // 1.905, OLL unchanged (1.233 -> 1.231); the votes agree a little more
+  // (ZBLL 80.2 -> 80.9%, PLL 68.1 -> 70.2%). 1 is the low end of what each
+  // fold chose (0.5-3); a lower slice penalty did not help anywhere.
+  const LL_PER_MOVE = 1;
+  const invRot = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
+  function rotationFrame(body, setId = null) {
+    const toks = String(body).split(' ').filter(Boolean);
+    const isRot = t => /^[xyz]/.test(t);
+    let lead = 0;
+    if (toks.length > 2 && isRot(toks[0]) && !isRot(toks[1]) && toks[toks.length - 1] === invRot(toks[0])) {
+      toks.shift();
+      toks.pop();
+      lead = 1;
+    }
+    if (setId && SET_BY_ID[setId] && SET_BY_ID[setId].goal === 0) while (toks.length > 1 && isRot(toks[toks.length - 1])) toks.pop();
+    return { body: toks.join(' '), lead };
   }
   const MCC_ORDER = ['wristMult', 'pushMult', 'ringMult', 'destabilize', 'addRegrip', 'double', 'sesliceMult', 'overWorkMult', 'moveblock', 'rotation'];
-  function llScore(body, model = null, setId = null) {
+  function llScore(body0, model = null, setId = null) {
     const P = llParams(setId);
-    let left = 0;
-    for (const t of String(body).split(' ')) if (t[0] === 'L' || t[0] === 'l') left++;
-    let s = algSpeed(body, false, true, ...MCC_ORDER.map(k => P.mcc[k])) + stepPenalty(body, P.pen) + P.left * left;
+    const { body, lead } = rotationFrame(body0, setId);
+    let left = 0, turns = 0;
+    for (const t of String(body).split(' ')) {
+      if (t[0] === 'L' || t[0] === 'l') left++;
+      if (t && !/^[xyz]/.test(t)) turns++;
+    }
+    let s = algSpeed(body, false, true, ...MCC_ORDER.map(k => P.mcc[k])) + stepPenalty(body, P.pen) + P.left * left + P.lead * lead + P.move * turns;
     if (model) s += P.natural * model.surprise(body);
     return s;
   }
@@ -500,7 +545,10 @@ const AlgSets = (() => {
   // data unless they are the case's favourite (tools/ll-build.js): a 21-move
   // "l b d' ... S M r u E" T perm with 34 joke votes, for one.
   const AWK_FLOW = 1.95, AWK_DROP_FLOW = 3.0;
-  function awkwardness(body) {
+  function awkwardness(body0, setId = null) {
+    // a wrapping rotation pair counts as a regrip, a final one in a set that
+    // finishes the cube as nothing (rotationFrame)
+    const body = rotationFrame(body0, setId).body;
     const toks = String(body).split(' ').filter(Boolean);
     const turns = toks.filter(t => !/^[xyz]/.test(t)).length || 1;
     const odd = toks.filter(t => /^[BbfudSE]/.test(t)).length;
@@ -511,11 +559,11 @@ const AlgSets = (() => {
 
   return {
     awkwardness, AWK_FLOW, AWK_DROP_FLOW,
-    DATA_VERSION, dataUrl, llScore, llParams, LL_FITTED, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
+    DATA_VERSION, dataUrl, llScore, llParams, rotationFrame, LL_FITTED, LL_LEFT, LL_NATURAL, caseTitle, mirrorLabels, mirrorAlg, indexSet, recognize, algFor, AUF, maskedLabels, MASKS,
     CORNER_FACELETS, EDGE_FACELETS, CORNER_NAMES, EDGE_NAMES, SOLVED_LABELS,
     labelsOf, toCubie, fromCubie, identity, mul, sameCubie, algCubie, faceletCubie, uPowers,
     SETS, SET_BY_ID, enumerateCases, aufVariants, caseKeyOf, invertAlg, reachesGoal, solves, normalizeAlg,
-    f2lSolved, lsReady, llOriented, llEO, PERMS4, TWISTS, FLIPS, llState, olsSubsets, pairSolved,
+    f2lSolved, lsReady, llOriented, llEO, cornersOriented, PERMS4, TWISTS, FLIPS, llState, olsSubsets, pairSolved,
   };
 })();
 

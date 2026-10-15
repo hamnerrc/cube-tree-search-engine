@@ -60,8 +60,10 @@ const CROSS_COLOURS = ['white', 'yellow', 'green', 'blue', 'red', 'orange'];
 const LAST_LAYER_OPTIONS = [
   { id: 'twolook', caption: 'lastlayer.twolook', method: 'oll', knownSets: [] },
   { id: 'full', caption: 'lastlayer.full', method: 'oll', knownSets: ['oll', 'pll'] },
-  { id: 'coll', caption: 'lastlayer.coll', method: 'coll', knownSets: ['oll', 'pll', 'coll'] },
+  // (COLL covers every OLL now: 329 cases; a COLL user marks the ones they know)
+  { id: 'coll', caption: 'lastlayer.coll', method: 'coll', knownSets: ['oll', 'pll'] },
   { id: 'zbll', caption: 'lastlayer.zbll', method: 'zbll', knownSets: ['oll', 'pll'] },
+  { id: '1lll', caption: 'lastlayer.1lll', method: '1lll', knownSets: ['oll', 'pll'] },
 ];
 // Last-slot tricks they use (each switches its set on; none: all off).
 const LAST_SLOT_OPTIONS = [

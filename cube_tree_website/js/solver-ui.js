@@ -514,7 +514,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const view = {
     lookaheadDepth: 1, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
-    llMethod: 'oll', // README "Algorithm sets": oll | coll | zbll
+    llMethod: 'oll', // README "Algorithm sets": oll | coll | zbll | 1lll
     // the last-slot sets, each on its own (developer, 2026-10-13); when any
     // is on, the last two pairs are never solved at once (README "Algorithm sets")
     lsSets: null,
@@ -547,7 +547,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
-    view.llMethod = ['oll', 'coll', 'zbll'].includes(view.llMethod) ? view.llMethod : 'oll';
+    view.llMethod = ['oll', 'coll', 'zbll', '1lll'].includes(view.llMethod) ? view.llMethod : 'oll';
     // the last-slot sets: saved, else the onboarding's answer, else the
     // easy ones (the old single switch "last slot algs" meant zbls + vls/hls)
     const a = answers();
@@ -616,7 +616,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
     // the last layer's settings only change what is suggested
     const relist = () => { saveViewPrefs(); syncViewControls(); syncLastLayerPrefs(); lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); };
-    on('ll-method', 'change', (e) => { view.llMethod = e.target.value; relist(); });
+    on('ll-method', 'change', (e) => {
+      view.llMethod = e.target.value;
+      if (view.llMethod === '1lll' && llAvailable() && !LastLayer.LOADED['1lll']) LastLayer.load('1lll', AlgSets.dataUrl('1lll')).then(() => { renderSuggestions(); renderSearcher(); }).catch(() => null);
+      relist();
+    });
     on('hide-awkward-algs', 'change', (e) => { view.hideAwkwardAlgs = e.target.checked; relist(); });
     // a last-slot set changes the results too: the last two pairs at once are hidden while one is on
     for (const k of LS_SET_IDS) {
@@ -962,7 +966,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /** Loads every alg set once (data/ll/*.json); re-renders when they arrive. */
   function ensureLastLayerData() {
     if (llLoading || !llAvailable()) return llLoading;
-    llLoading = Promise.all(AlgSets.SETS.map(s => LastLayer.load(s.id, AlgSets.dataUrl(s.id)).catch(() => null)))
+    // 1LLL (~3,900 cases) only for a solver who uses it
+    llLoading = Promise.all(AlgSets.SETS.filter(s => s.id !== '1lll' || view.llMethod === '1lll').map(s => LastLayer.load(s.id, AlgSets.dataUrl(s.id)).catch(() => null)))
       .then(() => (view.lsSets && view.lsSets.ols ? LastLayer.loadOlsMore() : null))
       .then(() => {
         lastSlotMemo.clear();
@@ -1062,6 +1067,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function setEditorText(text) {
+    endPreview(); // the cube shows the new text, not a preview
     editor.value = text;
     editor.selectionStart = editor.selectionEnd = text.length;
     activeIdx = -1;
@@ -1415,6 +1421,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     for (const ev of ['click', 'keyup', 'focus', 'select']) editor.addEventListener(ev, followCaret);
     document.addEventListener('selectionchange', () => { if (document.activeElement === editor) followCaret(); });
     editor.addEventListener('focus', () => { manualPlayback = false; });
+    // typing shows the typed moves, whatever was being previewed
+    editor.addEventListener('input', endPreview);
     editor.addEventListener('blur', () => {
       if (manualPlayback || !player || previewing) return;
       player.seek(player.length);
@@ -1428,12 +1436,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   let pixelCube = null;
   let player = null;
   let previewing = false;
+  let previewEl = null; // the button whose preview the cube shows
   let manualPlayback = false; // the playback controls or the cube were used since the bar lost the caret
   const scrambledMemo = new Map();
 
   function cubeTheme() {
     if (!pixelCube) return;
-    pixelCube.setTheme({ bg: cssVar('--bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true });
+    pixelCube.setTheme({ bg: cssVar('--bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
   }
 
   function scrambledState(scramble) {
@@ -1488,11 +1497,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /** Hovering a pick: the cube glides through its moves (and back when the pointer leaves). */
-  function previewCandidate(r) {
+  function previewCandidate(r, el = null) {
     if (!player || !pixelCube || matchMedia('(hover: none)').matches) return;
     const session = sessions.get(activeIndex);
     if (!session) return;
     previewing = true;
+    previewEl = el;
     player.pause();
     const toks = [...solutionTokens(session), ...rowTokens(r, session.isAtRoot)];
     player.setSequence(toks, [], toks.length, scrambledState(session.scramble));
@@ -1503,6 +1513,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function endPreview() {
     if (!previewing) return;
     previewing = false;
+    previewEl = null;
     const note = $('stage-note');
     if (note) note.textContent = '';
     updatePlayer();
@@ -1654,7 +1665,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (searcher) searcher.classList.toggle('thinking', !!on);
   }
 
+  // A preview whose button goes away ends with it: a removed button sends no
+  // mouseleave, so the cube stayed on the preview and stopped following the
+  // solution after tab or a click on a pick (developer, 2026-10-14). The
+  // same pick drawn again (the list re-ranked) keeps it.
+  /** Slice turn metric of a move string: every turn but rotations (Showdown's count in the corner of a pick). */
+  const turnCount = moves => String(moves).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
+
   function renderSearcher() {
+    renderSearcherInner();
+    if (!previewing || !previewEl) return;
+    if (previewEl.isConnected) return;
+    const again = previewEl.dataset.preview && [...document.querySelectorAll('#picks [data-preview]')].find(b => b.dataset.preview === previewEl.dataset.preview);
+    if (again) previewEl = again;
+    else endPreview();
+  }
+  function renderSearcherInner() {
     const say = $('searcher-say');
     const picksEl = $('picks');
     const actions = $('bubble-actions');
@@ -1665,7 +1691,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     critiqueShown = null;
     picksEl.innerHTML = '';
     actions.innerHTML = '';
-    title.textContent = '';
+    title.textContent = caption('searcher.title');
     const list = currentList();
     const statusBusy = ($('search-status') || {}).dataset ? $('search-status').dataset.state === 'busy' : false;
     setThinking(!session || (!session.isComplete && (!list || statusBusy)) || continuationPending());
@@ -1715,9 +1741,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       b.className = 'pick';
       const why = p.reasons.slice(0, CAPTION_CONTEXT.chat === 'chatty' ? 2 : 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
-      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>`;
+      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span><span class="cnt">${turnCount(tokens)} stm</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
-      b.addEventListener('mouseenter', () => previewCandidate(p.r));
+      b.dataset.preview = `${activeIndex}|${session.committedRows.length}|${tokens}`;
+      b.addEventListener('mouseenter', () => previewCandidate(p.r, b));
       b.addEventListener('mouseleave', endPreview);
       // a last-slot alg can become the solver's own for its case (README "Algorithm sets")
       const ls = p.r.lastSlot;
@@ -1803,7 +1830,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span>`;
+      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span><span class="cnt">${turnCount(p.m.toks.join(' '))} stm</span>`;
       b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
       row.appendChild(b);
       if (!p.m.main) {
@@ -1954,7 +1981,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         if (!player) return;
         manualPlayback = true;
         // the cube glides to the alternative, or (no alternative) to where the step starts
-        if (item.altRow) { previewCandidateAt(session, item.stepIndex, item.altRow); return; }
+        if (item.altRow) { previewCandidateAt(session, item.stepIndex, item.altRow, li); return; }
         endPreview();
         player.seek(item.startMove);
       });
@@ -2040,12 +2067,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /** The cube glides to the critique's alternative for step `k` (instead of the user's step). */
-  function previewCandidateAt(session, k, row) {
+  function previewCandidateAt(session, k, row, el = null) {
     if (!player) return;
     const toks = [];
     session.committedRows.slice(0, k).forEach((r, i) => toks.push(...rowTokens(r, i === 0)));
     toks.push(...rowTokens(row, k === 0));
     previewing = true;
+    previewEl = el;
     player.pause();
     player.setSequence(toks, [], toks.length, scrambledState(session.scramble));
     const note = $('stage-note');
@@ -2106,7 +2134,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       for (const t of PROFILE_THEMES) {
         const label = document.createElement('label');
         label.className = 'px-check';
-        label.innerHTML = `<input type="radio" name="theme" value="${t}"> ${t}`;
+        label.innerHTML = `<input type="radio" name="theme" value="${t}"> ${t[0].toUpperCase()}${t.slice(1)}`;
         label.querySelector('input').addEventListener('change', () => setPref({ theme: t }));
         themes.appendChild(label);
       }
@@ -2121,6 +2149,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (signOut) signOut.addEventListener('click', () => { cubeProfiles.signOut(); location.href = 'index.html'; });
     const apply = $('apply-search');
     if (apply) apply.addEventListener('click', () => persistAndNavigate());
+    // the algs page's settings button comes here (solver.html#settings)
+    if (location.hash === '#settings') {
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file: */ }
+      setTimeout(() => { syncLookControls(); if (!dialog.open) dialog.showModal(); }, 0);
+    }
   }
 
   function syncLookControls() {

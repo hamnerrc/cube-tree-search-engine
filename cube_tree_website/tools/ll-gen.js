@@ -8,6 +8,7 @@
  *   node tools/ll-gen.js build                    compile tools/llgen/llgen.cpp into <work>/llgen
  *   node tools/ll-gen.js run <set> [from] [to]    generate cases [from, to) of a set into <work>/raw/<set>/
  *   node tools/ll-gen.js case <set> <index>       one case, every move set, counts and timings
+ *   node tools/ll-gen.js reuse <set> <from>...    another set's finished runs for the cases both share
  *
  * <work> is $LLGEN_WORK (default: ./llgen-work, outside git): the binary,
  * its pruning tables (~86 MB per move set and goal) and the raw solutions.
@@ -35,7 +36,9 @@ const MOVE_SETS = {
 const PLAN = {
   oll: { maxLen: 16, sets: [['RUF', 3], ['RUFr', 3], ['RUFl', 2], ['LUF', 3], ['LUFl', 2], ['RUD', 2], ['RUL', 2], ['RUFMr', 2], ['RUFSf', 2], ['RUFD', 2]] },
   pll: { maxLen: 20, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFD', 2], ['RUFr', 2], ['RUDr', 2], ['RUMr', 2], ['RUFL', 1], ['RUB', 1]] },
-  coll: { maxLen: 18, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFD', 2], ['RUFr', 2], ['LUF', 2], ['RUDr', 2], ['RUMr', 1]] },
+  coll: { maxLen: 18, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFD', 2], ['RUFr', 2], ['LUF', 2], ['RUDr', 2], ['RUMr', 1], ['RUFl', 2], ['RUFMr', 1], ['RUFSf', 1]] },
+  // 1LLL beyond ZBLL and PLL (their cases reuse those sets' runs: `reuse`)
+  '1lll': { maxLen: 20, sets: [['RUF', 1], ['RUFr', 1], ['RUMr', 1], ['RUFD', 0], ['RUFSf', 0], ['LUF', 0]] },
   zbll: { maxLen: 19, sets: [['RU', 3], ['RUF', 1], ['RUD', 2], ['RUL', 2], ['RUFD', 1], ['RUFr', 1], ['RUDr', 1], ['RUMr', 1]] },
   ols: { maxLen: 16, sets: [['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 2], ['RUFD', 1], ['RUDr', 1], ['RUFSf', 1], ['RUFL', 1]] },
   zbls: { maxLen: 16, sets: [['RU', 3], ['RUF', 2], ['RUD', 2], ['RUL', 2], ['RUFr', 2], ['RUFD', 1], ['RUDr', 1], ['RUB', 1]] },
@@ -191,13 +194,42 @@ async function oneCase(setId, index) {
   }
 }
 
+/**
+ * Copies another set's finished raw solutions to the cases of `setId` they
+ * belong to (same goal; a state's class in both sets): 1LLL takes ZBLL's
+ * and PLL's runs for its oriented-edge cases.
+ */
+function reuse(setId, fromIds) {
+  const cases = AlgSets.enumerateCases(setId);
+  const byKey = new Map();
+  cases.forEach((c, i) => c.members.forEach((v, k) => byKey.set(k, i)));
+  const dir = path.join(WORK, 'raw', setId);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const from of fromIds) {
+    if (AlgSets.SET_BY_ID[from].goal !== AlgSets.SET_BY_ID[setId].goal) throw new Error(`${from}: another goal`);
+    let n = 0;
+    AlgSets.enumerateCases(from).forEach((c, i) => {
+      const src = path.join(WORK, 'raw', from, `${i}.json`);
+      const j = byKey.get(AlgSets.caseKeyOf(setId, c.rep));
+      if (j === undefined || !fs.existsSync(src)) return;
+      const dst = path.join(dir, `${j}.json`);
+      // runs of several sets for one case: every move set's solutions
+      const old = fs.existsSync(dst) ? JSON.parse(fs.readFileSync(dst, 'utf8')) : [];
+      fs.writeFileSync(dst, JSON.stringify([...old, ...JSON.parse(fs.readFileSync(src, 'utf8'))]));
+      n++;
+    });
+    console.log(`${setId}: ${n} cases from ${from}`);
+  }
+}
+
 if (require.main === module) {
   const [cmd, a, b, c] = process.argv.slice(2);
   const fail = (e) => { console.error(e.stack || e); process.exit(1); };
   if (cmd === 'build') build();
   else if (cmd === 'run') runSet(a, b ? +b : 0, c ? +c : Infinity).catch(fail);
   else if (cmd === 'case') oneCase(a, +b).catch(fail);
-  else console.log('usage: node tools/ll-gen.js build | run <set> [from] [to] | case <set> <index>');
+  else if (cmd === 'reuse') reuse(a, [b, c].filter(Boolean));
+  else console.log('usage: node tools/ll-gen.js build | run <set> [from] [to] | case <set> <index> | reuse <set> <from set>...');
 }
 
 module.exports = { MOVE_SETS, PLAN, PLAN_REST, planOf, TOKENS, humanCubie, frames, header, caseLines, runLlgen, WORK };

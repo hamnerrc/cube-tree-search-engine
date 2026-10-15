@@ -96,8 +96,10 @@ function loadSet(setId, solver = undefined) {
     votes.push(pool);
   }
   for (const pool of [...pools.values(), ...votes]) {
-    pool.feats = pool.bodies.map(features);
-    pool.surprise = pool.bodies.map(b => pool.model.surprise(b));
+    // scored as llScore does: wrapping rotations (AlgSets.rotationFrame) apart
+    pool.frames = pool.bodies.map(b => AlgSets.rotationFrame(b, setId));
+    pool.feats = pool.frames.map(f => features(f.body));
+    pool.surprise = pool.frames.map(f => pool.model.surprise(f.body));
     pool.mcc = new Map();
   }
   return { setId, rows, pools, votes };
@@ -131,13 +133,13 @@ function poolScores(pool, P) {
   const mk = MCC_KEYS.map(k => P.mcc[k]).join(',');
   let m = pool.mcc.get(mk);
   if (!m) {
-    m = pool.bodies.map(b => algSpeed(b, false, true, ...MCC_KEYS.map(k => P.mcc[k])));
+    m = pool.frames.map(f => algSpeed(f.body, false, true, ...MCC_KEYS.map(k => P.mcc[k])));
     if (pool.mcc.size > 40) pool.mcc.clear();
     pool.mcc.set(mk, m);
   }
   return pool.bodies.map((b, j) => {
     const f = pool.feats[j];
-    let s = m[j] + P.left * f.left + P.natural * pool.surprise[j];
+    let s = m[j] + P.left * f.left + P.natural * pool.surprise[j] + (P.lead || 0) * pool.frames[j].lead + (P.move || 0) * f.stm;
     for (const k of PEN_KEYS) s += P.pen[k] * f[k];
     return s;
   });

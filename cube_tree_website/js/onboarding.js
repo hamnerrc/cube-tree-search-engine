@@ -129,7 +129,7 @@
       list,
       message ? el('p', { class: 'sub', text: message }) : null,
       el('div', { class: 'speed-row' },
-        active && active.onboarded ? el('a', { class: 'px-btn primary', href: 'solver.html' }, `solve as ${active.name} ›`) : null,
+        active && active.onboarded ? el('a', { class: 'px-btn primary', href: 'solver.html' }, `solve as ${active.name} >`) : null,
         el('button', { type: 'button', class: active && active.onboarded ? 'px-btn' : 'px-btn primary', onclick: () => { cubeProfiles.signOut(); startDraft(null); } }, caption('profiles.new')),
         el('button', { type: 'button', class: 'link-btn', onclick: () => { importBox.hidden = false; importGo.hidden = false; importBox.focus(); } }, caption('profiles.import')),
       ),
@@ -265,7 +265,7 @@
     dots.innerHTML = '';
     SCREENS.forEach((_, i) => dots.append(el('span', { class: i <= screen ? 'on' : '' })));
     $('#onboard-back').disabled = screen === 0 && !cubeProfiles.list().length;
-    $('#onboard-next').textContent = screen === SCREENS.length - 1 ? caption('onboard.done') : 'next ›';
+    $('#onboard-next').textContent = screen === SCREENS.length - 1 ? caption('onboard.done') : 'Next >';
   }
 
   function next() {

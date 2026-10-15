@@ -19,10 +19,13 @@ const { AlgSets } = require(path.join(ROOT, 'js', 'alg-sets.js'));
 const SCDB = require(path.join(ROOT, 'data', 'll', 'scdb.json'));
 // the other databases (tools/alg-sources.js): Speedsolving Wiki, CubingApp, J Perm, the ZBLS sheet
 const SOURCES_FILE = path.join(ROOT, 'data', 'll', 'sources.json');
-const EXTRA = fs.existsSync(SOURCES_FILE) ? JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf8')) : { sources: {}, algs: [] };
+const EXTRA = fs.existsSync(SOURCES_FILE) ? JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf8')) : { sources: {}, rows: [] };
+EXTRA.algs = require('./alg-sources.js').expand(EXTRA);
 
-const DB_SETS = { oll: ['oll'], pll: ['pll'], coll: ['coll'], zbll: ['zbll'], ols: ['vls', 'hls'] };
-const LL_SETS = new Set(['oll', 'pll', 'coll', 'zbll']);
+// 1LLL's database cases are PLL's and ZBLL's (the oriented-edge ones);
+// SpeedCubeDB's 1LLL page names the rest (sources.json `names`, via CubeRoot)
+const DB_SETS = { oll: ['oll'], pll: ['pll'], coll: ['coll'], zbll: ['zbll'], ols: ['vls', 'hls'], '1lll': ['pll', 'zbll'] };
+const LL_SETS = new Set(['oll', 'pll', 'coll', 'zbll', '1lll']);
 const PRE = ['', 'U', 'U2', "U'"];
 const Y_TO_U = { y: 1, y2: 2, "y'": 3 };
 
@@ -82,6 +85,7 @@ function llCorpus() {
   if (!CORPUS) {
     CORPUS = [];
     for (const setId of Object.keys(DB_SETS)) {
+      if (setId === '1lll') continue; // PLL's and ZBLL's algs again
       for (const c of dbCases(setId)) {
         const seen = new Set();
         for (const a of c.algs) if (!seen.has(a.body)) { seen.add(a.body); CORPUS.push({ key: `${setId}|${c.name}`, body: a.body }); }
@@ -163,7 +167,7 @@ function dbCases(setId) {
         if (p < 0) continue;
         algs.push({ body, pre: p, votes: a.votes });
       }
-      out.push({ name: c.name, subgroup: c.subgroup, page: c.page, setup: c.setup, state, algs });
+      out.push({ name: c.name, subgroup: c.subgroup, page: c.page, setup: c.setup, state, algs, dbSet });
     }
   }
   return out;
@@ -208,8 +212,39 @@ function evaluate() {
 // ---- building the sets ------------------------------------------------------------
 const MAX_ALGS = 12;          // algorithms kept per case
 const MAX_ALGS_OLS_MORE = 8;  // ... for the ~7,600 OLS cases beyond VLS and HLS
+const MAX_ALGS_1LLL = 8;      // ... for 1LLL beyond ZBLL and PLL (~3,400 cases)
 const MAX_DB = 4;             // ... always including up to this many database ones (by votes)
 const MAX_SLOWER = 2.5;       // nothing scoring above this many times the case's best
+// Algs put first by hand (developer, 2026-10-14: "I would rather just hard
+// code those A perms to the top than let x rotation algorithms start showing
+// up way too high"). The professionals' choice beyond doubt on reco.nz
+// (data/ll/pro_ll.json, every solver: Aa 105 steps + 84 without the final
+// x', Ab 120 + 92, E 47 + 25 with an extra final turn), and the community's
+// most voted; the ranking had them 4th, 12th and 12th: their rotations are
+// regrips the formula cannot see. The score is set below the case's best
+// by PIN_MARGIN, which no style term can undo (the style terms move a 15-
+// move alg by at most ~3.6 against a 9-move one).
+const PINNED = {
+  pll: { Aa: "x R' U R' D2 R U' R' D2 R2 x'", Ab: "x R2 D2 R U R' D2 R U' R x'", E: "x' R U' R' D R U R' D' R U R' D R U' R' D' x" },
+};
+const PIN_MARGIN = 5;
+// an alg pros executed this often (reco.nz, any solver) or with this many votes is not awkward
+const AWK_PRO_USES = 2, AWK_VOTES = 5;
+const PRO_USE = {};
+/** body -> how often any professional executed it in a set (1LLL: ZBLL's and PLL's). */
+function proUse(setId) {
+  if (PRO_USE[setId]) return PRO_USE[setId];
+  const m = new Map();
+  const sets = setId === '1lll' ? ['zbll', 'pll', 'coll', 'oll'] : [setId];
+  if (fs.existsSync(PRO_FILE)) {
+    for (const r of JSON.parse(fs.readFileSync(PRO_FILE, 'utf8')).rows) {
+      if (!sets.includes(r.set)) continue;
+      const b = splitAlg(r.body, setId).body;
+      m.set(b, (m.get(b) || 0) + 1);
+    }
+  }
+  return (PRO_USE[setId] = m);
+}
 const WORK = path.resolve(process.env.LLGEN_WORK || path.join(ROOT, 'llgen-work'));
 const OUT_DIR = path.join(ROOT, 'data', 'll');
 const POS = ['UR', 'UF', 'UL', 'UB'];
@@ -225,10 +260,23 @@ function preRotated(state, test) {
   return null;
 }
 
+// a run under way keeps one file per move set until the case is finished
+const RAW_PARTS = {};
 function rawSolutions(setId, i) {
-  const file = path.join(WORK, 'raw', setId, `${i}.json`);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const dir = path.join(WORK, 'raw', setId);
+  const file = path.join(dir, `${i}.json`);
+  if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!RAW_PARTS[setId]) {
+    RAW_PARTS[setId] = new Map();
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir)) {
+        const m = /^(\d+)\.([A-Za-z]+)\.json$/.exec(f);
+        if (m) (RAW_PARTS[setId].get(+m[1]) || RAW_PARTS[setId].set(+m[1], []).get(+m[1])).push(f);
+      }
+    }
+  }
+  const parts = RAW_PARTS[setId].get(i);
+  return parts ? parts.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))) : null;
 }
 
 /** Every case of a set: display state, name, group, database algs. */
@@ -242,16 +290,10 @@ function namedCases(setId) {
     const i = byKey.get(AlgSets.caseKeyOf(setId, d.state));
     if (i === undefined) throw new Error(`${setId}: database case ${d.name} is not a case of the set`);
     if (out[i].name) throw new Error(`${setId}: two database cases for one case (${out[i].name}, ${d.name})`);
-    Object.assign(out[i], { state: d.state, name: d.name, db: d.algs, setup: d.setup, dbKey: `${setId}|${d.name}`, order,
+    Object.assign(out[i], { state: d.state, name: setId === '1lll' && d.dbSet === 'pll' ? `PLL ${d.name}` : d.name, db: d.algs, setup: d.setup, dbKey: `${d.dbSet}|${d.name}`, order,
       group: setId === 'zbll' ? zbllGroup(d.page) : setId === 'ols' ? (VLS_PAGE_GROUP[d.page] || 'SV') : d.subgroup });
   });
-  if (setId === 'coll') {
-    for (const c of out) {
-      if (c.name) continue;
-      const diag = AlgSets.aufVariants(c.state).some(v => [[2, 1, 0, 3], [0, 3, 2, 1]].some(p => p.every((x, k) => v.c.cp[k] === x)));
-      Object.assign(c, { name: diag ? 'O diagonal' : 'O adjacent', group: 'O', order: diag ? 1e6 + 1 : 1e6 });
-    }
-  }
+  if (setId === 'coll' || setId === '1lll' || setId === 'zbll') nameLastLayer(setId, out, byKey);
   // the other databases' algs, by the case their key belongs to
   for (const a of EXTRA.algs) {
     if (a.set !== setId) continue;
@@ -311,6 +353,85 @@ function namedCases(setId) {
   return out;
 }
 
+// ---- names and subsets of COLL, ZBLL and 1LLL (developer, 2026-10-14) -------------
+// COLL: one subset per OLL. ZBLL: by corner orientation (SpeedCubeDB's
+// pages), then by corner permutation -- the COLL case of its corners. 1LLL:
+// one subset per OLL (PLL for an oriented layer), then one per corner
+// permutation, as in COLL; the oriented layer's by PLL's corner kinds.
+const BUILT = {};
+function builtSet(setId) {
+  if (!BUILT[setId]) {
+    const file = path.join(OUT_DIR, `${setId}.json`);
+    if (!fs.existsSync(file)) throw new Error(`${setId}.json must be built first`);
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    BUILT[setId] = { data, index: AlgSets.indexSet(setId, data) };
+  }
+  return BUILT[setId];
+}
+/** The case of a state in a built set ({ i, a, b } and the case), or null. */
+function builtCase(setId, state) {
+  const b = builtSet(setId);
+  const hit = AlgSets.recognize(setId, b.index, state);
+  return hit ? { hit, kase: b.data.cases[hit.i] } : null;
+}
+const ollNumber = name => +((/(\d+)/.exec(name) || [])[1] || 0);
+/** PLL's corner kinds for an oriented layer: corners solved, an adjacent or a diagonal swap. */
+function cornerKind(state) {
+  const vs = AlgSets.aufVariants(state).map(v => v.c.cp.slice(0, 4).join(''));
+  const U = AlgSets.uPowers().map(u => u.cp.slice(0, 4).join(''));
+  if (vs.some(v => U.includes(v))) return 'Corners solved';
+  if (vs.some(v => v === '2103' || v === '0321')) return 'Diagonal corner swap';
+  return 'Adjacent corner swap';
+}
+function nameLastLayer(setId, out, byKey) {
+  // the databases' names by case index (sources.json keeps one key per case)
+  const named = {};
+  for (const [k, name] of Object.entries((EXTRA.names || {})[setId] || {})) if (byKey.has(k)) named[byKey.get(k)] = name;
+  const counter = {};
+  for (const c of out) {
+    const oll = AlgSets.llOriented(c.state) ? null : builtCase('oll', c.state);
+    const ollName = oll ? oll.kase.name : 'PLL';
+    if (setId === 'zbll') {
+      const cc = builtCase('coll', c.state);
+      c.sub = cc ? cc.kase.name : '';
+      continue;
+    }
+    if (setId === 'coll') {
+      c.group = ollName;
+      if (!c.name) {
+        // SpeedCubeDB's OLLCP number within the OLL ("OLLCP12 3" -> "OLL 12 · 3")
+        const m = /^OLLCP\s*(\d+)\s+(\d+)/i.exec(named[c.index] || '');
+        c.name = m ? `OLL ${m[1]} · ${m[2]}` : '';
+      }
+      c.tags = ['ollcp'];
+      c.order = ollNumber(ollName) * 100 + (c.name.includes('·') ? +c.name.split('·')[1] || 50 : 0);
+      continue;
+    }
+    // 1LLL
+    c.group = ollName;
+    if (oll) {
+      const cc = builtCase('coll', c.state);
+      c.sub = cc ? cc.kase.name : '';
+    } else c.sub = cornerKind(c.state);
+    let num = c.order ?? 5e3;
+    if (!c.name) {
+      const m = /^1LLL\s*(\d+)\s+(\d+)/i.exec(named[c.index] || '');
+      c.name = m ? `1LLL ${m[1]} ${m[2]}` : '';
+      if (m) num = +m[2];
+    }
+    c.order = (oll ? ollNumber(ollName) : 58) * 1e4 + num;
+    if (oll && AlgSets.llEO(c.state) === false) c.maxAlgs = MAX_ALGS_1LLL;
+  }
+  // names the databases do not have: numbered after the last one in the group
+  for (const c of out) {
+    if (c.name || setId === 'zbll') continue;
+    const g = c.group;
+    counter[g] = (counter[g] || 0) + 1;
+    c.name = setId === 'coll' ? `${g} · ${6 + counter[g]}` : `1LLL ${ollNumber(g)} x${counter[g]}`;
+    c.order = (c.order || 0) + 90 + counter[g];
+  }
+}
+
 /** The post-AUF (0-3) after pre-AUF + body on a state, for the sets that solve the whole layer. */
 function postAuf(setId, state, pre, body) {
   if (AlgSets.SET_BY_ID[setId].goal !== 0) return 0;
@@ -322,8 +443,15 @@ function postAuf(setId, state, pre, body) {
 
 function buildSet(setId, { requireRaw = true } = {}) {
   const cases = namedCases(setId);
-  let missing = 0, genBest = 0, dbBest = 0, withDb = 0, rejected = 0;
+  let missing = 0, genBest = 0, dbBest = 0, withDb = 0, rejected = 0, noAlgs = 0;
   const outCases = cases.map((c) => {
+    // 1LLL's oriented-edge cases are ZBLL's and PLL's: their lists as built there
+    if (setId === '1lll' && AlgSets.llEO(c.state)) {
+      const from = AlgSets.llOriented(c.state) ? 'pll' : 'zbll';
+      const b = builtCase(from, c.state);
+      if (!b) throw new Error(`1lll ${c.name}: not a ${from} case`);
+      return { name: c.name, group: c.group, sub: c.sub, state: b.kase.state, ...(b.kase.awkOk ? { awkOk: 1 } : {}), algs: b.kase.algs };
+    }
     const cand = new Map();
     const model = llModel(c.dbKey || '', setId, c.index);
     const add = (body, pre, src, votes, from = []) => {
@@ -345,6 +473,7 @@ function buildSet(setId, { requireRaw = true } = {}) {
     }
     const raw = rawSolutions(setId, c.index);
     if (!raw) missing++;
+    if (!raw && setId === '1lll' && !c.db.length && !(c.extra || []).length) noAlgs++;
     for (const part of raw || []) {
       for (const [, body] of part.algs) {
         if (cand.has(body)) continue;
@@ -355,7 +484,13 @@ function buildSet(setId, { requireRaw = true } = {}) {
     }
     // far slower than the best (a few community entries are jokes), or
     // awkward beyond doubt: out, unless the community voted for them
-    for (const a of cand.values()) a.awk = AlgSets.awkwardness(a.body);
+    for (const a of cand.values()) {
+      a.awk = AlgSets.awkwardness(a.body, setId);
+      // what professionals execute, or the community votes for, is never
+      // awkward, whatever its moves (developer, 2026-10-14: pros turn the
+      // u G perms, f OLL 51, B OLL 52, S algs; the rule had hidden them)
+      if ((proUse(setId).get(a.body) || 0) >= AWK_PRO_USES || (a.votes || 0) >= AWK_VOTES) a.awk = { ...a.awk, awkward: false, drop: false };
+    }
     // (an alg several databases list counts as a vote from each of the others)
     const weight = a => (a.votes || 0) + Math.max(0, a.from.length - 1);
     // the case's community favourite (votes, then how many databases list it)
@@ -369,19 +504,30 @@ function buildSet(setId, { requireRaw = true } = {}) {
     const dbTop = all.filter(a => a.src === 'db' && weight(a) > 0 && (a === fav || !a.awk.drop)).sort((a, b) => weight(b) - weight(a)).slice(0, MAX_DB);
     for (const a of dbTop) if (!keep.includes(a)) keep.push(a);
     keep.sort((a, b) => a.score - b.score);
+    // the standard alg of a case, first (PINNED)
+    const pin = (PINNED[setId] || {})[c.name];
+    if (pin) {
+      const a = keep.find(x => x.body === pin) || cand.get(pin);
+      if (!a) throw new Error(`${setId} ${c.name}: pinned alg ${pin} is not a candidate`);
+      if (!keep.includes(a)) keep.push(a);
+      a.score = Math.min(a.score, keep[0].score - PIN_MARGIN);
+      a.pin = true;
+      keep.sort((x, y) => x.score - y.score);
+    }
     if (keep.length && c.db.length) {
       withDb++;
       if (keep[0].src === 'gen') genBest++; else dbBest++;
     }
     const awkOk = !!(fav && fav.awk.awkward);
     return {
-      name: c.name, group: c.group, state: AlgSets.fromCubie(c.state), ...(c.tags && c.tags.length ? { tags: c.tags } : {}),
+      name: c.name, group: c.group, ...(c.sub ? { sub: c.sub } : {}), state: AlgSets.fromCubie(c.state), ...(c.tags && c.tags.length ? { tags: c.tags } : {}),
       ...(awkOk ? { awkOk: 1 } : {}),
       algs: keep.map(a => ({ alg: a.body, pre: a.pre, post: postAuf(setId, c.state, a.pre, a.body), score: Math.round(a.score * 10) / 10, src: a.src,
-        ...(a.src === 'db' ? { votes: a.votes || 0, from: a.from } : {}), ...(a.awk.awkward ? { awk: 1 } : {}) })),
+        ...(a.src === 'db' ? { votes: a.votes || 0, from: a.from } : {}), ...(a.awk.awkward && !a.pin ? { awk: 1 } : {}) })),
     };
   });
   if (requireRaw && missing) throw new Error(`${setId}: ${missing} cases have no generated solutions in ${WORK}`);
+  if (noAlgs) console.log(`${setId}: ${noAlgs} cases with no alg at all yet`);
   console.log(`${setId}: ${outCases.length} cases, ${outCases.reduce((n, c) => n + c.algs.length, 0)} algs; best alg generated in ${genBest} of ${withDb} database cases (database best in ${dbBest}); ${rejected} raw solutions failed the replay; ${missing} cases without raw solutions`);
   return outCases;
 }

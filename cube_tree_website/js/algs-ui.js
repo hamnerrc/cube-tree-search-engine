@@ -30,7 +30,7 @@
   const DATA = {};      // set id -> data/ll/<set>.json (OLS: plus ols-more.json once opened)
   const LOADING = {};   // set id -> promise
   const INDEX = {};     // set id -> AlgSets.indexSet
-  let view = { set: 'oll', group: '', show: 'all', olsTier: 'wv', placement: '' };
+  let view = { set: 'oll', group: '', sub: '', show: 'all', olsTier: 'wv', placement: '' };
   let matches = [];     // move search results [{ setId, i, a, score }]
   let activeMatch = -1;
   let learnMode = false;
@@ -92,7 +92,7 @@
   // ---- data ------------------------------------------------------------------
   function prepare(setId, d) {
     d.cases.forEach((c) => {
-      c.words = `${d.name} ${c.name} ${c.group} ${setId === 'pll' ? `${c.name} perm` : ''} ${(ALIASES[setId] || {})[c.name] || ''} ${(c.tags || []).join(' ')}`
+      c.words = `${d.name} ${c.name} ${c.group} ${c.sub || ''} ${setId === 'pll' ? `${c.name} perm` : ''} ${(ALIASES[setId] || {})[c.name] || ''} ${(c.tags || []).join(' ')}`
         .toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
       c.algs.forEach((a) => { a.toks = a.alg.split(' '); });
     });
@@ -140,7 +140,10 @@
     return `${pre}${body}${post}`;
   }
   /** Where a community alg is listed (nothing for the rest: developer, 2026-10-13). */
-  const SOURCE_NAMES = { scdb: 'speedcubedb', wiki: 'wiki', cubingapp: 'cubingapp', jperm: 'j perm', zblssheet: 'zbls sheet' };
+  const SOURCE_NAMES = {
+    scdb: 'speedcubedb', wiki: 'wiki', cubingapp: 'cubingapp', jperm: 'j perm', zblssheet: 'zbls sheet', moishy: 'algsets',
+    cuberoot: 'cuberoot', cuberpro: 'cuber.pro', juju: 'juju', taoyu: 'tao yu', holbein: 'holbein', gertner: 'gertner', gftw: 'goodforthewin', lllsheet: '1lll sheet',
+  };
   function sourcesOf(a) {
     if (a.src !== 'db' || !a.from || !a.from.length) return '';
     return a.from.map(f => SOURCE_NAMES[f] || f).join(' · ');
@@ -217,7 +220,7 @@
       b.innerHTML = `<span class="set-name"><span class="set-key">${esc(name[0])}</span><span class="set-rest">${esc(name.slice(1))}</span></span>`
         + `<span class="set-count">${n && n.known ? `${n.known}/${n.total}` : n ? String(n.total) : ''}</span>`;
       b.addEventListener('click', () => {
-        view.set = s.id; view.group = ''; saveView(); setHash(s.id);
+        view.set = s.id; view.group = ''; view.sub = ''; saveView(); setHash(s.id);
         $('alg-search').value = '';
         load(s.id).then(updateSearch, () => { $('case-grid').textContent = caption('algs.loadFailed'); });
         updateSearch();
@@ -247,7 +250,10 @@
     if (view.set === 'ols') {
       if (view.olsTier === 'all') out = out.filter(x => !(x.c.tags || []).length && (!view.placement || x.c.group === view.placement));
       else out = out.filter(x => (x.c.tags || []).includes(view.olsTier));
-    } else if (view.group) out = out.filter(x => x.c.group === view.group);
+    } else if (view.group) {
+      out = out.filter(x => x.c.group === view.group);
+      if (view.sub) out = out.filter(x => x.c.sub === view.sub);
+    }
     if (view.show === 'learn') out = out.filter(x => !isKnown(view.set, x.c));
     if (view.show === 'known') out = out.filter(x => isKnown(view.set, x.c));
     return out;
@@ -280,12 +286,48 @@
           CaseDiagram.draw(canvas, 'ols', c.state, { line: cssVar('--line'), mask: 'pair' });
         });
       }
+      renderSubsetNote();
       return;
     }
     const groups = [...new Set(d.cases.map(c => c.group).filter(Boolean))];
-    if (groups.length < 2) { box.innerHTML = ''; return; }
+    if (groups.length < 2) { box.innerHTML = ''; renderSubsetNote(); return; }
     if (view.group && !groups.includes(view.group)) view.group = '';
-    chipRow(box, [['', caption('algs.group.all')], ...groups.map(g => [g, g])], view.group, (v) => { view.group = v; saveView(); renderSet(); });
+    chipRow(box, [['', caption('algs.group.all')], ...groups.map(g => [g, g])], view.group, (v) => { view.group = v; view.sub = ''; saveView(); renderSet(); });
+    // COLL and 1LLL: one subset per OLL, shown by its picture
+    if (OLL_GROUPS.has(view.set)) pictureChips(box, groups, g => d.cases.find(x => x.group === g), 'oll', 1);
+    // the second row: the corner permutations of the chosen subset (ZBLL, 1LLL)
+    const subs = view.group ? [...new Set(d.cases.filter(c => c.group === view.group).map(c => c.sub).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) : [];
+    if (subs.length > 1) {
+      if (view.sub && !subs.includes(view.sub)) view.sub = '';
+      box2.hidden = false;
+      chipRow(box2, [['', caption('algs.group.all')], ...subs.map(g => [g, g])], view.sub, (v) => { view.sub = v; saveView(); renderSet(); });
+      pictureChips(box2, subs, g => d.cases.find(x => x.group === view.group && x.sub === g), 'coll', 1);
+    } else view.sub = '';
+    renderSubsetNote();
+  }
+  // sets whose first subsets are OLLs (drawn as their OLL)
+  const OLL_GROUPS = new Set(['coll', '1lll']);
+  /** Each chip of a row (after `skip` chips) with the picture of its first case, masked as `mask` sees it. */
+  function pictureChips(box, values, caseOf, mask, skip = 0) {
+    [...box.children].slice(skip).forEach((chip, k) => {
+      const c = caseOf(values[k]);
+      if (!c) return;
+      const canvas = document.createElement('canvas');
+      canvas.setAttribute('aria-hidden', 'true');
+      chip.classList.add('pair-chip');
+      chip.title = values[k].toLowerCase();
+      chip.prepend(canvas);
+      CaseDiagram.draw(canvas, view.set, c.state, { line: cssVar('--line'), mask });
+    });
+  }
+  /** One line under the subsets: what the set, or its chosen subset, is (captions `algs.note.<set>[.<subset>]`). */
+  function renderSubsetNote() {
+    const note = $('subset-note');
+    if (!note) return;
+    const keys = view.set === 'ols' ? [`algs.subset.ols.${view.olsTier}`] : [`algs.subset.${view.set}`];
+    const key = keys.find(k => typeof CAPTIONS !== 'undefined' && CAPTIONS[k]);
+    note.textContent = key ? caption(key) : '';
   }
 
   // pictures are drawn when their slot scrolls into view
@@ -404,7 +446,7 @@
       $('group-chips').innerHTML = '';
       return;
     }
-    $('set-title').textContent = d.title;
+    $('set-title').textContent = AlgSets.SET_BY_ID[view.set].title;
     renderGroups(d);
     renderProgress();
     document.querySelectorAll('#grid-tools [data-show]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.show === view.show)));
@@ -431,6 +473,7 @@
     $('grid-tools').hidden = true;
     $('group-chips').innerHTML = '';
     $('group-chips-2').hidden = true;
+    $('subset-note').textContent = '';
     $('set-title').textContent = '';
     $('progress').innerHTML = '';
     $('set-name').textContent = caption('algs.searchTab');
@@ -604,7 +647,7 @@
   function caseCube() {
     if (cube) return cube;
     cube = new PixelCube($('case-cube'), { resolution: profilePref('pixelRes', 'chunky'), backFaces: profilePref('backFaces', true) });
-    cube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true });
+    cube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
     player = new CubePlayer(cube, () => {});
     player.speed = Number(profilePref('animSpeed', 1)) || 1;
     player.animated = Number(profilePref('animSpeed', 1)) > 0;
@@ -615,15 +658,22 @@
     return p && p.prefs && p.prefs[key] !== undefined ? p.prefs[key] : fallback;
   }
 
-  function showAlg(a) {
+  // Choosing an alg (again) shows the case at once -- never the alg running
+  // backwards -- and holds it a moment before the alg plays (developer,
+  // 2026-10-14: a second click ran the cube back and straight on again).
+  const CASE_HOLD_MS = 700;
+  let holdTimer = 0;
+  function showAlg(a, { play = false } = {}) {
     const { setId, i } = shown;
     const c = DATA[setId].cases[i];
     shown.alg = a.alg;
     const start = CaseDiagram.toColours(AlgSets.maskedLabels(setId, AlgSets.toCubie(c.state)));
     const toks = [AlgSets.AUF[a.pre], ...a.toks, AlgSets.AUF[a.post]].filter(Boolean);
     caseCube();
+    clearTimeout(holdTimer);
     player.pause();
-    player.setSequence(toks, [], 0, start);
+    player.setSequence(toks, [], 0, start, { instant: true });
+    if (play) holdTimer = setTimeout(() => { if (shown && shown.alg === a.alg && $('case-dialog').open) player.play(); }, CASE_HOLD_MS);
     [...$('alg-list').children].forEach(li => li.classList.toggle('active', li.dataset.alg === a.alg));
   }
 
@@ -671,8 +721,8 @@
       });
       tools.append(star, copy);
       li.appendChild(tools);
-      li.addEventListener('click', () => { showAlg(a); player.play(); });
-      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showAlg(a); player.play(); } });
+      li.addEventListener('click', () => showAlg(a, { play: true }));
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showAlg(a, { play: true }); } });
       list.appendChild(li);
     }
   }
@@ -683,7 +733,7 @@
     shown = { setId, i, alg };
     hideCard();
     $('case-title').textContent = AlgSets.caseTitle(d.name, c.name);
-    $('case-sub').textContent = [c.group ? c.group.toLowerCase() : '', ...(c.tags || [])].filter((x, k, all) => x && all.indexOf(x) === k).join(' · ');
+    $('case-sub').textContent = [c.group || '', c.sub || '', ...(c.tags || []).map(t => t.toUpperCase())].filter((x, k, all) => x && all.indexOf(x) === k).join(' · ');
     renderCaseAlgs();
     const dlg = $('case-dialog');
     if (!dlg.open) dlg.showModal();
@@ -699,7 +749,7 @@
     try { history.replaceState(null, '', h ? `#${h}` : location.pathname + location.search); } catch (e) { /* file: */ }
   }
   async function openFromHash() {
-    const m = /^#([a-z]+)(?:\/(.+))?$/.exec(location.hash || '');
+    const m = /^#([a-z0-9]+)(?:\/(.+))?$/.exec(location.hash || '');
     if (!m || !SET_IDS.includes(m[1])) return;
     view.set = m[1];
     let d = await load(m[1]).catch(() => null);
@@ -711,7 +761,7 @@
     if (i < 0 && m[1] === 'ols') { d = await loadOlsMore(); i = d.cases.findIndex(c => slug(c.name) === want); }
     if (i >= 0) {
       const c = d.cases[i];
-      if (m[1] === 'ols') { view.olsTier = (c.tags || [])[0] || 'all'; if (view.olsTier === 'all') view.placement = c.group; }
+      if (m[1] === 'ols') { view.olsTier = (c.tags || [])[0] || 'all'; if (view.olsTier === 'all') view.placement = c.group; } else if (view.group && view.group !== c.group) { view.group = ''; view.sub = ''; }
       renderSet();
       openCase(m[1], i);
     } else renderSet();
@@ -725,15 +775,26 @@
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
     });
     dlg.addEventListener('close', () => {
+      clearTimeout(holdTimer);
       if (player) player.pause();
       setHash(view.set);
       // the case may be known or have a main alg now
       if (!$('alg-search').value) renderSet();
     });
-    $('case-reset').addEventListener('click', () => player && player.seek(0));
-    $('case-back').addEventListener('click', () => player && player.step(-1));
-    $('case-fwd').addEventListener('click', () => player && player.step(1));
-    $('case-play').addEventListener('click', () => player && player.play());
+    const stopHold = () => clearTimeout(holdTimer);
+    $('case-reset').addEventListener('click', () => { stopHold(); if (player) player.seek(0, false); });
+    $('case-back').addEventListener('click', () => { stopHold(); if (player) player.step(-1); });
+    $('case-fwd').addEventListener('click', () => { stopHold(); if (player) player.step(1); });
+    // play at the end: the case again, held, then the alg (as choosing it)
+    $('case-play').addEventListener('click', () => {
+      stopHold();
+      if (!player) return;
+      if (!player.playing && player.pos >= player.length && shown) {
+        const a = LastLayer.orderedAlgs(shown.setId, DATA[shown.setId].cases[shown.i]).find(x => x.alg === shown.alg);
+        if (a) { showAlg(a, { play: true }); return; }
+      }
+      player.play();
+    });
     $('case-known').addEventListener('click', () => {
       if (!shown) return;
       const c = DATA[shown.setId].cases[shown.i];

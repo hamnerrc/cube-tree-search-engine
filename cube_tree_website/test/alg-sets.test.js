@@ -89,9 +89,9 @@ test('mirror: every token has one, a mirrored alg makes the mirrored cube, mirro
   }
 });
 
-const EXPECTED = { oll: 57, pll: 21, coll: 42, zbll: 472, ols: 8054, zbls: 302 };
+const EXPECTED = { oll: 57, pll: 21, coll: 329, zbll: 472, '1lll': 3915, ols: 8054, zbls: 302 };
 const CASES = {};
-test('case counts: OLL 57, PLL 21, COLL 42, ZBLL 472, OLS 8054 (VLS 216 with WV 27, HLS 216 with SV 27), ZBLS 302', () => {
+test('case counts: OLL 57, PLL 21, COLL 329 (OLLCP 331 without the 2 PLL corner cases), ZBLL 472, 1LLL 3915, OLS 8054 (VLS 216 with WV 27, HLS 216 with SV 27), ZBLS 302', () => {
   for (const [id, n] of Object.entries(EXPECTED)) {
     CASES[id] = A.enumerateCases(id);
     assert.strictEqual(CASES[id].length, n, id);
@@ -137,7 +137,7 @@ test('database notation: brackets, Rw, R3, 2\' and a leading y on the last layer
 });
 
 test('a leading y on a last-layer case is the same as a U turn (replayed on every case)', () => {
-  for (const id of ['oll', 'pll', 'coll', 'zbll']) {
+  for (const id of ['oll', 'pll', 'coll', 'zbll', '1lll']) {
     for (const c of CASES[id].slice(0, 40)) {
       const s = A.fromCubie(c.rep);
       for (const [y, u] of [['y', 'U'], ["y'", "U'"], ['y2', 'U2']]) {

@@ -64,18 +64,39 @@ pair at once, a multislot two pairs at once).
 
 ### Look
 
-The interface follows `UI_references/`: one-bit pixel art, pixel buttons,
-pixel fonts, lowercase text (move notation keeps its case). **Few lines**:
-the cube floats on the page, the scramble and the solution are labelled
-text, and only the cube's stage and the solution bar carry frames, drawn
-as **corner brackets** (no long edges, as in `UI_inspo.png`'s selection
-marks); the buttons around them are plain text until hovered; the tree-searcher's
-speech bubble is the one box. Four **themes**, two dark and two light, each
-from a reference: ink (black and white), violet (purple and white, a green
-accent), paper (black ink on paper) and mint (a soft pixel palette); the
-cube is always full colour. **Pixels**: chunky (default), fine (the "reduce
-pixel art for visibility" setting: about 2.5× the resolution) or smooth
-(full screen resolution). Both pages work on phones, tablets and desktops.
+`UI_references/` are the **guardrails** (developer, 2026-10-14): the
+interface draws only what the references show, with their measured
+proportions (the measurements are in the header of `styles.css`):
+
+- **Windows** (`UI_inspo.png`): a 2-art-pixel line, square corner studs
+  with a hole, a title tab centred on the top edge with cut corners and an
+  ear at each end, a close box with an X on the top-right corner. The
+  tree-searcher, the settings, the case on the algs page, the sets and the
+  info are windows.
+- **Keys**: the reference's check keys (cut corners, a deep bottom ledge,
+  a pixel tick) for buttons and check boxes; **selection marks** (four L
+  corners) only around what is chosen or pointed at -- the current page,
+  the chosen set and filter, the solution bar (where the typing goes) and
+  the search box; **slots**
+  (rounded by one step) in a studded **inventory bar** for subsets and
+  cases.
+- **The menu** of `1-bit_inspo_UI.png`: capitals, the first letter lit
+  ("SOLVE  ALGS  SETTINGS  WHAT'S THIS ?").
+- **Move buttons** of `showdown_UI_inspo.png` for the tree-searcher's picks
+  and a case's algs (the moves; their kind bottom left, the move count
+  bottom right), its tooltip for a case's hover card.
+- **CubeDB**: labels over their fields, the move counts at the right of
+  the label, one row of equal playback keys.
+- **The cube** floats on the page with the flat cast shadow of
+  `cube_inspo_art.png`.
+
+Text: the chrome in the pixel capitals of the references, sentences in
+sentence case, move notation as typed. Four **themes**, two dark and two
+light, each from a reference: ink (black and white), violet (purple and
+white, a green accent), paper (black ink on paper) and mint (a soft pixel
+palette); the cube is always full colour. **Pixels**: chunky (default),
+fine (about 2.5x the resolution) or smooth. Every setting says in one line
+what it does. Both pages work on phones, tablets and desktops.
 
 ### Captions
 
@@ -102,8 +123,22 @@ them by hand; code never writes user-facing prose itself.
 
 cube⑂tree also covers the last slot and the last layer with algorithm sets,
 meant to replace an alg database: **OLL** (57 cases), **PLL** (21),
-**COLL** (42), **ZBLL** (472), **OLS** and **ZBLS** (302: the last pair
-inserted while the edges are oriented).
+**COLL** (329), **ZBLL** (472), **1LLL** (3,915), **OLS** and **ZBLS**
+(302: the last pair inserted while the edges are oriented).
+
+- **COLL** orients the last layer and solves its corners in one alg, from
+  **any** of the 57 OLLs (developer, 2026-10-14; also called OLLCP): 329
+  cases, one subset per OLL. Corners already oriented with the edges
+  oriented is a PLL case, not a COLL one. Names: the classic COLL names
+  ("AS 3") where the edges are oriented, otherwise SpeedCubeDB's OLLCP
+  numbers ("OLL 12 · 3" is its OLLCP12 3).
+- **ZBLL**: subsets by corner orientation (T, U, L, H, Pi, S, AS), each
+  split by corner permutation (its COLL case: "T 1" ... "T 6").
+- **1LLL** solves the whole last layer from any state: one subset per OLL
+  (PLL for an oriented layer), then one per corner permutation, as in COLL
+  (the oriented layer's by PLL's corner kinds). Its oriented-edge cases are
+  ZBLL's and PLL's, with their lists; names from SpeedCubeDB's 1LLL page
+  ("1LLL 12 5").
 
 - **OLS** solves the last pair and orients the whole last layer at once,
   for **every** placement of the pair: 8,054 cases (with the 57 OLL cases of
@@ -119,8 +154,14 @@ inserted while the edges are oriented).
   layer, a small cube for the last slot; stickers a set does not look at
   are grey.
 - **Algorithms** come from the community's databases -- SpeedCubeDB (with
-  its votes), the Speedsolving wiki, CubingApp, J Perm, and the community
-  ZBLS spreadsheet (Chad Batten, Tao Yu) -- and from the tree-searcher's
+  its votes), the Speedsolving wiki, CubingApp, J Perm, CubeRoot (its 1LLL,
+  OLLCP and ZBLS lists), algs.cuber.pro, the ZBLL sheets the wiki lists
+  (Juliette Sébastien, Tao Yu & Justin Taylor, Brant Holbein, Nicolas
+  Gertner, goodforthewin), a 1LLL sheet from Speedsolving,
+  @moishy/algsets and the community ZBLS spreadsheet (Chad Batten, Tao
+  Yu). Every last-layer alg found anywhere counts for every set it solves a
+  case of (an OLL alg is also a 1LLL alg for the state it undoes) -- and
+  from the tree-searcher's
   generator, run for every case in the move groups good algs use (RU, RUF,
   RUD, RUL, RUFD, r and M variants...), a few moves past the shortest in
   each. Every alg is replayed on the cube before it is kept. Nothing is
@@ -133,13 +174,21 @@ inserted while the edges are oriented).
   fitted on the community's votes. Each set's naturalness model learns from
   the community's algs and its professional's algs of the other cases. The
   ranking is never shown as a number; each alg shows its move count.
+  Every turn costs a little on top, so top algs are not long and blue
+  collar where pros turn shorter ones (developer, 2026-10-14; checked on
+  every pro's steps). A rotation and its inverse wrapped around an alg
+  (the A perms' "x ... x'") cost a regrip, and a rotation at the end of an
+  alg that finishes the cube costs nothing. The standard A and E perms are
+  put first by hand (the professionals' choice beyond doubt).
 - **Style**: a "white collar" solver (efficiency) sees shorter algs a little
   higher, a "blue collar" one (fast turning) faster-turning ones.
 - **Awkward algs**: an alg that turns slowly for its length, uses an unusual
   move (B, a wide f/b/u/d, S, E) or rotates twice is awkward. "Hide awkward
   algs" (on by default) hides them in every case whose community favourite
   is not awkward itself; algs awkward beyond doubt are not kept at all,
-  unless the community voted for them.
+  unless the community voted for them. An alg professionals execute (two
+  or more reco.nz steps) or the community votes for (5+) is never awkward,
+  whatever its moves: the u G perms, f OLL 51, B OLL 52, S algs.
 - **Main and known algs**: a solver can make any alg their **main** alg for
   its case (★, on the algs page and in the tree-searcher's picks); it is
   then the only suggestion ("your alg for this case") and the ghost. They
@@ -158,8 +207,8 @@ inserted while the edges are oriented).
   are read as last-layer steps by replaying them (oll, pll, coll, zbll,
   auf), labelled with their case ("oll 27", "pll t"). The ghost and the
   tree-searcher offer the algs of the case on the cube, in the solver's
-  last-layer method (settings: oll + pll, coll or zbll when the edges are
-  oriented): two to four picks, each with a star to use it and make it
+  last-layer method (settings: OLL + PLL, COLL then EPLL, ZBLL when the
+  edges are oriented, or 1LLL): two to four picks, each with a star to use it and make it
   main, and "neither of these" for more. A PLL typed without its AUF gets
   the AUF with Tab.
 - **Last slot**: each set is switched on by itself in the settings (ZBLS;
@@ -173,7 +222,7 @@ inserted while the edges are oriented).
 ## Out of scope (for now)
 
 - EO-aware solving beyond the F2L DAG and the last-slot sets; other
-  last-layer sets (1LLL, OLLCP, EOLL...).
+  last-layer sets (EOLL, ELL...).
 - Batch ranking across scrambles.
 - XXXXCross as a target; a cross anywhere but the bottom.
 
@@ -197,7 +246,13 @@ engines. Notices and the list of changes to vendored code are in
   [J Perm](https://jperm.net/algs) and the community ZBLS spreadsheet (Chad
   Batten, Tao Yu; via [@moishy/algsets](https://jsr.io/@moishy/algsets), MIT),
   imported with `tools/alg-sources.js` into `data/ll/sources.json` (each alg
-  with the databases that list it).
+  with the databases that list it), and, the same way, [CubeRoot](https://cuberoot.me/alg/3x3/1lll)
+  (its 1LLL, OLLCP and ZBLS lists and SpeedCubeDB's 1LLL and OLLCP case
+  names), [algs.cuber.pro](https://algs.cuber.pro/333), the public ZBLL
+  sheets of Juliette Sébastien, Tao Yu & Justin Taylor, Brant Holbein,
+  Nicolas Gertner and goodforthewin (as listed on the Speedsolving wiki's
+  ZBLL page), the 1LLL sheet of the Speedsolving thread "most worth it 1LLL
+  sets", and [@moishy/algsets](https://jsr.io/@moishy/algsets) (MIT).
 - Last-layer tuning data: the last-slot and last-layer steps of reco.nz
   reconstructions (`tools/ll-pros.js`, `data/ll/pro_ll.json`, each credited
   by its solve id).

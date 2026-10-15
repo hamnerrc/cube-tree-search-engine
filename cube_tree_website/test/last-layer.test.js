@@ -98,20 +98,20 @@ else {
   test('every suggestion solves what it says, from the cube as it stands (random cases, AUFs, methods)', () => {
     for (let n = 0; n < 120; n++) {
       // a random last layer: a random case's state with random AUFs around it
-      const setId = ['oll', 'pll', 'coll', 'zbll'][rand(4)];
+      const setId = ['oll', 'pll', 'coll', 'zbll', '1lll'][rand(5)];
       const d = data[setId].data;
       const kase = d.cases[rand(d.cases.length)];
       const pre = A.AUF[rand(4)], post = A.AUF[rand(4)];
       const cube = applyAlgorithm(after(post), `${applyAlgorithmText(kase.state)} ${pre}`);
       const stage = L.stageOf(cube);
-      for (const method of ['oll', 'coll', 'zbll']) {
+      for (const method of ['oll', 'coll', 'zbll', '1lll']) {
         const sug = L.suggestions(cube, data, method);
         assert.ok(sug.length > 0, `${setId} ${kase.name}: no suggestion (${stage}, ${method})`);
         assert.strictEqual(sug[0].setId, L.setsFor(stage, method)[0]);
         for (const s of sug.slice(0, 4)) {
           const end = L.stageOf(applyAlgorithm(cube, s.toks.join(' ')));
           // an OLL may solve the corners too (epll); a COLL must
-          const want = s.setId === 'oll' ? ['oriented', 'epll', 'auf', 'done'] : s.setId === 'coll' ? ['epll', 'auf', 'done'] : ['done'];
+          const want = s.setId === 'oll' ? ['oriented', 'epll', 'auf', 'done'] : s.setId === 'coll' ? ['epll', 'auf', 'done'] : ['done', 'auf'];
           assert.ok(want.includes(end), `${s.label} ${s.toks.join(' ')}: ${end}`);
         }
       }

@@ -239,17 +239,19 @@ function installInfoDialog() {
         return;
     }
     const dialog = document.createElement('dialog');
-    dialog.className = 'info-dialog';
+    // a window (styles.css): its title tab, the close box on its corner
+    dialog.className = 'info-dialog window';
     dialog.setAttribute('aria-label', 'about');
     const keys = typeof INFO_SECTION_KEYS !== 'undefined' ? INFO_SECTION_KEYS : [];
-    dialog.innerHTML = `<div class="info-head"><h2>cube⑂tree</h2><button type="button" class="px-btn icon quiet close-btn" aria-label="close">×</button></div>`;
+    dialog.innerHTML = `<span class="window-tab">what's this ?</span><button type="button" class="close-box close-btn" aria-label="close">X</button><div class="info-body"></div>`;
+    const body = dialog.querySelector('.info-body');
     for (const k of keys) {
         const h = document.createElement('h3');
         h.textContent = caption(`info.${k}.title`);
         const p = document.createElement('p');
         p.textContent = caption(`info.${k}.text`);
         p.dataset.caption = `info.${k}.text`;
-        dialog.append(h, p);
+        body.append(h, p);
     }
     document.body.appendChild(dialog);
     button.addEventListener('click', () => dialog.showModal());

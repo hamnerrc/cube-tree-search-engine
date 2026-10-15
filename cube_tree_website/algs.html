@@ -8,21 +8,24 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=VT323&display=swap">
-    <link rel="stylesheet" href="styles.css?v=20261016l">
-    <script src="js/profile.js?v=20261016l"></script>
+    <link rel="stylesheet" href="styles.css?v=20261017a">
+    <script src="js/profile.js?v=20261017a"></script>
 </head>
 
 <body>
     <header class="topbar">
         <div class="brand">
             <h1>cube⑂tree</h1>
+            <!-- the menu of UI_references/1-bit_inspo_UI.png: capitals, the first letter lit -->
             <nav class="page-nav" aria-label="pages">
-                <a class="px-btn quiet" href="solver.html">solve</a>
-                <a class="px-btn quiet" href="algs.html" aria-current="page">algs</a>
+                <a class="menu-item" href="solver.html"><span class="key">S</span>olve</a>
+                <a class="menu-item" href="algs.html" aria-current="page"><span class="key">A</span>lgs</a>
+                <a class="menu-item" id="settings-link" href="solver.html#settings"><span class="key">S</span>ettings</a>
+                <button type="button" class="menu-item" id="info-btn"><span class="key">W</span>hat's this ?</button>
             </nav>
         </div>
         <div class="topbar-actions">
-            <a class="px-btn quiet profile-chip" id="profile-chip" href="index.html?profiles" title="switch profile">
+            <a class="profile-chip" id="profile-chip" href="index.html?profiles" title="switch profile">
                 <canvas width="32" height="32" aria-hidden="true"></canvas><span id="profile-name"></span>
             </a>
         </div>
@@ -31,7 +34,7 @@
     <main class="algs-main">
         <!-- the sets, as a terminal menu (UI_references/1-bit_inspo_UI.png), each with what you know of it -->
         <nav class="set-menu window" aria-label="alg sets">
-            <span class="window-tab">sets</span>
+            <span class="window-tab">Sets</span>
             <ul class="set-list" id="set-tabs" role="tablist" aria-label="alg set"></ul>
         </nav>
 
@@ -50,13 +53,14 @@
             <!-- subsets as an inventory row of slots (UI_references/UI_inspo.png) -->
             <div class="slot-bar" id="group-chips" role="group" aria-label="subsets"></div>
             <div class="slot-bar sub" id="group-chips-2" role="group" aria-label="pair placement" hidden></div>
+            <p class="subset-note" id="subset-note"></p>
             <div class="grid-tools" id="grid-tools">
                 <div class="seg" role="group" aria-label="show">
-                    <button type="button" class="chip" data-show="all" aria-pressed="true">all</button>
-                    <button type="button" class="chip" data-show="learn" aria-pressed="false">to learn</button>
-                    <button type="button" class="chip" data-show="known" aria-pressed="false">known</button>
+                    <button type="button" class="chip" data-show="all" aria-pressed="true">All</button>
+                    <button type="button" class="chip" data-show="learn" aria-pressed="false">To learn</button>
+                    <button type="button" class="chip" data-show="known" aria-pressed="false">Known</button>
                 </div>
-                <button type="button" class="px-btn quiet learn-btn" id="learn-mode" aria-pressed="false">✓ mark what I know</button>
+                <button type="button" class="px-btn learn-btn" id="learn-mode" aria-pressed="false">Mark what I know</button>
             </div>
             <p class="learn-hint" id="learn-hint" hidden></p>
             <section class="case-grid" id="case-grid" aria-label="cases"></section>
@@ -69,19 +73,19 @@
 
     <dialog class="case-dialog window" id="case-dialog" aria-labelledby="case-title">
         <span class="window-tab" id="case-title"></span>
-        <button type="button" class="px-btn icon quiet close-btn" id="case-close" aria-label="close">×</button>
+        <button type="button" class="close-box" id="case-close" aria-label="close">X</button>
         <div class="case-body">
             <div class="case-view">
-                <div class="cube-stage case-stage brackets" id="case-stage">
+                <div class="cube-stage case-stage" id="case-stage">
                     <canvas id="case-cube" role="img" aria-label="the case on the cube"></canvas>
                 </div>
                 <div class="play-row">
-                    <button type="button" class="px-btn quiet" id="case-reset" aria-label="back to the case" title="the case">|&lt;</button>
-                    <button type="button" class="px-btn quiet" id="case-back" aria-label="one move back" title="back">&lt;</button>
-                    <button type="button" class="px-btn quiet" id="case-play" aria-label="play" title="play">&gt;&gt;</button>
-                    <button type="button" class="px-btn quiet" id="case-fwd" aria-label="one move forward" title="forward">&gt;</button>
+                    <button type="button" class="px-btn" id="case-reset" aria-label="back to the case" title="the case">|&lt;</button>
+                    <button type="button" class="px-btn" id="case-back" aria-label="one move back" title="back">&lt;</button>
+                    <button type="button" class="px-btn" id="case-play" aria-label="play" title="play">&gt;&gt;</button>
+                    <button type="button" class="px-btn" id="case-fwd" aria-label="one move forward" title="forward">&gt;</button>
                 </div>
-                <button type="button" class="px-btn known-btn" id="case-known" aria-pressed="false">✓ I know this case</button>
+                <button type="button" class="px-btn known-btn" id="case-known" aria-pressed="false">I know this case</button>
             </div>
             <div class="case-algs">
                 <p class="case-sub" id="case-sub"></p>
@@ -90,16 +94,16 @@
         </div>
     </dialog>
 
-    <script src="js/captions.js?v=20261016l"></script>
-    <script src="js/pro-steps.js?v=20261016l"></script>
-    <script src="js/script.js?v=20261016l"></script>
-    <script src="js/facelet-cube.js?v=20261016l"></script>
-    <script src="js/searchers.js?v=20261016l"></script>
-    <script src="js/pixel-cube.js?v=20261016l"></script>
-    <script src="js/alg-sets.js?v=20261016l"></script>
-    <script src="js/last-layer.js?v=20261016l"></script>
-    <script src="js/case-diagram.js?v=20261016l"></script>
-    <script src="js/algs-ui.js?v=20261016l"></script>
+    <script src="js/captions.js?v=20261017a"></script>
+    <script src="js/pro-steps.js?v=20261017a"></script>
+    <script src="js/script.js?v=20261017a"></script>
+    <script src="js/facelet-cube.js?v=20261017a"></script>
+    <script src="js/searchers.js?v=20261017a"></script>
+    <script src="js/pixel-cube.js?v=20261017a"></script>
+    <script src="js/alg-sets.js?v=20261017a"></script>
+    <script src="js/last-layer.js?v=20261017a"></script>
+    <script src="js/case-diagram.js?v=20261017a"></script>
+    <script src="js/algs-ui.js?v=20261017a"></script>
 </body>
 
 </html>

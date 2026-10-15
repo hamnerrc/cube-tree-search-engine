@@ -145,12 +145,13 @@ class PixelCube {
   setFacelets(f) { this.facelets = f; this.draw(); }
   setResolution(mode) { this.resolution = PC_RESOLUTIONS[mode] !== undefined ? mode : 'chunky'; this.resize(); }
   setBackFaces(on) { this.backFaces = !!on; this.draw(); }
-  setTheme({ bg, line, floor, clear, floorShadow }) {
+  setTheme({ bg, line, floor, clear, floorShadow, shadow }) {
     if (bg) this.theme.bg = hexToRgb(bg);
     if (line) this.theme.line = hexToRgb(line);
     if (floor) this.theme.floor = floor;
     if (clear !== undefined) this.theme.clear = !!clear;
     if (floorShadow !== undefined) this.theme.floorShadow = !!floorShadow;
+    if (shadow) this.theme.shadow = hexToRgb(shadow);
     this.draw();
   }
   resetView() { this.yaw = PixelCube.DEFAULT_YAW; this.pitch = PixelCube.DEFAULT_PITCH; this.zoom = 1; this.draw(); }
@@ -295,10 +296,11 @@ class PixelCube {
     const bg = this.theme.bg;
     const line = this.theme.line;
     const N = W * H;
-    // a transparent background lets the page show around the cube; a
-    // dithered shadow on the floor under it (the one-bit art's shading)
+    // a transparent background lets the page show around the cube; its
+    // shadow is one flat tone cast to the side (UI_references/cube_inspo_art.png)
     const bgAlpha = this.theme.clear ? 0 : 255;
     const floor = this._floorMask();
+    const shadow = this.theme.shadow || bg.map((v, k) => Math.round(v * 0.8 + line[k] * 0.2));
     const kinds = new Int8Array(quads.length);
     const tones = quads.map((q, i) => { kinds[i] = q.kind; return q.kind ? (this.palette[q.colour] || this.palette.W) : null; });
     const bodyRgb = this.bodyRgb[1];
@@ -308,7 +310,7 @@ class PixelCube {
       if (qi < 0) {
         const x = p % W;
         const y = (p / W) | 0;
-        if (floor && floor[p] && !((x + y) & 1) && !(y & 1)) { data[o] = line[0]; data[o + 1] = line[1]; data[o + 2] = line[2]; data[o + 3] = 255; continue; }
+        if (floor && floor[p]) { data[o] = shadow[0]; data[o + 1] = shadow[1]; data[o + 2] = shadow[2]; data[o + 3] = 255; continue; }
         data[o] = bg[0]; data[o + 1] = bg[1]; data[o + 2] = bg[2]; data[o + 3] = bgAlpha;
         continue;
       }
@@ -339,15 +341,26 @@ class PixelCube {
     this.ctx.putImageData(this.img, 0, 0);
   }
 
-  /** Pixels of the floor shadow (a disc under the cube, seen from above only), or null. */
+  /**
+   * Pixels of the floor shadow, or null: the cube's footprint and its copy
+   * pushed away from a light behind the cube's left (a fixed direction on
+   * the floor, so the shadow turns with the cube), filled as one convex
+   * shape, seen from above only.
+   */
   _floorMask() {
     if (!this.theme.floorShadow || this.pitch <= 0.05) return null;
     const { W, H } = this;
-    const pts = [];
-    for (let k = 0; k < 28; k++) {
-      const a = (k / 28) * Math.PI * 2;
-      pts.push(this._project(this._view([Math.cos(a) * 2.05, -1.62, Math.sin(a) * 2.05])));
-    }
+    const foot = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
+    const cast = [2.9, -1.1]; // the light's direction on the floor (x, z)
+    const flat = [...foot, ...foot.map(([x, z]) => [x + cast[0], z + cast[1]])]
+      .map(([x, z]) => this._project(this._view([x, -1.52, z])));
+    // convex hull (monotone chain), in drawing order
+    flat.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const p of flat) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (const p of flat.slice().reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    const pts = [...lower.slice(0, -1), ...upper.slice(0, -1)];
     const mask = this._floor && this._floor.length === W * H ? this._floor : (this._floor = new Uint8Array(W * H));
     mask.fill(0);
     let minX = W, maxX = 0, minY = H, maxY = 0;
@@ -464,6 +477,7 @@ function playbackTokens(text) {
 const GLIDE_MS = 500;
 const TURN_MS = 150;
 const PLAY_MS = 190;  // a move of the playback
+const PLAY_HOLD_MS = 600; // the start, shown before a replay
 const pcInvert = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
 
 class CubePlayer {
@@ -636,7 +650,11 @@ class CubePlayer {
     const run = ++this._run;
     this.playing = true;
     this.onChange(this);
-    if (this.pos >= this.tokens.length) await this.goTo(0);
+    // from the end: back to the start, held a moment so the start can be seen
+    if (this.pos >= this.tokens.length) {
+      await this.goTo(0);
+      if (run === this._run) await new Promise(r => setTimeout(r, PLAY_HOLD_MS));
+    }
     while (this.playing && run === this._run && this.pos < this.tokens.length) {
       await this.goTo(this.pos + 1, { ms: PLAY_MS });
       if (run !== this._run) break;

@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-13 (thirty-eighth pass).*
+*Last updated 2026-10-14 (thirty-ninth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,104 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Thirty-ninth pass (2026-10-14): the developer's list -- de-vibecoding the
+UI from the references, four bugs, COLL on every OLL, ZBLL subsets, 1LLL,
+more sources, shorter algs.** Start: the 38th pass committed (`af9805b`,
+not yet pushed), every fast suite passing; the developer had deleted
+`docs/general_EO_knowledge.txt` and `docs/slot_and_rotation_info.txt`
+(left alone, not staged).
+
+1. **Bugs.** (a) Algs page: choosing an alg (again) ran the cube backwards
+   and straight on; now it cuts to the case, holds it 0.7 s, then plays
+   (`showAlg(a, { play })`; ▶ at the end does the same; the solving
+   screen's ▶ from the end glides back and holds 0.6 s, `PLAY_HOLD_MS`).
+   Browser-checked (cut, held, then playing). (b) Settings could not be
+   reached from the algs page (it had no settings button): the menu's
+   "Settings" opens `solver.html#settings`, which opens the panel.
+   (c) The cube stopped following the solution after Tab: a hover preview
+   whose pick button was replaced (Tab, a click on a pick) never got its
+   mouseleave, so `previewing` stayed on and `updatePlayer` did nothing.
+   Reproduced in headless Chrome (hover + click a pick, then Tab: DESYNC on
+   every step with the old code, in sync with the new one): a preview now
+   ends when its button leaves the page (the same pick re-rendered keeps
+   it), when the text is set and on typing. (d) A perms ranked 4th-14th.
+2. **Wrapping rotations and pinned A/E perms** (`AlgSets.rotationFrame`):
+   "x ... x'" around an alg costs a regrip (`lead` 1.5), a final rotation
+   in a set that finishes the cube (PLL, ZBLL, 1LLL) is free, every other
+   rotation full price. A lone leading rotation was cheap at first and put
+   "x R2 F R F' ..." first for Ja over Yiheng's alg (first-ranked pro PLLs
+   42.1 -> 36.2%): rejected. As built, Yiheng's PLL mean log2 rank 2.075
+   -> 1.959, all pros 2.617 -> 2.530, votes 63.8 -> 68.1%; ZBLL neutral.
+   The standard Aa, Ab and E perms are then **pinned first**
+   (`ll-build.js PINNED`, as the developer allowed: pros use them in
+   105+84 / 120+92 / 47+ steps; they were 4th, 12th, 12th).
+3. **Shorter algs ("blue collar" tops)**: every turn costs 1 more
+   (`LL_PER_MOVE`), checked on every pro's steps with 2-fold CV over cases:
+   PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 -> 1.905, OLL
+   1.233 -> 1.231; votes up a little. OLL 25's top went from a 15-move RU
+   alg to `r U R U' r' F R' F'`, H and Ua to the M-slice perms. A lower
+   slice penalty did not help anywhere.
+4. **COLL = OLL + corners from any OLL** (developer): 329 cases (OLLCP's
+   331 without the two PLL corner cases), one subset per OLL; names: COLL's
+   ("AS 3") or SpeedCubeDB's OLLCP numbers ("OLL 12 · 3"). The 225 pro COLL
+   rows of `pro_ll.json` were re-keyed (co|eo|cp). The solving screen's
+   COLL method now applies from any OLL (then EPLL). Old COLL raw runs
+   reused (`llgen-work/raw/coll-eo` -> new indices).
+5. **ZBLL subsets**: by corner orientation, then corner permutation (the
+   COLL case, "T 1"-"T 6"): a second row of slots on the algs page.
+6. **1LLL** (3,915 cases; `ll-gen.js reuse 1lll zbll pll` copies those
+   runs; plan RUF 1, RUFr 1, RUMr 1, RUFD/RUFSf/LUF 0 for the 3,422 others,
+   ~20-60 s a case, two processes, many hours): one subset per OLL (PLL
+   for an oriented layer), then per corner permutation; ZBLL/PLL cases copy
+   those sets' lists; names from SpeedCubeDB's 1LLL page. A "1LLL" method
+   (settings, onboarding); `1lll.json` (3 MB, 385 KB gzipped) loads only
+   for that method on the solving screen.
+7. **Sources** (`alg-sources.js`): CubeRoot's API (1LLL 3,397 named cases,
+   OLLCP, ZBLL, ZBLS ...; itself scraped from SpeedCubeDB), algs.cuber.pro
+   (OLL, PLL, COLL, ZBLL, OLLCP 1-57, ELL, WV, VLS), the five ZBLL sheets
+   the wiki lists (Juliette Sébastien = "Juju", Tao Yu & Justin Taylor,
+   Brant Holbein, Nicolas Gertner, goodforthewin; every tab as CSV), the
+   1LLL thread's sheet, more of @moishy/algsets. Every LL page counts for
+   every LL set (an OLL alg is a 1LLL alg of the state it undoes): 118,049
+   (set, alg) pairs, 38,112 distinct algs, stored once each
+   (`rows: [alg, sets, from]`, keys recomputed by `expand`), plus case
+   names. Not found: a public "Jabari" ZBLL sheet (searched the wiki, the
+   Speedsolving sheet lists and the web); no RUDS-specific sheet either.
+8. **UI from the references as guardrails** (README "Look"; the measured
+   proportions in the header of `styles.css`, rewritten): windows (2u line,
+   holed corner studs, a centred title tab with cut corners and ears, a
+   close box on the corner) for the tree-searcher, settings, info, case,
+   sets and onboarding; check keys with a ledge and a pixel tick; selection
+   marks only around the chosen thing; the 1-bit menu ("SOLVE ALGS
+   SETTINGS WHAT'S THIS ?", first letter lit) instead of ⚙/i icons; Showdown
+   move buttons for picks (with the move count) and algs; CubeDB labels and
+   a row of equal playback keys; the flat cast cube shadow of
+   cube_inspo_art.png (`_floorMask`); no dotted page texture, no tiny
+   bulleted labels, no speech-bubble tail, no lowercase-everything
+   (captions converted to sentence case, cubing acronyms capitalised).
+   Settings: every option has a name and a one-line description (WV, SV,
+   VLS, HLS, ZBLS, full OLS described by the pair's placement and what the
+   alg orients). Algs page: OLL picture chips for COLL/1LLL subsets, COLL
+   pictures for corner-permutation subsets, a one-line description of the
+   set or OLS subset.
+9. **Awkward never hides what pros turn**: the rule (odd moves, flow, two
+   rotations) had hidden the u G perms (124 + 64 + 50 pro steps), Ja
+   `R' U L' U2 R U' R' U2 R L` (96), OLL 51 with f, OLL 52 with B: 7% of
+   pro PLL steps used an alg hidden by default. An alg executed in 2+
+   reco.nz steps (any solver) or with 5+ votes is never awkward
+   (`ll-build.js AWK_PRO_USES`, `AWK_VOTES`). Rejected: a lower wide
+   u/d/f/b penalty (PLL 2.381 -> 2.354 CV, votes 71.3 -> 68.1%; OLL and
+   ZBLL flat).
+10. **Data as built** (`--partial`: COLL and 1LLL with the move sets
+   finished so far; `rawSolutions` reads a run's per-move-set files):
+   OLL 736 algs, PLL 278, COLL 329 cases / 4,209, ZBLL 5,953, 1LLL 3,915 /
+   27,836 (every case has algs; 1,048 still without generated ones), ZBLS
+   3,517, OLS 64,950. **Open**: the 1LLL generator (two processes,
+   `llgen-work/run-1lll-{a,b}.log`, RUF done for ~2,300 of 3,422 cases at
+   21:40) and COLL's last move sets keep running; when they finish, `node
+   tools/ll-build.js build coll zbll 1lll` (ZBLL takes its subsets from
+   coll.json) and bump `DATA_VERSION`.
 
 **Thirty-eighth pass (2026-10-13): the developer's list -- last slot and
 last layer, the solution bar, the cube, the tree-searcher, the algs page.**

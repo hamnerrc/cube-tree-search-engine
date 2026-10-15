@@ -29,18 +29,21 @@ const LastLayer = (() => {
   }
 
   // The sets that apply at each stage, and what finishing one leaves.
+  // COLL is the OLL with the corners, from any OLL (developer, 2026-10-14);
+  // 1LLL the whole layer from anywhere.
   const SETS_AT = {
-    f2l: ['oll'],
-    eo: ['zbll', 'coll', 'oll'],
+    f2l: ['1lll', 'coll', 'oll'],
+    eo: ['1lll', 'zbll', 'coll', 'oll'],
     oriented: ['pll'],
     epll: ['pll'],
   };
   /** The sets a solver's method uses at a stage, best first. */
   function setsFor(stage, method = 'oll') {
     const all = SETS_AT[stage] || [];
-    if (stage !== 'eo') return all;
-    if (method === 'zbll') return ['zbll', 'oll'];
+    if (stage !== 'eo' && stage !== 'f2l') return all;
+    if (method === '1lll') return ['1lll', 'oll'];
     if (method === 'coll') return ['coll', 'oll'];
+    if (method === 'zbll' && stage === 'eo') return ['zbll', 'oll'];
     return ['oll'];
   }
 
@@ -174,11 +177,12 @@ const LastLayer = (() => {
     if (to === 'done' || to === 'auf') {
       if (from === 'auf') return 'auf';
       if (from === 'oriented' || from === 'epll') return named('pll');
-      if (from === 'eo') return named('zbll');
-      return '1lll';
+      if (from === 'eo' && found.some(x => x.setId === 'zbll')) return named('zbll');
+      return named('1lll');
     }
     if (to === 'oriented') return named('oll');
-    if (to === 'epll') return from === 'eo' ? named('coll') : named('oll');
+    // the corners solved with the orientation: a COLL (also from an OLL with flipped edges)
+    if (to === 'epll') return named('coll');
     if (to === 'eo') return 'eo';
     return 'last layer';
   }
