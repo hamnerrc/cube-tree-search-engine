@@ -1,0 +1,50 @@
+**Edge Orientation (EO) tracking in CFOP F2L is a high-value technique for reducing cube rotations.** An F2L edge is “oriented” (good) if it can be inserted into its slot using only R/U/L moves (no F/B or y-rotations in the basic insert). A misoriented (bad) edge usually needs a rotation, an F/B move, or a special trick.
+
+### How to Recognize EO Quickly
+After the cross (hold the cube so the cross color is on bottom):
+
+- Look at the **non-U/D color** on the edge (the side color that matches one of the L/R centers relative to your current orientation).
+- **Good (oriented)**: That sticker is on the U-layer orbit (FU/RU/BU/LU) *or* on the L/R face.
+- **Bad (misoriented)**: That sticker is on the U face or in the F/B orbit.
+
+A simpler practical check many solvers use:  
+Look at the sticker on top of the edge. If it matches the **front or back** center color (or the opposite color), the edge is oriented. If it matches left/right, it is misoriented.
+
+**Key rules that make tracking useful**:
+- A y/y' rotation flips the orientation of edges that are in the U layer (good becomes bad and vice versa).
+- Edges already in a middle-layer slot do **not** change orientation when you rotate.
+- Once an edge is in its correct middle layer (even if the pair is unsolved), its orientation stays usable from either angle.
+
+### How EO Saves Rotations in F2L
+The core strategy (widely recommended on speedsolving forums and by advanced tutorials):
+
+1. **Solve all oriented edges first** while they are still good. These can almost always be done rotationlessly with RUL moves.
+2. **Take out or ignore** bad edges in the middle layer if needed.
+3. **Do a single y or y'** when necessary. This converts the remaining bad U-layer edges into good ones.
+4. Finish the rest rotationlessly.
+
+This framework lets you solve F2L with the *minimal number of rotations possible* (often 0–1). Solving in the “wrong” order (bad edges first) can force extra rotations.
+
+**Practical multi-edge tracking**:
+- When you see one good and one bad edge, solve the good one first, then rotate for the bad one.
+- Example comparison (from practical guides):
+  - Wrong order (two rotations): `y R U2 R' y' U R U R'`
+  - Correct order (one rotation): `U R U' R' y R U2 R'`
+
+You can also deliberately force good edges into slots (using keyhole or empty-slot techniques) so that later rotations do not ruin them.
+
+### Extra Benefits
+- **Faster recognition**: Knowing EO halves the mental cases you consider and tells you immediately whether a pair will need a rotation.
+- **Lookahead**: You can plan which pairs to do in which order during inspection or while solving the cross/first pair.
+- **Last-layer influence**: Choosing inserts that also affect LL edges (sledgehammer `R' F R F'`, hedgeslammer, etc.) becomes more natural once you track EO.
+- Advanced solvers can get average F2L rotations below 1 by combining this with back-slot inserts, wide moves, and keyhole.
+
+### Best Resources
+- **CubeSkills “Advanced F2L – Edge Orientation & Rotations”** (Feliks Zemdegs / CubeSkills) — clearest visual explanation of recognition and multi-pair management.
+- **solved.no EO guide** — concise written overview with strategies and example sequences.
+- **Speedsolving.com “F2L Edge Orientation guide”** (Escher, 2010) — deep technical discussion with examples and the rotation rules above.
+- J Perm and other advanced F2L videos that show rotationless solutions for common cases once you know EO.
+
+**Practice tip**: Do slow solves where you deliberately identify EO of every F2L edge after the cross, then force yourself to solve good edges first. Once the habit is automatic it becomes subconscious and costs almost no mental effort.
+
+This is one of the highest-ROI intermediate-to-advanced F2L improvements because it simultaneously improves efficiency, flow, and lookahead without requiring dozens of new algorithms.

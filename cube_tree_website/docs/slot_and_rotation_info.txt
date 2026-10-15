@@ -1,0 +1,63 @@
+F2L pair choice is one of the highest-leverage skills after basic efficiency and EO tracking. The goal is not “solve the first pair you see,” but to choose the pair (and the way you solve it) that keeps the rest of the solve fluid, visible, and low-rotation.
+1. Strong Preference for Back Slots (Especially Early)
+Prioritize solving back slots first (BL + BR, or one back + one side).
+Why this is so important:
+
+After the two back slots are solved, every remaining F2L piece is visible in the front half of the cube. Lookahead becomes dramatically easier.
+Solving front slots first hides pieces in the back and forces you to hunt or rotate more later.
+Last two pairs are statistically fastest when the front slots are the open ones.
+
+Preferred first-pair combinations (in rough order of preference):
+
+Both back slots (BL + BR) — ideal
+Same side (BL + FL or BR + FR)
+Diagonal (FL + BR or FR + BL) — acceptable
+Avoid both front slots (FL + FR) as your first two pairs whenever possible
+
+Many top solvers (including advice popularized by J Perm and CubeSkills) will deliberately rotate to put a pair into the back rather than the front when a rotation is needed, precisely so the front stays open for lookahead.
+2. Core Pair-Choice Rules of Thumb
+These apply in roughly this priority order:
+
+Free / connected pairs first
+Any already-paired or 3–4 move pair that can be solved immediately without destroying better options.
+Pieces in the U layer are preferred
+Both pieces in U → usually excellent
+One piece in U → generally good
+Both pieces already in slots → often avoid if a better U-layer pair exists (these cases are usually slower and mess up more)
+
+Prefer pairs that leave front slots open
+Solve into the back whenever it is reasonably efficient.
+Consider the effect on the next pair (multislotting / influence)
+Sometimes a slightly longer first pair is better because it sets up the second pair into a 3-move insert or a connected pair. This is true multislotting.
+Avoid creating bad cases for later
+Don’t solve a “easy” pair if it turns a good remaining pair into a terrible one (classic example: solving a 3-mover that turns a 4-mover into an 8–10 move case).
+
+3. Other Important Pair-Choice Principles
+
+Use any empty slot for pairing
+You do not have to pair in the slot the pieces belong to. Pair in whichever empty slot is most convenient, then insert into the correct one (or even insert into the back from the current angle).
+Insert into the back without rotating when possible
+Learn the back-slot versions of common inserts (especially the basic R U' R' style and the various “hide corner / bring edge” setups). This is one of the biggest practical upgrades after EO.
+When a rotation is forced, rotate so the pair goes into the back
+This keeps both front slots open for the rest of the solve.
+Preserve good edges / oriented edges (ties into the previous EO discussion)
+If you have a mix of good and bad edges, solve the good ones first so the single rotation later converts the remaining ones.
+Keyhole and empty-slot awareness
+When a corner is already solved but the edge is not (or vice versa), prefer using an empty slot (keyhole) rather than taking the solved piece out, especially if it helps keep front slots free.
+
+4. Practical Hierarchy for Most Solves
+After cross:
+
+Scan for any free/connected pairs → solve them (preferring back slots).
+Look for pairs with pieces in U → prioritize those that can go into the back.
+Only then take pairs that are both in slots or require awkward setups.
+Throughout: keep asking “Will this leave me with better visibility and fewer rotations for the remaining pairs?”
+
+Best Resources
+
+J Perm – Advanced F2L Tutorial — explicitly covers “insert into the back,” using any empty slot, and reducing rotations by slot choice.
+CubeSkills Advanced F2L series (especially Multislotting and the Edge Orientation & Rotations videos) — excellent on influencing the next pair and slot priority.
+ZZ Method Pair Choice page (zzmethod.com) — even though written for ZZ, the pair-order rules (back slots first, avoid front slots early, prefer U-layer pieces) transfer almost perfectly to CFOP.
+CubeHead / recent videos on “How to Solve F2L in the Back” — good modern intuitive explanations of when and how to target back slots.
+
+Training tip: Do slow, untimed F2L-only solves where your only goal is “solve back slots as early as possible while keeping pieces visible.” Force yourself to reject the first pair you see if it would leave the front slots solved early. Once this becomes automatic, your lookahead and rotation count improve dramatically.
