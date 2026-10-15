@@ -46,8 +46,13 @@ not yet pushed), every fast suite passing; the developer had deleted
    (`LL_PER_MOVE`), checked on every pro's steps with 2-fold CV over cases:
    PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 -> 1.905, OLL
    1.233 -> 1.231; votes up a little. OLL 25's top went from a 15-move RU
-   alg to `r U R U' r' F R' F'`, H and Ua to the M-slice perms. A lower
-   slice penalty did not help anywhere.
+   alg to `r U R U' r' F R' F'`, H to the M-slice perm. A lower slice
+   penalty did not help anywhere. Later, with the bigger pools of item 7:
+   OLL and PLL take 0.5 (`LL_FITTED`): on their own pro (Yiheng) 0.5 beats
+   1 (PLL mean log2 rank 1.910 -> 1.855, first 30.9% -> 43.5%; OLL 0.870
+   -> 0.845) and still keeps H on M2 U M2 U2 M2 U M2 and OLL 25 at 8 moves
+   (the U perms go back to the RU algs he turns); ZBLL stays at 1 (best
+   there: 1.231 / 1.190 / 1.144 for 0 / 0.5 / 1).
 4. **COLL = OLL + corners from any OLL** (developer): 329 cases (OLLCP's
    331 without the two PLL corner cases), one subset per OLL; names: COLL's
    ("AS 3") or SpeedCubeDB's OLLCP numbers ("OLL 12 · 3"). The 225 pro COLL

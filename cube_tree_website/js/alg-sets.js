@@ -30,7 +30,7 @@ const AlgSets = (() => {
   const EDGE_COLORS = EDGE_NAMES.map(n => [...n]);
   const SOLVED_LABELS = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
   // the data files' cache-buster: bump it whenever data/ll/*.json are rebuilt
-  const DATA_VERSION = '20261017a';
+  const DATA_VERSION = '20261017b';
   const dataUrl = setId => `data/ll/${setId}.json?v=${DATA_VERSION}`;
 
   /** Facelets (any colours) -> the same cube in face letters, by its centres. */
@@ -472,7 +472,12 @@ const AlgSets = (() => {
   // PLLs 2.121 -> 2.075 mean log2 rank, the community's votes 62.8 -> 63.8%;
   // he turns the M-slice H and Z perms). Full refits of a set's constants
   // did worse on held-out cases (OLL 0.825 -> 0.847, PLL 2.121 -> 2.459).
-  const LL_FITTED = { pll: { pen: { wideOther: 0.5 } } };
+  // OLL and PLL: half the cost per turn (`move` 0.5; below): on these sets'
+  // own pros it beats 1 (Yiheng's PLLs: mean log2 rank 1.910 -> 1.855, first
+  // 30.9% -> 43.5%; his OLLs 0.870 -> 0.845) and keeps the short picks the
+  // developer asked for (H the M-slice perm, OLL 25 in 8 moves); the U perms
+  // go back to the RU algs he turns.
+  const LL_FITTED = { pll: { pen: { wideOther: 0.5 }, move: 0.5 }, oll: { move: 0.5 } };
   let LL_BASE = null;
   /** The ranking constants of a set ({ mcc, pen, left, natural }). */
   function llParams(setId) {
@@ -505,7 +510,8 @@ const AlgSets = (() => {
   // over cases): PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 ->
   // 1.905, OLL unchanged (1.233 -> 1.231); the votes agree a little more
   // (ZBLL 80.2 -> 80.9%, PLL 68.1 -> 70.2%). 1 is the low end of what each
-  // fold chose (0.5-3); a lower slice penalty did not help anywhere.
+  // fold chose (0.5-3); a lower slice penalty did not help anywhere. OLL and
+  // PLL use 0.5 (LL_FITTED).
   const LL_PER_MOVE = 1;
   const invRot = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
   function rotationFrame(body, setId = null) {
