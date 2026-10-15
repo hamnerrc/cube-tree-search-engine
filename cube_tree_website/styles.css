@@ -365,13 +365,7 @@ a.px-btn { color: inherit; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 /* the profile badge: a portrait in a round frame (UI_inspo.png, top left) */
 .profile-chip { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-family: var(--font-head); font-size: 12px; text-transform: uppercase; }
-.profile-chip canvas {
-    width: 30px; height: 30px; padding: 4px;
-    background: var(--panel);
-    box-shadow: 0 -2px 0 0 var(--line), 0 2px 0 0 var(--line), -2px 0 0 0 var(--line), 2px 0 0 0 var(--line);
-    clip-path: polygon(4px -2px, calc(100% - 4px) -2px, calc(100% + 2px) 4px, calc(100% + 2px) calc(100% - 4px), calc(100% - 4px) calc(100% + 2px), 4px calc(100% + 2px), -2px calc(100% - 4px), -2px 4px);
-    margin: 2px;
-}
+.profile-chip canvas { width: 32px; height: 32px; padding: 3px; border: var(--slot) solid var(--line); background: var(--panel); }
 
 /* ---- labels over their fields (CubeDB) ----------------------------------- */
 .label-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; min-height: 30px; flex-wrap: wrap; }
@@ -448,14 +442,17 @@ a.px-btn { color: inherit; }
 
 /* ---- the tree-searcher: its portrait and its window ---------------------- */
 .searcher { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 0 20px; align-items: start; margin-top: 26px; }
+/* the round portrait frame of UI_inspo.png's badge: a ring of pixel steps */
 .searcher-sprite {
-    position: relative; width: 76px; height: 76px; padding: 8px;
-    background: var(--panel); border: none; cursor: pointer; display: grid; place-items: center;
-    /* the round portrait frame of UI_inspo.png's badge, in steps */
-    box-shadow: 0 -3px 0 0 var(--line), 0 3px 0 0 var(--line), -3px 0 0 0 var(--line), 3px 0 0 0 var(--line);
-    clip-path: polygon(9px -3px, calc(100% - 9px) -3px, calc(100% - 9px) 0, calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px, 100% 9px, calc(100% + 3px) 9px, calc(100% + 3px) calc(100% - 9px), 100% calc(100% - 9px), 100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%, calc(100% - 9px) 100%, calc(100% - 9px) calc(100% + 3px), 9px calc(100% + 3px), 9px 100%, 3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px), 0 calc(100% - 9px), -3px calc(100% - 9px), -3px 9px, 0 9px, 0 3px, 3px 3px, 3px 0, 9px 0);
-    margin: 3px;
+    --ring: polygon(20px 0, calc(100% - 20px) 0, calc(100% - 20px) 6px, calc(100% - 10px) 6px, calc(100% - 10px) 10px, calc(100% - 6px) 10px, calc(100% - 6px) 20px, 100% 20px, 100% calc(100% - 20px), calc(100% - 6px) calc(100% - 20px), calc(100% - 6px) calc(100% - 10px), calc(100% - 10px) calc(100% - 10px), calc(100% - 10px) calc(100% - 6px), calc(100% - 20px) calc(100% - 6px), calc(100% - 20px) 100%, 20px 100%, 20px calc(100% - 6px), 10px calc(100% - 6px), 10px calc(100% - 10px), 6px calc(100% - 10px), 6px calc(100% - 20px), 0 calc(100% - 20px), 0 20px, 6px 20px, 6px 10px, 10px 10px, 10px 6px, 20px 6px);
 }
+.searcher-sprite {
+    position: relative; width: 76px; height: 76px; padding: 12px;
+    background: none; border: none; cursor: pointer; display: grid; place-items: center; isolation: isolate;
+}
+.searcher-sprite::before, .searcher-sprite::after { content: ""; position: absolute; z-index: -1; clip-path: var(--ring); }
+.searcher-sprite::before { inset: 0; background: var(--line); }
+.searcher-sprite::after { inset: var(--key); background: var(--panel); }
 .searcher-sprite canvas { width: 100%; height: 100%; animation: bob 1.6s steps(2) infinite; }
 @keyframes bob { 50% { transform: translateY(-2px); } }
 .searcher.thinking .searcher-sprite canvas { animation: bob 0.5s steps(2) infinite; }
