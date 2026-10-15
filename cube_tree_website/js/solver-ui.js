@@ -1007,6 +1007,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     reading.parsed.forEach((line, li) => {
       const kind = reading.lines[li].kind;
       let pos = line.start;
+      html += '<span class="ln">';
       // a tail that already finishes a step reads as one (it commits at the line end)
       const cls = kind === 'tail' && !tailStep ? 'tok-pending' : 'tok-step';
       for (const t of line.tokens) {
@@ -1018,6 +1019,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         html += esc(text.slice(pos, line.commentStart));
         html += `<span class="tok-comment">${esc(text.slice(line.commentStart, line.end))}</span>`;
       } else html += esc(text.slice(pos, line.end));
+      // an empty line still has a box to measure (the gutter's rows)
+      html += line.start === line.end ? '\u200b</span>' : '</span>';
       if (li < reading.parsed.length - 1) html += '\n';
     });
     const ghost = ghostText();
@@ -1027,6 +1030,83 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (!text) html = `<span class="ghost">${esc(caption('solve.placeholder'))}</span>`;
     shadow.innerHTML = html + '\n';
     sizer.textContent = text + (ghost ? ghost + '     ' : '') + '\n';
+    layoutGutter();
+  }
+
+  /**
+   * The solution's steps as line ranges, the way lichess's move list numbers
+   * moves: [{ first, last, label, from, to }] where from..to are the moves
+   * (playback positions) the step covers. The inspection line goes with the
+   * cross; the unfinished tail is no step.
+   */
+  function stepGroups() {
+    const out = [];
+    if (!reading) return out;
+    const startMove = [];
+    let n = 0;
+    reading.parsed.forEach((line, li) => { startMove[li] = n; n += line.tokens.filter(t => t.valid).length; });
+    startMove.push(n);
+    let first = -1;
+    reading.lines.forEach((info, li) => {
+      // a committed step's lines all read as 'step' with its row: all but the last join the next
+      const next = reading.lines[li + 1];
+      const joins = info.kind === 'step' && info.row !== undefined && next && next.kind === 'step' && next.row === info.row;
+      if (info.kind === 'merged' || joins) { if (first < 0) first = li; return; }
+      if (info.kind === 'step') {
+        const f = first < 0 ? li : first;
+        out.push({ first: f, last: li, label: info.label, from: startMove[f], to: startMove[li + 1] });
+      }
+      first = -1;
+    });
+    return out;
+  }
+
+  // critique glyphs by the playback position of the step they judge ({ key, at: Map(move -> glyph) })
+  let critiqueMarks = null;
+  const GLYPH_NAMES = { '!!': 'brilliant', '!': 'good', '?!': 'inaccuracy', '?': 'mistake' };
+
+  /**
+   * The gutter: each step's number beside its labelled line, the step the
+   * cube is showing lit (lichess's current move), and after a critique its
+   * glyph right after the line (lichess: "Nf6?!").
+   */
+  function layoutGutter() {
+    const gutter = $('editor-gutter');
+    const shadow = $('editor-shadow');
+    if (!gutter || !shadow || !reading) return;
+    const lines = shadow.querySelectorAll('.ln');
+    const box = gutter.getBoundingClientRect();
+    if (!box.height) return;
+    const rectsOf = (li) => { const el = lines[li]; return el ? el.getClientRects() : []; };
+    const session = sessions.get(activeIndex);
+    // the glyphs stay (as lichess keeps its annotations) until the solution changes
+    const marks = critiqueMarks && session && editor && critiqueMarks.key === `${activeIndex}|${session.scoredPath}` && critiqueMarks.text === editor.value ? critiqueMarks.at : null;
+    const pos = player && !previewing ? player.pos : -1;
+    let html = '';
+    let lit = false;
+    stepGroups().forEach((g, i) => {
+      const a = rectsOf(g.first);
+      const b = rectsOf(g.last);
+      if (!a.length || !b.length) return;
+      const top = a[0].top - box.top;
+      const bottom = b[b.length - 1].bottom - box.top;
+      const labelTop = b[0].top - box.top;
+      const on = pos > g.from && pos <= g.to;
+      if (on) { lit = true; html += `<i class="row-lit" style="top:${top}px;height:${bottom - top}px"></i>`; }
+      html += `<b class="step-no${on ? ' on' : ''}" style="top:${labelTop}px">${i + 1}</b>`;
+      const glyph = marks && marks.get(g.from);
+      if (glyph) {
+        const end = b[b.length - 1];
+        const left = Math.min(end.right - box.left + 8, box.width - 34);
+        html += `<b class="glyph" data-glyph="${GLYPH_NAMES[glyph]}" style="top:${end.top - box.top}px;left:${left}px" title="${GLYPH_NAMES[glyph]}">${glyph}</b>`;
+      }
+    });
+    // the typed moves after the last step: their line lit while the cube shows them
+    if (!lit && pos > 0 && reading.tail.tokens.length) {
+      const r = rectsOf(reading.tail.line);
+      if (r.length) html += `<i class="row-lit tail" style="top:${r[0].top - box.top}px;height:${r[r.length - 1].bottom - r[0].top}px"></i>`;
+    }
+    gutter.innerHTML = html;
   }
 
   /** The rest of the top (or chosen) suggestion after what is typed (shown greyed after the caret). */
@@ -1390,6 +1470,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderSearcher();
   }
 
+  /** monkeytype's legend under the test ("tab + enter - restart test"): the keys of the solution bar. */
+  function renderKeyLegend() {
+    const el = $('key-legend');
+    if (!el) return;
+    const keys = k => k.split(' ').map(x => `<kbd>${esc(x)}</kbd>`).join('');
+    el.innerHTML = [['tab', 'keys.tab'], ['↑ ↓', 'keys.arrows'], ['esc', 'keys.esc']]
+      .map(([k, c]) => `<span>${keys(k)} - ${esc(caption(c))}</span>`).join('');
+    // the rows of the gutter move with the text's wrapping
+    let t = 0;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(layoutGutter, 60); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutGutter);
+  }
+
   function bindEditor() {
     editor = $('solution-input');
     if (!editor) return;
@@ -1491,9 +1584,38 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       scrub.value = String(player.pos);
     }
     const label = $('cube-step');
-    if (label && player) label.textContent = player.length ? `${player.pos}/${player.length}` : '';
+    if (label && player) {
+      // Showdown's "Turn 17" box: the step the cube is in, then the move
+      const g = previewing ? null : stepGroups().find(x => player.pos > x.from && player.pos <= x.to);
+      const name = previewing ? caption('stage.preview') : g ? g.label : player.pos ? caption('stage.typing') : caption('stage.scrambled');
+      label.innerHTML = player.length || !previewing ? `<b>${esc(name || '')}</b>${player.length ? ` ${player.pos}/${player.length}` : ''}` : '';
+    }
     const play = $('pb-play');
     if (play && player) play.textContent = player.playing ? '||' : '>>';
+    renderGauge();
+    layoutGutter();
+  }
+
+  /**
+   * lichess's eval gauge, for a solve: one cell per stage (the cross, four
+   * pairs, the oriented and the solved last layer), filled from the bottom
+   * as far as the cube the board shows has got.
+   */
+  function renderGauge() {
+    const gauge = $('gauge');
+    if (!gauge || !player) return;
+    const f = player.stateAt(Math.min(player.pos, player.length));
+    const flags = solvedFlags(f);
+    const faceDone = face => { for (let i = face * 9; i < face * 9 + 9; i++) if (f[i] !== f[face * 9 + 4]) return false; return true; };
+    const pairs = flags.cross ? F2L_SLOTS.filter(sl => flags[sl]).length : 0;
+    const f2l = flags.cross && pairs === 4;
+    const solved = f2l && [0, 1, 2, 3, 4, 5].every(faceDone);
+    const on = {
+      cross: flags.cross, p1: pairs >= 1, p2: pairs >= 2, p3: pairs >= 3, p4: pairs >= 4,
+      oll: f2l && faceDone(0), pll: solved,
+    };
+    for (const cell of gauge.children) cell.classList.toggle('on', !!on[cell.dataset.stage]);
+    gauge.classList.toggle('done', solved);
   }
 
   /** Hovering a pick: the cube glides through its moves (and back when the pointer leaves). */
@@ -1506,8 +1628,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     player.pause();
     const toks = [...solutionTokens(session), ...rowTokens(r, session.isAtRoot)];
     player.setSequence(toks, [], toks.length, scrambledState(session.scramble));
-    const note = $('stage-note');
-    if (note) note.textContent = 'preview';
+    renderPlayback(); // the box on the cube says it is a preview
   }
 
   function endPreview() {
@@ -1669,6 +1790,26 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   // mouseleave, so the cube stayed on the preview and stopped following the
   // solution after tab or a click on a pick (developer, 2026-10-14). The
   // same pick drawn again (the list re-ranked) keeps it.
+  /**
+   * Showdown's move buttons carry their type bottom left, as the dex's type
+   * icons (dex.pokemonshowdown.com): here the kind of step, each kind with a
+   * type's colour -- a cross Normal, an xcross Fighting, a pair Grass, a
+   * multislot Psychic, a pseudo step Ghost, a last-slot alg Water, OLL
+   * Electric, PLL Steel, COLL Fire, ZBLL and 1LLL Dragon.
+   */
+  const LL_TYPES = { oll: 'electric', pll: 'steel', epll: 'steel', coll: 'fire', zbll: 'dragon', '1lll': 'dragon' };
+  function stepKind(label, lastSlot = null) {
+    const l = String(label || '').toLowerCase();
+    if (lastSlot && lastSlot.name) return { text: lastSlot.name, type: 'water' };
+    if (/pseudo/.test(l)) return { text: 'pseudo', type: 'ghost' };
+    if (/^x+cross/.test(l)) return { text: l.split(' ')[0], type: 'fighting' };
+    if (/cross/.test(l)) return { text: 'cross', type: 'normal' };
+    if (/pairs/.test(l)) return { text: 'multi', type: 'psychic' };
+    if (/pair/.test(l)) return { text: 'pair', type: 'grass' };
+    return { text: l.split(' ')[0] || 'step', type: 'normal' };
+  }
+  const typeBadge = kind => `<span class="type-badge" data-type="${kind.type}">${esc(kind.text)}</span>`;
+
   /** Slice turn metric of a move string: every turn but rotations (Showdown's count in the corner of a pick). */
   const turnCount = moves => String(moves).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
 
@@ -1741,7 +1882,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       b.className = 'pick';
       const why = p.reasons.slice(0, CAPTION_CONTEXT.chat === 'chatty' ? 2 : 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
-      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span><span class="cnt">${turnCount(tokens)} stm</span>`;
+      const kind = stepKind(labelFor(session, p.r), p.r.lastSlot);
+      b.dataset.type = kind.type;
+      b.innerHTML = `<span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>${typeBadge(kind)}<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="cnt">${turnCount(tokens)} STM</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
       b.dataset.preview = `${activeIndex}|${session.committedRows.length}|${tokens}`;
       b.addEventListener('mouseenter', () => previewCandidate(p.r, b));
@@ -1830,7 +1973,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      b.innerHTML = `<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span><span class="cnt">${turnCount(p.m.toks.join(' '))} stm</span>`;
+      const kind = { text: p.m.setId, type: LL_TYPES[p.m.setId] || 'normal' };
+      b.dataset.type = kind.type;
+      b.innerHTML = `<span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span>${typeBadge(kind)}<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="cnt">${turnCount(p.m.toks.join(' '))} STM</span>`;
       b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
       row.appendChild(b);
       if (!p.m.main) {
@@ -1971,12 +2116,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     setThinking(false);
     if (!critiqueShown || critiqueShown.key !== myKey) return;
     say.textContent = caption('critique.intro');
+    for (const item of report.items) item.glyph = critiqueGlyph(item);
     creditLastSlot(session, report);
+    const marks = new Map();
     const ol = document.createElement('ol');
     ol.className = 'critique-list';
     for (const item of report.items) {
       const li = document.createElement('li');
-      li.innerHTML = `<div>${esc(item.text)}</div>${item.alt ? `<div class="alt">${esc(item.alt)}</div>` : ''}`;
+      if (item.glyph) marks.set(item.startMove, item.glyph);
+      li.innerHTML = logEntry(item.label, item.glyph, item.text, item.alt, item.altRow ? rowTokens(item.altRow, item.stepIndex === 0).join(' ') : '');
       li.addEventListener('click', () => {
         if (!player) return;
         manualPlayback = true;
@@ -1994,7 +2142,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       for (const item of LastLayer.critique(start, llRead.steps, LastLayer.LOADED, view.llMethod)) {
         const li = document.createElement('li');
         const alt = item.alt ? caption(item.alt.key, item.alt.vars) : '';
-        li.innerHTML = `<div>${esc(caption(item.key, item.vars))}</div>${alt ? `<div class="alt">${esc(alt)}</div>` : ''}`;
+        const glyph = LL_GLYPHS[item.key] || '';
+        if (glyph) marks.set(f2lMoves + item.at, glyph);
+        li.innerHTML = logEntry(item.vars && item.vars.label, glyph, caption(item.key, item.vars), alt, item.alt && item.alt.vars ? item.alt.vars.alg : '');
         li.addEventListener('click', () => {
           if (!player) return;
           manualPlayback = true;
@@ -2009,12 +2159,42 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     total.textContent = report.total;
     ol.appendChild(total);
     picksEl.appendChild(ol);
+    critiqueMarks = { key: myKey, text: editor ? editor.value : '', at: marks };
+    layoutGutter();
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'px-btn';
     close.textContent = 'ok';
     close.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
     actions.appendChild(close);
+  }
+
+  /**
+   * A step's verdict as a chess annotation glyph (lichess's analysis): !! a
+   * step outside what the tree-searcher looks for that nothing it found
+   * beats, ! its best, ?! a slower step or a slower kind of step, ? a slower
+   * step of a kind it never suggests; a fine step (close to the best) none.
+   */
+  function critiqueGlyph(item) {
+    if (item.why && item.why.length) return item.outside ? '?' : '?!';
+    if (item.fine) return '';
+    if (item.altRow) return '?!';
+    return item.outside ? '!!' : '!';
+  }
+  const LL_GLYPHS = { 'critique.ll.best': '!', 'critique.ll.main': '!', 'critique.ll.slower': '?!', 'critique.ll.notMain': '?!' };
+
+  /**
+   * One step of the critique as a turn of Showdown's battle log: a full-width
+   * bar with the step (and its glyph), the verdict, and the alternative in
+   * smaller type with its moves in bold, as the log bolds a move's name.
+   */
+  function logEntry(label, glyph, text, alt, altAlg) {
+    const g = glyph ? ` <b class="glyph" data-glyph="${GLYPH_NAMES[glyph]}" title="${GLYPH_NAMES[glyph]}">${glyph}</b>` : '';
+    // the bar names the step: the verdict need not start with it again
+    if (label && String(text).startsWith(`${label}: `)) text = String(text).slice(label.length + 2).replace(/^./, c => c.toUpperCase());
+    let altHtml = esc(alt || '');
+    if (altAlg && alt && alt.includes(altAlg)) altHtml = altHtml.replace(esc(altAlg), `<b class="moves">${esc(altAlg)}</b>`);
+    return `<h4 class="turn">${esc(label || '')}${g}</h4><div>${esc(text)}</div>${alt ? `<div class="alt">${altHtml}</div>` : ''}`;
   }
 
   /**
@@ -2045,10 +2225,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const first = algs[0];
       let body = mine.join(' ');
       const myScore = at >= 0 ? LastLayer.styledScore(algs[at].alg) : AlgSets.llScore(body, null, setId) + 0;
-      if (at === 0) item.text = caption(first.main ? 'critique.ls.yours' : 'critique.ls.best', { label, set });
-      else if (at > 0 && myScore <= LastLayer.styledScore(first.alg) + 3) item.text = caption('critique.ls.good', { label, set });
+      if (at === 0) { item.text = caption(first.main ? 'critique.ls.yours' : 'critique.ls.best', { label, set }); item.glyph = '!'; }
+      else if (at > 0 && myScore <= LastLayer.styledScore(first.alg) + 3) { item.text = caption('critique.ls.good', { label, set }); item.glyph = ''; }
       else {
         item.text = caption('critique.ls.slower', { label, set });
+        item.glyph = '?!';
         item.alt = caption('critique.ls.alt', { alg: first.toks.join(' ') });
         item.altRow = { coreAlg: first.toks.join(' '), rotation: '' };
         return;
@@ -2267,6 +2448,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     bindViewControls();
     bindSolutionActions();
     bindEditor();
+    renderKeyLegend();
     bindCube();
     bindSearcher();
     bindSettings();

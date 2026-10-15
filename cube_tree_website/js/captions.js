@@ -128,6 +128,14 @@ const CAPTIONS = {
     'Carry on!',
   ],
   'searcher.title': 'Tree-searcher',
+  // the key legend under the solution bar
+  'keys.tab': 'write the suggestion',
+  'keys.arrows': 'other suggestions',
+  'keys.esc': 'back to the first',
+  // the box on the cube: the step it is in
+  'stage.preview': 'Preview',
+  'stage.typing': 'Typing',
+  'stage.scrambled': 'Scrambled',
   'searcher.pick.best': 'My favourite',
   'searcher.pick.style.efficiency': 'Most efficient',
   'searcher.pick.style.tps': 'Smoothest',

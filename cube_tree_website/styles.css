@@ -2,7 +2,8 @@
  *
  * UI_references/ are the guardrails (developer, 2026-10-14): every frame,
  * button and mark below is one the references show, with their measured
- * proportions; nothing else is drawn.
+ * proportions; nothing else is drawn. The references include websites
+ * with the same flow as this one (below).
  *
  *   UI_inspo.png (586 x 341, measured in its own pixels)
  *     window      stroke 4; corner studs 12 x 12 with a 4 x 4 hole, centred
@@ -23,6 +24,19 @@
  *   CubeDB screenshots    labels over their fields, the move counts at the
  *                 right of the label, one row of equal playback keys
  *   cube_inspo_art.png    the cube's flat cast shadow (pixel-cube.js)
+ *
+ * Websites with the same flow (developer, 2026-10-15; README "Look";
+ * screenshots in UI_references/websites/):
+ *   lichess.org/analysis   the move list (index column, current move lit,
+ *                 glyphs !! ! ?! ? in its colours after the move), the eval
+ *                 gauge beside the board (here: the solve's stages)
+ *   Showdown battle        move buttons tinted by type, type bottom left,
+ *                 PP bottom right; the battle log's turn bars (#555 on #333,
+ *                 bleeding to the panel's edges); the "Turn N" box
+ *   Showdown dex           type icons (block, darker rim, outlined white
+ *                 capitals); list rows (rank column, tiny label over a stat)
+ *   Showdown damage calc   joined strips, the chosen key inverted
+ *   monkeytype             the key legend: dim words, small inverted caps
  *
  * Measurements are kept as ratios at this page's scale: one art pixel (--u)
  * is 2 px; the window stroke is 2u (as the reference's stroke is half its
@@ -111,6 +125,15 @@
     --stud: calc(6 * var(--u));
     --hole: calc(2 * var(--u));
     --gap: 16px;
+    --gutter: 38px;                    /* the solution's step numbers */
+    /* lichess's annotation glyphs */
+    --g-brilliant: #168226;
+    --g-good: #22ac38;
+    --g-inaccuracy: #56b4e9;
+    --g-mistake: #e69f00;
+    /* Showdown's type icons (the dex's colours) */
+    --t-normal: #a8a878; --t-fighting: #c03028; --t-grass: #78c850; --t-psychic: #f85888; --t-ghost: #705898;
+    --t-water: #6890f0; --t-electric: #f8d030; --t-steel: #b8b8d0; --t-fire: #f08030; --t-dragon: #7038f8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -388,6 +411,15 @@ a.px-btn { color: inherit; }
 .col { display: grid; gap: 26px; min-width: 0; }
 .cube-col { position: sticky; top: 84px; }
 
+/* lichess's board with its eval gauge down the left */
+.board { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 12px; }
+.gauge { display: flex; flex-direction: column; gap: var(--u); border: var(--slot) solid var(--line); padding: var(--u); }
+.gauge i { flex: 1; background: transparent; transition: background-color 0.2s steps(2); }
+.gauge i.on { background: var(--ink); }
+.gauge.done i.on { background: var(--shine); }
+/* the cross's cell sits on lichess's thicker middle tick */
+.gauge i[data-stage="cross"] { flex: 1.4; }
+.gauge i[data-stage="p4"] { margin-bottom: var(--u); }
 .cube-stage {
     position: relative;
     width: 100%;
@@ -399,7 +431,10 @@ a.px-btn { color: inherit; }
 .cube-stage:active { cursor: grabbing; }
 .cube-stage canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 .cube-stage .stage-note { position: absolute; left: 14px; bottom: 10px; font-size: 18px; color: var(--dim); pointer-events: none; }
-.cube-stage .stage-step { position: absolute; left: 14px; top: 12px; font-family: var(--font-head); font-size: 11px; color: var(--dim); pointer-events: none; }
+/* the "Turn 17" box on Showdown's battlefield: the step the cube is in, then the move */
+.cube-stage .stage-step { position: absolute; left: 10px; top: 10px; font-family: var(--font-head); font-size: 10px; text-transform: uppercase; color: var(--dim); pointer-events: none; background: var(--panel); border: var(--slot) solid var(--line); padding: 4px 8px 3px; }
+.cube-stage .stage-step:empty { display: none; }
+.cube-stage .stage-step b { font-weight: 400; color: var(--ink); font-size: 12px; margin-right: 4px; }
 .zoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 4px; }
 .zoom .px-btn { min-height: 28px; min-width: 28px; font-size: 16px; padding: 4px; }
 
@@ -421,21 +456,39 @@ a.px-btn { color: inherit; }
 .solution-panel { display: grid; }
 .editor { position: relative; width: 100%; min-height: 132px; font-size: 25px; line-height: 31px; background: var(--panel); }
 .editor textarea, .editor .editor-shadow {
-    position: absolute; inset: 0; padding: 14px 18px;
+    position: absolute; inset: 0; padding: 14px 18px 14px calc(14px + var(--gutter));
     white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
     font: inherit; line-height: inherit; tab-size: 4;
 }
 .editor textarea { background: transparent; border: none; resize: none; color: transparent; caret-color: var(--ink); z-index: 2; overflow: hidden; }
 .editor textarea:focus { outline: none; }
 .editor .editor-shadow { color: var(--ink); pointer-events: none; z-index: 1; overflow: hidden; }
-.editor .editor-sizer { visibility: hidden; padding: 14px 18px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 132px; }
+.editor .editor-sizer { visibility: hidden; padding: 14px 18px 14px calc(14px + var(--gutter)); white-space: pre-wrap; overflow-wrap: anywhere; min-height: 132px; }
 .editor .tok-comment { color: var(--accent); }
+/* lichess's move list: the index column, the current move lit, the glyph after the move */
+.editor-gutter { position: absolute; inset: 0; pointer-events: none; }
+.editor-gutter::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--gutter) - 4px); background: color-mix(in srgb, var(--line) 7%, var(--panel)); }
+.editor-gutter .step-no { position: absolute; left: 0; width: calc(var(--gutter) - 4px); height: 31px; display: grid; place-items: center; font-family: var(--font-head); font-weight: 400; font-size: 11px; color: var(--dim); z-index: 1; }
+.editor-gutter .step-no.on { background: var(--sel); color: var(--sel-ink); }
+.editor-gutter .row-lit { position: absolute; left: calc(var(--gutter) - 4px); right: 0; background: color-mix(in srgb, var(--line) 11%, transparent); }
+.editor-gutter .row-lit.tail { background: color-mix(in srgb, var(--line) 6%, transparent); }
+.editor-gutter .glyph { position: absolute; height: 31px; display: grid; align-items: center; z-index: 3; }
+.glyph { font-family: var(--font-head); font-weight: 700; font-size: 16px; letter-spacing: 0.02em; }
+.glyph[data-glyph="brilliant"] { color: var(--g-brilliant); }
+.glyph[data-glyph="good"] { color: var(--g-good); }
+.glyph[data-glyph="inaccuracy"] { color: var(--g-inaccuracy); }
+.glyph[data-glyph="mistake"] { color: var(--g-mistake); }
 .editor .tok-pending { color: var(--dim); }
 .editor .tok-bad { text-decoration: underline wavy var(--bad); }
 .editor .ghost { color: var(--dim); }
 /* the key hint of CubeDB's autocomplete ("Tab") */
 .ghost-key { font-family: var(--font-head); font-size: 10px; text-transform: uppercase; border: var(--slot) solid var(--dim); padding: 1px 4px; margin-left: 8px; vertical-align: 4px; color: var(--dim); }
-.editor-actions { display: flex; gap: 4px 10px; flex-wrap: wrap; justify-content: flex-end; margin-top: 10px; }
+.editor-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; margin-top: 10px; }
+.editor-actions { display: flex; gap: 4px 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+/* monkeytype's legend: dim words, each key a small inverted cap */
+.key-legend { display: flex; flex-wrap: wrap; gap: 2px 16px; color: var(--dim); font-size: 17px; }
+.key-legend kbd { font-family: var(--font-head); font-size: 9px; text-transform: uppercase; background: var(--dim); color: var(--panel); padding: 2px 5px 1px; margin-right: 3px; vertical-align: 2px; }
+@media (hover: none) { .key-legend { display: none; } }
 .status-line { font-size: 18px; color: var(--dim); }
 .status-line:empty { display: none; }
 .status-line[data-state="error"] { color: var(--bad); }
@@ -460,38 +513,80 @@ a.px-btn { color: inherit; }
 .bubble-title:empty { display: none; }
 .bubble .say { margin-bottom: 12px; }
 .picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
-/* a pick: one of Showdown's move buttons -- the moves, the kind bottom left, the count bottom right */
+/* a pick: one of Showdown's move buttons -- the moves centred, tinted by the
+   step's type; the type bottom left, the count bottom right where the PP sits */
 .pick {
+    --type: var(--t-normal);
     display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-areas: "alg alg" "why why" "tag cnt";
-    gap: 4px 10px;
-    text-align: left;
-    padding: 10px 12px 8px;
-    background: var(--panel);
-    border: var(--slot) solid var(--line);
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "alg alg alg" "why why why" "type tag cnt";
+    gap: 4px 8px;
+    text-align: center;
+    padding: 10px 10px 7px;
+    background: color-mix(in srgb, var(--type) 13%, var(--panel));
+    border: var(--slot) solid color-mix(in srgb, var(--type) 65%, var(--line));
     cursor: pointer;
     min-width: 0;
     position: relative;
 }
-.pick .alg { grid-area: alg; font-size: 24px; overflow-wrap: anywhere; }
+.pick .alg { grid-area: alg; font-size: 25px; overflow-wrap: anywhere; }
 .pick .why { grid-area: why; font-size: 18px; color: var(--dim); }
-.pick .tag { grid-area: tag; font-size: 10px; color: var(--accent); align-self: end; }
-.pick .cnt { grid-area: cnt; font-family: var(--font-head); font-size: 10px; color: var(--dim); text-transform: uppercase; align-self: end; }
-.pick:hover, .pick:focus-visible { background: var(--sel); color: var(--sel-ink); }
-.pick:hover .why, .pick:hover .tag, .pick:hover .cnt, .pick:focus-visible .why, .pick:focus-visible .tag, .pick:focus-visible .cnt { color: var(--sel-ink); }
+.pick .type-badge { grid-area: type; align-self: end; }
+.pick .tag { grid-area: tag; font-size: 9px; color: var(--dim); align-self: end; text-align: left; padding-bottom: 1px; }
+.pick .cnt { grid-area: cnt; font-family: var(--font-head); font-size: 10px; color: var(--ink); align-self: end; padding-bottom: 1px; }
+.pick:hover, .pick:focus-visible { background: color-mix(in srgb, var(--type) 30%, var(--panel)); border-color: var(--type); }
+.pick:active { transform: translateY(1px); }
+.pick[data-type="fighting"] { --type: var(--t-fighting); }
+.pick[data-type="grass"] { --type: var(--t-grass); }
+.pick[data-type="psychic"] { --type: var(--t-psychic); }
+.pick[data-type="ghost"] { --type: var(--t-ghost); }
+.pick[data-type="water"] { --type: var(--t-water); }
+.pick[data-type="electric"] { --type: var(--t-electric); }
+.pick[data-type="steel"] { --type: var(--t-steel); }
+.pick[data-type="fire"] { --type: var(--t-fire); }
+.pick[data-type="dragon"] { --type: var(--t-dragon); }
+/* the dex's type icon: a coloured block, a darker rim, white capitals with a dark outline */
+.type-badge {
+    --type: var(--t-normal);
+    display: inline-block; min-width: 46px; padding: 3px 5px 2px;
+    font-family: var(--font-head); font-size: 9px; line-height: 1; text-transform: uppercase; text-align: center; letter-spacing: 0.04em;
+    color: #fff; background: var(--type); border: 1px solid color-mix(in srgb, var(--type) 62%, #000);
+    text-shadow: 1px 0 0 color-mix(in srgb, var(--type) 45%, #000), -1px 0 0 color-mix(in srgb, var(--type) 45%, #000), 0 1px 0 color-mix(in srgb, var(--type) 45%, #000), 0 -1px 0 color-mix(in srgb, var(--type) 45%, #000);
+    white-space: nowrap;
+}
+.type-badge[data-type="fighting"] { --type: var(--t-fighting); }
+.type-badge[data-type="grass"] { --type: var(--t-grass); }
+.type-badge[data-type="psychic"] { --type: var(--t-psychic); }
+.type-badge[data-type="ghost"] { --type: var(--t-ghost); }
+.type-badge[data-type="water"] { --type: var(--t-water); }
+.type-badge[data-type="electric"] { --type: var(--t-electric); }
+.type-badge[data-type="steel"] { --type: var(--t-steel); }
+.type-badge[data-type="fire"] { --type: var(--t-fire); }
+.type-badge[data-type="dragon"] { --type: var(--t-dragon); }
 .pick-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
 .pick-row .pick { flex: 1; }
 .pick-row .star { align-self: center; color: var(--dim); }
 .pick-row .star:hover, .pick-row .star:focus-visible { color: var(--warn); }
 .bubble-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .bubble-actions:empty { display: none; }
-.critique-list { list-style: none; display: grid; gap: 4px; max-height: 52vh; overflow: auto; }
-.critique-list li { cursor: pointer; padding: 6px 8px; border: var(--slot) solid transparent; }
-.critique-list li:hover { border-color: var(--line); }
-.critique-list .alt { color: var(--dim); font-size: 19px; }
-.critique-list .total { cursor: default; border-top: var(--slot) solid var(--line); padding-top: 8px; }
-.critique-list .total:hover { border-color: transparent; border-top-color: var(--line); }
+/* the critique: Showdown's battle log -- a full-width bar per turn (here per
+   step, with its lichess glyph), the lines under it, the alternative smaller
+   with its moves in bold as the log bolds a move */
+.critique-list { list-style: none; display: grid; gap: 0; max-height: 56vh; overflow: auto; margin: 0 -16px; grid-column: 1 / -1; }
+.critique-list li { cursor: pointer; padding: 0 16px 10px; }
+.critique-list li:hover { background: color-mix(in srgb, var(--line) 6%, var(--panel)); }
+.critique-list .turn {
+    font-family: var(--font-head); font-weight: 400; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 0 -16px 6px; padding: 5px 16px 4px;
+    background: color-mix(in srgb, var(--line) 20%, var(--panel));
+    border-top: var(--slot) solid color-mix(in srgb, var(--line) 32%, var(--panel));
+    border-bottom: var(--slot) solid color-mix(in srgb, var(--line) 32%, var(--panel));
+}
+.critique-list .turn .glyph { font-size: 13px; margin-left: 6px; }
+.critique-list .alt { color: var(--dim); font-size: 18px; margin-top: 2px; }
+.critique-list .alt b { font-weight: 400; color: var(--ink); }
+.critique-list .total { cursor: default; padding-top: 10px; border-top: var(--slot) solid color-mix(in srgb, var(--line) 32%, var(--panel)); }
+.critique-list .total:hover { background: none; }
 
 /* ---- dialogs: windows over the page ------------------------------------- */
 dialog { color: var(--ink); }
@@ -520,6 +615,18 @@ dialog::backdrop { background: color-mix(in srgb, var(--bg) 70%, transparent); }
 .field .name { font-size: 22px; }
 .field .desc { font-size: 18px; color: var(--dim); }
 .field .px-select, .field .px-input { justify-self: start; min-width: 220px; max-width: 100%; }
+/* the generation strip of Showdown's damage calculator: joined keys, the chosen one inverted */
+.seg-strip { display: inline-flex; flex-wrap: wrap; justify-self: start; padding: var(--slot) 0 0 var(--slot); }
+.seg-strip button {
+    font-family: var(--font-head); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1;
+    background: var(--panel); color: var(--ink); cursor: pointer;
+    border: var(--slot) solid var(--line); margin: calc(-1 * var(--slot)) 0 0 calc(-1 * var(--slot));
+    padding: 8px 12px 7px; min-height: 32px;
+}
+.seg-strip button:hover { background: color-mix(in srgb, var(--line) 14%, var(--panel)); }
+.seg-strip button[aria-checked="true"] { background: var(--sel); color: var(--sel-ink); position: relative; z-index: 1; }
+.seg-note { font-size: 18px; color: var(--dim); }
+.seg-note:empty { display: none; }
 .ls-head { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .limits-table { width: 100%; border-collapse: collapse; font-size: 18px; }
 .limits-table th { font-family: var(--font-head); font-size: 9px; text-align: left; color: var(--dim); font-weight: 400; padding: 2px; text-transform: uppercase; }
@@ -630,7 +737,7 @@ details summary { cursor: pointer; font-size: 20px; }
 .slots i.on { background: var(--accent); border-color: var(--accent); }
 
 /* subsets: the inventory bar of UI_inspo.png -- studded, slots inside */
-.slot-bar { position: relative; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border: var(--stroke) solid var(--line); }
+.slot-bar { position: relative; display: flex; flex-wrap: wrap; gap: 0; padding: 14px 14px 12px 15px; border: var(--stroke) solid var(--line); }
 .slot-bar::after {
     content: ""; position: absolute; inset: calc(-1 * (var(--stud) + var(--stroke)) / 2); pointer-events: none;
     background:
@@ -646,13 +753,14 @@ details summary { cursor: pointer; font-size: 20px; }
 .slot-bar:empty { display: none; }
 .slot-bar.sub { border-width: var(--slot); }
 .slot-bar.sub::after { display: none; }
-/* a slot: rounded by one step (a line on each side, none on the corners) */
+/* a subset: one key of a joined strip (Showdown's damage calculator), wrapping onto more rows */
 .slot-chip {
-    background: var(--panel); border: none; color: var(--ink); cursor: pointer;
-    padding: 6px 10px; font-size: 11px; min-width: 36px; line-height: 1.2;
-    box-shadow: 0 calc(-1 * var(--slot)) 0 0 var(--line), 0 var(--slot) 0 0 var(--line), calc(-1 * var(--slot)) 0 0 0 var(--line), var(--slot) 0 0 0 var(--line);
-    margin: var(--slot);
+    background: var(--panel); color: var(--ink); cursor: pointer;
+    padding: 7px 10px 6px; font-size: 11px; min-width: 36px; line-height: 1.2;
+    border: var(--slot) solid var(--line);
+    margin: calc(-1 * var(--slot)) 0 0 calc(-1 * var(--slot));
 }
+.slot-chip[aria-pressed="true"] { position: relative; z-index: 1; }
 .slot-chip:hover, .slot-chip:focus-visible { background: color-mix(in srgb, var(--line) 15%, var(--panel)); }
 .slot-chip[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); }
 .slot-chip.pair-chip { display: inline-grid; justify-items: center; padding: 4px 4px 2px; font-size: 10px; }
@@ -663,22 +771,13 @@ details summary { cursor: pointer; font-size: 20px; }
 .subset-note b { font-weight: 400; color: var(--ink); }
 
 .grid-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
-.seg { display: inline-flex; gap: 4px; }
-.chip { position: relative; background: none; border: none; padding: 7px 10px; cursor: pointer; color: var(--dim); font-size: 11px; }
-.chip:hover { color: var(--ink); }
-.chip[aria-pressed="true"] { color: var(--ink); }
-.chip[aria-pressed="true"]::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none; --arm: 7px; --t: var(--key);
-    background:
-        linear-gradient(var(--line), var(--line)) top left / var(--arm) var(--t) no-repeat,
-        linear-gradient(var(--line), var(--line)) top left / var(--t) var(--arm) no-repeat,
-        linear-gradient(var(--line), var(--line)) top right / var(--arm) var(--t) no-repeat,
-        linear-gradient(var(--line), var(--line)) top right / var(--t) var(--arm) no-repeat,
-        linear-gradient(var(--line), var(--line)) bottom left / var(--arm) var(--t) no-repeat,
-        linear-gradient(var(--line), var(--line)) bottom left / var(--t) var(--arm) no-repeat,
-        linear-gradient(var(--line), var(--line)) bottom right / var(--arm) var(--t) no-repeat,
-        linear-gradient(var(--line), var(--line)) bottom right / var(--t) var(--arm) no-repeat;
+.seg { display: inline-flex; padding: var(--slot) 0 0 var(--slot); }
+.chip {
+    position: relative; background: var(--panel); color: var(--ink); cursor: pointer; font-size: 11px;
+    border: var(--slot) solid var(--line); margin: calc(-1 * var(--slot)) 0 0 calc(-1 * var(--slot)); padding: 7px 12px 6px;
 }
+.chip:hover { background: color-mix(in srgb, var(--line) 14%, var(--panel)); }
+.chip[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); z-index: 1; }
 .learn-btn[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); }
 .learn-hint { color: var(--accent); font-size: 19px; }
 
@@ -738,20 +837,29 @@ details summary { cursor: pointer; font-size: 20px; }
 .known-btn[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); }
 .case-sub { color: var(--dim); margin-bottom: 8px; }
 .case-sub:empty { display: none; }
-.alg-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+/* a case's algs: the rows of Showdown's dex list (dex.pokemonshowdown.com) -- a
+   dim rank column, the name, a small line under it, and the stat with its tiny
+   label over the number */
+.alg-list { list-style: none; display: grid; gap: 0; counter-reset: alg; border-top: var(--slot) solid color-mix(in srgb, var(--line) 30%, var(--panel)); }
 .alg-move {
-    position: relative; display: grid; gap: 4px; padding: 10px 12px 8px; cursor: pointer;
-    border: var(--slot) solid var(--dim); background: var(--panel);
+    counter-increment: alg;
+    position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) 46px auto; grid-template-rows: auto auto;
+    align-items: center; gap: 0 10px; padding: 8px 6px 7px 0; cursor: pointer;
+    border-bottom: var(--slot) solid color-mix(in srgb, var(--line) 30%, var(--panel));
 }
-.alg-move .alg { font-size: 24px; overflow-wrap: anywhere; padding-right: 70px; }
-.alg-move .meta { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-head); font-size: 9px; text-transform: uppercase; color: var(--dim); }
-.alg-move .stm { white-space: nowrap; }
-.alg-move .alg-tools { position: absolute; top: 4px; right: 4px; display: flex; gap: 0; }
+.alg-move::before { content: counter(alg); grid-column: 1; grid-row: 1 / 3; text-align: center; font-family: var(--font-head); font-size: 10px; color: var(--dim); }
+.alg-move .alg { grid-column: 2; grid-row: 1; font-size: 24px; overflow-wrap: anywhere; }
+.alg-move .meta { display: contents; }
+.alg-move .src { grid-column: 2; grid-row: 2; font-family: var(--font-head); font-size: 9px; text-transform: uppercase; color: var(--dim); }
+.alg-move .stm { grid-column: 3; grid-row: 1 / 3; display: grid; justify-items: center; font-size: 22px; line-height: 1; white-space: nowrap; }
+.alg-move .stm small { font-family: var(--font-head); font-size: 8px; text-transform: uppercase; color: var(--dim); margin-bottom: 3px; }
+.alg-move .alg-tools { grid-column: 4; grid-row: 1 / 3; display: flex; gap: 0; }
 .alg-move .alg-tools .px-btn { min-height: 26px; padding: 4px 6px; font-size: 11px; color: var(--dim); }
 .alg-move .star[aria-pressed="true"] { color: var(--warn); }
-.alg-move:hover, .alg-move:focus-visible { border-color: var(--line); }
-.alg-move.active { border-color: var(--line); background: color-mix(in srgb, var(--line) 10%, var(--panel)); }
-.alg-move.main { border-color: var(--warn); }
+.alg-move:hover, .alg-move:focus-visible { background: color-mix(in srgb, var(--line) 8%, var(--panel)); }
+.alg-move.active { background: color-mix(in srgb, var(--line) 14%, var(--panel)); }
+.alg-move.active::before { color: var(--ink); }
+.alg-move.main::before { content: "★"; color: var(--warn); font-family: var(--font-body); font-size: 18px; }
 .alg-move.main .src { color: var(--warn); }
 
 @media (max-width: 860px) {
@@ -793,6 +901,8 @@ details summary { cursor: pointer; font-size: 20px; }
     .searcher .bubble { margin-top: 8px; }
     .searcher.collapsed .bubble { display: none; }
     .picks { grid-template-columns: 1fr; }
+    :root { --gutter: 30px; }
+    .board { grid-template-columns: 10px minmax(0, 1fr); gap: 8px; }
     .play-row { gap: 6px; }
     .play-row .px-btn { padding-left: 4px; padding-right: 4px; }
     .drawer { margin: 8px; width: calc(100vw - 16px); height: calc(100% - 16px); }

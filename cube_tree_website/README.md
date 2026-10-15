@@ -77,18 +77,50 @@ proportions (the measurements are in the header of `styles.css`):
   a pixel tick) for buttons and check boxes; **selection marks** (four L
   corners) only around what is chosen or pointed at -- the current page,
   the chosen set and filter, the solution bar (where the typing goes) and
-  the search box; **slots**
-  (rounded by one step) in a studded **inventory bar** for subsets and
-  cases.
+  the search box; a studded **inventory bar** around the subsets (a
+  joined strip, below) and **slots** (rounded by one step) for cases.
 - **The menu** of `1-bit_inspo_UI.png`: capitals, the first letter lit
   ("SOLVE  ALGS  SETTINGS  WHAT'S THIS ?").
 - **Move buttons** of `showdown_UI_inspo.png` for the tree-searcher's picks
-  and a case's algs (the moves; their kind bottom left, the move count
-  bottom right), its tooltip for a case's hover card.
+  (the moves; their kind bottom left, the move count bottom right), its
+  tooltip for a case's hover card.
 - **CubeDB**: labels over their fields, the move counts at the right of
   the label, one row of equal playback keys.
 - **The cube** floats on the page with the flat cast shadow of
   `cube_inspo_art.png`.
+
+**Websites with the same flow** (developer, 2026-10-15: "find niche
+websites in completely different areas ... a website with a very specific
+use-case should have very specific design choices"). A position, candidate
+moves, an annotated line: that is a chess analysis board and a Pokémon
+battle. Their screenshots are in `UI_references/websites/` (local only);
+what is copied:
+
+- **lichess.org/analysis**: the solution is its move list -- a step number
+  per step in an index column, the step the cube shows lit (it follows the
+  playback, as lichess's list follows the board); after a critique each
+  step carries a chess annotation glyph right after its line, in lichess's
+  colours (!! a step it does not search for that nothing beats, ! its best,
+  ?! slower, ? slower and of a kind it never suggests; a fine step none).
+  Lichess's **eval gauge** beside the board is a stage gauge beside the
+  cube: the cross, four pairs, the oriented and the solved last layer,
+  filled as far as the cube shown has got.
+- **Pokémon Showdown**: picks are its move buttons (the moves centred,
+  tinted by type, the type bottom left, the count where the PP sits); the
+  type is the step's kind as one of the dex's **type icons** (cross Normal,
+  xcross Fighting, pair Grass, multislot Psychic, pseudo Ghost, a last-slot
+  alg Water, OLL Electric, PLL Steel, COLL Fire, ZBLL/1LLL Dragon). The
+  critique is its **battle log**: a full-width bar per step, the lines
+  under it, the alternative's moves in bold. The "Turn 17" box on the
+  battlefield is the box on the cube naming the step it is in. A case's
+  algs are rows of the **dex list** (a rank column, the alg, its sources
+  small under it, the move count under a tiny "STM").
+- **Showdown's damage calculator**: settings with a few choices (pixel
+  size, animation, look-ahead, last-layer method) and the algs page's
+  subsets and filter are its joined strips, the chosen key inverted.
+- **monkeytype**: its key legend under the test ("tab - write the
+  suggestion", "↑ ↓ - other suggestions", "esc - back to the first"), the
+  keys small inverted caps; hidden on touch screens.
 
 Text: the chrome in the pixel capitals of the references, sentences in
 sentence case, move notation as typed. Four **themes**, two dark and two

@@ -7,9 +7,9 @@
     <title>cube⑂tree</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=VT323&display=swap">
-    <link rel="stylesheet" href="styles.css?v=20261017f">
-    <script src="js/profile.js?v=20261017f"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap">
+    <link rel="stylesheet" href="styles.css?v=20261018a">
+    <script src="js/profile.js?v=20261018a"></script>
     <script>
         // README "Profiles": nobody signed in (or not onboarded) -> sign-in first.
         (function () {
@@ -41,14 +41,21 @@
     <main class="main">
         <div class="col cube-col">
             <section class="cube-panel" aria-label="cube">
+                <div class="board">
+                <!-- lichess's eval gauge beside its board: here the solve's stages at the playback position -->
+                <div class="gauge" id="gauge" role="img" aria-label="stages solved at this point">
+                    <i data-stage="pll"></i><i data-stage="oll"></i><i data-stage="p4"></i><i data-stage="p3"></i><i data-stage="p2"></i><i data-stage="p1"></i><i data-stage="cross"></i>
+                </div>
                 <div class="cube-stage" id="cube-stage">
                     <canvas id="cube-canvas" aria-label="the cube at the playback position" role="img"></canvas>
+                    <!-- the "Turn 17" box on Showdown's battlefield -->
                     <span class="stage-step" id="cube-step"></span>
                     <span class="stage-note" id="stage-note"></span>
                     <div class="zoom" role="group" aria-label="zoom">
                         <button type="button" class="px-btn icon quiet" id="zoom-in" aria-label="zoom in" title="zoom in">+</button>
                         <button type="button" class="px-btn icon quiet" id="zoom-out" aria-label="zoom out" title="zoom out">−</button>
                     </div>
+                </div>
                 </div>
                 <div class="playback">
                     <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" step="1" aria-label="playback position">
@@ -85,16 +92,22 @@
                     <span class="move-count" id="move-count" title="slice turn metric / execution turn metric (the inspection is not counted)"></span>
                 </div>
                 <div class="editor brackets" id="editor">
+                    <!-- lichess's move list: a step number per line, the step the cube shows lit, the critique's glyphs -->
+                    <div class="editor-gutter" id="editor-gutter" aria-hidden="true"></div>
                     <div class="editor-sizer" id="editor-sizer" aria-hidden="true"></div>
                     <div class="editor-shadow" id="editor-shadow" aria-hidden="true"></div>
                     <textarea id="solution-input" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"
                         aria-label="solution: one step per line" aria-describedby="search-status" aria-autocomplete="inline"></textarea>
                 </div>
+                <div class="editor-foot">
+                <!-- monkeytype's key legend under the test -->
+                <p class="key-legend" id="key-legend" aria-hidden="true"></p>
                 <div class="editor-actions">
                     <button type="button" class="px-btn quiet" id="undo-btn" disabled>Undo</button>
                     <button type="button" class="px-btn quiet" id="copy-btn" title="copy this scramble and its solution" disabled>Copy</button>
                     <button type="button" class="px-btn quiet" id="copy-all-btn" title="copy every scramble with its solution" disabled>Copy all</button>
                     <button type="button" class="px-btn quiet" id="critique-btn">Critique</button>
+                </div>
                 </div>
                 <div class="status-line" id="search-status" role="status" aria-live="polite"></div>
                 <aside class="searcher" id="searcher" aria-label="your tree-searcher">
@@ -122,18 +135,18 @@
                 <legend>Look</legend>
                 <div class="row" id="theme-choices" role="radiogroup" aria-label="theme"></div>
                 <label class="field"><span class="name">Pixel size</span>
-                    <select class="px-select" id="pixel-res" aria-label="pixel size">
+                    <select class="px-select" data-seg id="pixel-res" aria-label="pixel size">
                         <option value="chunky">Chunky</option>
-                        <option value="fine">Fine (easier to read)</option>
-                        <option value="smooth">Smooth (no pixel art)</option>
+                        <option value="fine" data-short="Fine">Fine (easier to read)</option>
+                        <option value="smooth" data-short="Smooth">Smooth (no pixel art)</option>
                     </select>
                 </label>
                 <label class="field"><span class="name">Animation</span>
-                    <select class="px-select" id="anim-speed" aria-label="animation speed">
+                    <select class="px-select" data-seg id="anim-speed" aria-label="animation speed">
                         <option value="0.5">Slow</option>
                         <option value="1">Normal</option>
                         <option value="2">Fast</option>
-                        <option value="0">Off (jump straight there)</option>
+                        <option value="0" data-short="Off">Off (jump straight there)</option>
                     </select>
                 </label>
                 <label class="px-check opt"><input type="checkbox" id="back-faces"><span class="name">Show the hidden faces</span><span class="desc">The back, left and bottom stickers float beside the cube.</span></label>
@@ -148,10 +161,10 @@
                 <label class="px-check opt"><input type="checkbox" id="pair-planning"><span class="name">Pair planning</span><span class="desc">Rank higher the steps that leave the edges oriented and the back slots done early. Off: each step on its own.</span></label>
                 <label class="field"><span class="name">Look-ahead</span>
                     <span class="desc">Rank each step together with the best next steps it leaves.</span>
-                    <select class="px-select" id="lookahead-depth" aria-label="look-ahead">
+                    <select class="px-select" data-seg id="lookahead-depth" aria-label="look-ahead">
                         <option value="1" selected>Off</option>
-                        <option value="2">The next step</option>
-                        <option value="3">The next two steps (slow)</option>
+                        <option value="2" data-short="Next step">The next step</option>
+                        <option value="3" data-short="Next two">The next two steps (slow)</option>
                     </select>
                 </label>
             </fieldset>
@@ -159,11 +172,11 @@
             <fieldset class="group">
                 <legend>Last layer</legend>
                 <label class="field"><span class="name">Method</span>
-                    <select class="px-select" id="ll-method" aria-label="last layer method">
-                        <option value="oll">OLL, then PLL</option>
-                        <option value="coll">COLL (OLL with the corners), then EPLL</option>
-                        <option value="zbll">ZBLL when the edges are oriented, else OLL + PLL</option>
-                        <option value="1lll">1LLL: the whole layer in one alg</option>
+                    <select class="px-select" data-seg id="ll-method" aria-label="last layer method">
+                        <option value="oll" data-short="OLL + PLL">OLL, then PLL</option>
+                        <option value="coll" data-short="COLL">COLL (OLL with the corners), then EPLL</option>
+                        <option value="zbll" data-short="ZBLL">ZBLL when the edges are oriented, else OLL + PLL</option>
+                        <option value="1lll" data-short="1LLL">1LLL: the whole layer in one alg</option>
                     </select>
                 </label>
                 <label class="px-check opt"><input type="checkbox" id="hide-awkward-algs"><span class="name">Hide awkward algs</span><span class="desc">B, S, E or wide u/d/f/b moves, two rotations, or slow for their length; kept where the community's favourite is one.</span></label>
@@ -228,27 +241,28 @@
         </div>
     </dialog>
 
-    <script src="js/captions.js?v=20261017f"></script>
-    <script src="js/skill-levels.js?v=20261017f"></script>
-    <script src="js/searchers.js?v=20261017f"></script>
-    <script src="js/pro-steps.js?v=20261017f"></script>
-    <script src="js/script.js?v=20261017f"></script>
-    <script src="js/facelet-cube.js?v=20261017f"></script>
-    <script src="js/random-state-scramble.js?v=20261017f"></script>
-    <script src="js/facelet-flags.js?v=20261017f"></script>
-    <script src="js/cross-optimization.js?v=20261017f"></script>
-    <script src="js/spelling-search.js?v=20261017f"></script>
-    <script src="crossSolver/solver-helper.js?v=20261017f"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=20261017f"></script>
-    <script src="js/search-scheduler.js?v=20261017f"></script>
-    <script src="js/solver-bridge.js?v=20261017f"></script>
-    <script src="js/alg-sets.js?v=20261017f"></script>
-    <script src="js/last-layer.js?v=20261017f"></script>
-    <script src="js/pixel-cube.js?v=20261017f"></script>
-    <script src="js/solve-editor.js?v=20261017f"></script>
-    <script src="js/suggest.js?v=20261017f"></script>
-    <script src="js/critique.js?v=20261017f"></script>
-    <script src="js/solver-ui.js?v=20261017f"></script>
+    <script src="js/captions.js?v=20261018a"></script>
+    <script src="js/segmented.js?v=20261018a"></script>
+    <script src="js/skill-levels.js?v=20261018a"></script>
+    <script src="js/searchers.js?v=20261018a"></script>
+    <script src="js/pro-steps.js?v=20261018a"></script>
+    <script src="js/script.js?v=20261018a"></script>
+    <script src="js/facelet-cube.js?v=20261018a"></script>
+    <script src="js/random-state-scramble.js?v=20261018a"></script>
+    <script src="js/facelet-flags.js?v=20261018a"></script>
+    <script src="js/cross-optimization.js?v=20261018a"></script>
+    <script src="js/spelling-search.js?v=20261018a"></script>
+    <script src="crossSolver/solver-helper.js?v=20261018a"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=20261018a"></script>
+    <script src="js/search-scheduler.js?v=20261018a"></script>
+    <script src="js/solver-bridge.js?v=20261018a"></script>
+    <script src="js/alg-sets.js?v=20261018a"></script>
+    <script src="js/last-layer.js?v=20261018a"></script>
+    <script src="js/pixel-cube.js?v=20261018a"></script>
+    <script src="js/solve-editor.js?v=20261018a"></script>
+    <script src="js/suggest.js?v=20261018a"></script>
+    <script src="js/critique.js?v=20261018a"></script>
+    <script src="js/solver-ui.js?v=20261018a"></script>
 </body>
 
 </html>

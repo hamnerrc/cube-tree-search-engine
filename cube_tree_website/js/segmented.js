@@ -1,0 +1,74 @@
+/**
+ * segmented.js — a <select data-seg> shown as a strip of joined buttons, the
+ * selected one inverted: the generation and mode strips of Pokémon
+ * Showdown's damage calculator (calc.pokemonshowdown.com), copied for the
+ * settings that change what the site suggests.
+ *
+ * The <select> stays the source of truth (hidden, still read and set by the
+ * page's code): a click sets its value and sends `change`; a value set by
+ * code redraws the strip. An option's `data-short` is its label on the strip;
+ * the full text of the chosen option is shown under it when it says more.
+ */
+'use strict';
+
+(function () {
+  if (typeof document === 'undefined') return;
+  const valueProp = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+
+  function enhance(sel) {
+    if (sel.dataset.segDone) return;
+    sel.dataset.segDone = '1';
+    const strip = document.createElement('div');
+    strip.className = 'seg-strip';
+    strip.setAttribute('role', 'radiogroup');
+    if (sel.getAttribute('aria-label')) strip.setAttribute('aria-label', sel.getAttribute('aria-label'));
+    const note = document.createElement('span');
+    note.className = 'seg-note';
+    const buttons = [...sel.options].map((opt) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.textContent = opt.dataset.short || opt.textContent;
+      b.addEventListener('click', () => {
+        if (sel.value === opt.value) return;
+        valueProp.set.call(sel, opt.value);
+        sync();
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      strip.appendChild(b);
+      return b;
+    });
+    function sync() {
+      const v = valueProp.get.call(sel);
+      [...sel.options].forEach((opt, i) => {
+        const on = opt.value === v;
+        buttons[i].setAttribute('aria-checked', String(on));
+        buttons[i].tabIndex = on ? 0 : -1;
+        if (on) note.textContent = opt.dataset.short && opt.dataset.short !== opt.textContent ? opt.textContent : '';
+      });
+    }
+    // arrow keys move along the strip, as in a radio group
+    strip.addEventListener('keydown', (e) => {
+      if (!/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
+      e.preventDefault();
+      const i = sel.selectedIndex + (/Right|Down/.test(e.key) ? 1 : -1);
+      const b = buttons[(i + buttons.length) % buttons.length];
+      b.click();
+      b.focus();
+    });
+    // a value set by the page's code redraws the strip
+    Object.defineProperty(sel, 'value', {
+      configurable: true,
+      get() { return valueProp.get.call(this); },
+      set(v) { valueProp.set.call(this, v); sync(); },
+    });
+    sel.addEventListener('change', sync);
+    sel.hidden = true;
+    sel.after(strip, note);
+    sync();
+  }
+
+  function run() { document.querySelectorAll('select[data-seg]').forEach(enhance); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();

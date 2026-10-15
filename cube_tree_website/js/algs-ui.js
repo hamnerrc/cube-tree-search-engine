@@ -696,7 +696,7 @@
       li.className = `alg-move${a.alg === main ? ' main' : ''}`;
       li.dataset.alg = a.alg;
       li.tabIndex = 0;
-      li.innerHTML = `<span class="alg">${algHtml(a)}</span><span class="meta"><span class="src">${esc(a.alg === main ? caption('algs.main') : sourcesOf(a))}</span><span class="stm">${stm(a.alg)} stm</span></span>`;
+      li.innerHTML = `<span class="alg">${algHtml(a)}</span><span class="meta"><span class="src">${esc(a.alg === main ? caption('algs.main') : sourcesOf(a))}</span><span class="stm"><small>STM</small>${stm(a.alg)}</span></span>`;
       const tools = document.createElement('span');
       tools.className = 'alg-tools';
       const star = document.createElement('button');

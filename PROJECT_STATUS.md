@@ -1,6 +1,6 @@
 # cube⑂tree — Project Status
 
-*Last updated 2026-10-14 (thirty-ninth pass).*
+*Last updated 2026-10-15 (fortieth pass).*
 
 The working record: what exists, what is verified, what is open. The
 product specification is [cube_tree_website/README.md](cube_tree_website/README.md);
@@ -10,6 +10,54 @@ removed in the twenty-sixth pass; the "§4.x" references in code comments
 point to them: `git show a89ec3d:PROJECT_STATUS.md`.
 
 ## Where we left off
+
+**Fortieth pass (2026-10-15): designs copied from websites with the same
+flow.** The developer asked for niche websites from other fields whose
+unusual design choices fit this one ("no one should be able to claim that
+this website looks vibecoded"), allowed any change (even to the
+tree-searcher) and a push when done. Looked at (headless Chrome
+screenshots, kept in the git-ignored `UI_references/websites/`):
+lichess's analysis board, Pokémon Showdown's battle replay, dex and damage
+calculator, monkeytype, LiveSplit One, Dustloop's frame data, the Factorio
+calculator, OGS. Copied (README "Look", `styles.css` header):
+
+1. **lichess's move list** in the solution bar: a gutter (`#editor-gutter`,
+   `layoutGutter`) with a step number per step (the inspection goes with
+   the cross: `stepGroups`), the step the cube shows lit (it follows the
+   playback and the caret); measured from per-line spans in the shadow
+   (`.ln`, a zero-width space keeps empty lines measurable), redrawn on
+   resize and when the fonts load.
+2. **Annotation glyphs** after a critique: !!, !, ?!, ? (`critiqueGlyph`,
+   `LL_GLYPHS`, last-slot credit sets its own) in lichess's colours, right
+   after the step's line and in the critique; they stay until the text
+   changes (`critiqueMarks`).
+3. **The eval gauge** beside the cube (`#gauge`, `renderGauge`): cross, four
+   pairs, OLL, PLL filled as far as the shown cube has got; the shine
+   colour when solved.
+4. **Showdown's move buttons** for picks: tinted by the step's kind, the kind
+   as a dex **type badge** bottom left (`stepKind`, `LL_TYPES`, `typeBadge`),
+   the role beside it, the STM where the PP sits.
+5. **The battle log** for the critique (`logEntry`): a turn bar per step
+   with its glyph, the verdict (the caption's leading "{label}: " dropped,
+   the bar names it), the alternative smaller with its moves in bold.
+6. **The "Turn 17" box** on the cube: the step the playback is in
+   (captions `stage.*`).
+7. **The damage calculator's joined strips** (`js/segmented.js`, any
+   `select[data-seg]`; the select stays the source of truth, its `value`
+   setter redraws the strip; `data-short` labels, the full option text
+   under the strip) for pixel size, animation, look-ahead and last-layer
+   method; the algs page's subsets and show filter as strips too (CSS).
+8. **The dex list** for a case's algs: a rank column, the alg, its sources
+   small, the STM under a tiny label.
+9. **monkeytype's key legend** under the solution (`renderKeyLegend`,
+   captions `keys.*`), hidden on touch screens.
+
+Silkscreen now loads its bold (glyphs). Checked in headless Chrome (full
+solve by Tab, a padded step critiqued: `?!` on it, `!` on the rest, gutter
+numbers 1-7, gauge full and shining; ink and paper themes; settings strips
+set the select (`ll-method` -> zbll); algs page; a 390 px phone); every
+fast suite passes. Not changed: the tree-searcher (its portrait and
+window stay), the captions (developer's copy) beyond the new keys.
 
 **Thirty-ninth pass (2026-10-14): the developer's list -- de-vibecoding the
 UI from the references, four bugs, COLL on every OLL, ZBLL subsets, 1LLL,
