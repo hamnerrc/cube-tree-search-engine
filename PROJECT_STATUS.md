@@ -108,11 +108,14 @@ not yet pushed), every fast suite passing; the developer had deleted
    finished so far; `rawSolutions` reads a run's per-move-set files):
    OLL 736 algs, PLL 278, COLL 329 cases / 4,209, ZBLL 5,953, 1LLL 3,915 /
    27,836 (every case has algs; 1,048 still without generated ones), ZBLS
-   3,517, OLS 64,950. **Open**: the 1LLL generator (two processes,
-   `llgen-work/run-1lll-{a,b}.log`, RUF done for ~2,300 of 3,422 cases at
-   21:40) and COLL's last move sets keep running; when they finish, `node
-   tools/ll-build.js build coll zbll 1lll` (ZBLL takes its subsets from
-   coll.json) and bump `DATA_VERSION`.
+   3,517, OLS 64,950. Both generator runs then finished: COLL (all 12
+   move sets; 4,214 algs, mean first alg 12.3 STM, a generated alg first in
+   18 of 329) and 1LLL (2 processes, ~6.5 h each on this 2-core machine:
+   RUF 1.9-2 h, RUFr 2.6 h, RUFD 0.6, RUFSf 0.7-0.8, LUF 0.2, RUMr 0.4):
+   3,915 cases, 33,305 algs (3.9 MB, 527 KB gzipped), mean first alg 14.4
+   STM on the 3,422 cases beyond ZBLL and PLL, a generated alg first in 769
+   of them. Rebuild order: `ll-build.js build oll pll coll zbll 1lll` (ZBLL
+   takes its subsets from coll.json, 1LLL its ZBLL/PLL lists from theirs).
 
 **Thirty-eighth pass (2026-10-13): the developer's list -- last slot and
 last layer, the solution bar, the cube, the tree-searcher, the algs page.**
