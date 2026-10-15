@@ -292,9 +292,12 @@
     const groups = [...new Set(d.cases.map(c => c.group).filter(Boolean))];
     if (groups.length < 2) { box.innerHTML = ''; renderSubsetNote(); return; }
     if (view.group && !groups.includes(view.group)) view.group = '';
-    chipRow(box, [['', caption('algs.group.all')], ...groups.map(g => [g, g])], view.group, (v) => { view.group = v; view.sub = ''; saveView(); renderSet(); });
+    // a set too big to show whole (1LLL: 3,915 slots) opens on its first subset
+    const whole = d.cases.length <= MAX_WHOLE;
+    if (!whole && !view.group) view.group = groups[0];
+    chipRow(box, [...(whole ? [['', caption('algs.group.all')]] : []), ...groups.map(g => [g, g])], view.group, (v) => { view.group = v; view.sub = ''; saveView(); renderSet(); });
     // COLL and 1LLL: one subset per OLL, shown by its picture
-    if (OLL_GROUPS.has(view.set)) pictureChips(box, groups, g => d.cases.find(x => x.group === g), 'oll', 1);
+    if (OLL_GROUPS.has(view.set)) pictureChips(box, groups, g => d.cases.find(x => x.group === g), 'oll', whole ? 1 : 0);
     // the second row: the corner permutations of the chosen subset (ZBLL, 1LLL)
     const subs = view.group ? [...new Set(d.cases.filter(c => c.group === view.group).map(c => c.sub).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) : [];
@@ -308,6 +311,7 @@
   }
   // sets whose first subsets are OLLs (drawn as their OLL)
   const OLL_GROUPS = new Set(['coll', '1lll']);
+  const MAX_WHOLE = 1000; // cases a set may show at once
   /** Each chip of a row (after `skip` chips) with the picture of its first case, masked as `mask` sees it. */
   function pictureChips(box, values, caseOf, mask, skip = 0) {
     [...box.children].slice(skip).forEach((chip, k) => {
