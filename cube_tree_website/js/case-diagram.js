@@ -1,10 +1,9 @@
 /**
- * case-diagram.js -- pixel-art pictures of alg-set cases (README "Algorithm
- * sets"): a last-layer case as the classic top view (the U face and the
- * top row of each side), a last-slot case as a small 3D cube (pixel-cube.js)
- * so the slot shows. Stickers a set does not look at are grey
- * (AlgSets.maskedLabels). Colours: yellow on top, green in front, as the
- * cube sits after a white cross.
+ * Pixel-art pictures of alg-set cases: a last-layer case as
+ * the classic top view (the U face and the top row of each side), a last-slot
+ * case as a small 3D cube (pixel-cube.js) so the slot shows. Stickers a set
+ * does not look at are grey (AlgSets.maskedLabels). Colours: yellow on top,
+ * green in front, as the cube sits after a white cross.
  */
 'use strict';
 

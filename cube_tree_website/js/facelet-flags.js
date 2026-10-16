@@ -1,9 +1,9 @@
-// Determines which Cross+F2L pieces are *actually* solved in a facelet
-// string, independent of what any DAG edge or solver call claims. This is
-// the "real cube-state check" PROJECT_STATUS.md §4.3/§4.9 identified as the
-// prerequisite for luck filtering, ported from
-// archived_attempts/try_1/utils/CFOPflags.py to operate on facelet-cube.js's
-// Kociemba-convention facelet strings instead of a bespoke Python one.
+// Determines which Cross+F2L pieces are *actually* solved in a facelet string,
+// independent of what any DAG edge or solver call claims. This is the "real
+// cube-state check" identified as the prerequisite for luck filtering, ported
+// from archived_attempts/try_1/utils/CFOPflags.py to operate on
+// facelet-cube.js's Kociemba-convention facelet strings instead of a bespoke
+// Python one.
 //
 // Method (unchanged from CFOPflags.py): a slot is solved iff every facelet
 // listed for it matches its own face's center color. This is
@@ -46,8 +46,7 @@ function faceOf(position) {
 }
 
 // Each mask's checked positions, paired with the centre they must match,
-// computed once per mask string (this check runs for every candidate of
-// every search; PROJECT_STATUS.md §4.38).
+// computed once per mask string.
 const MASK_CHECKS = new Map();
 function maskChecks(mask) {
     let checks = MASK_CHECKS.get(mask);
@@ -83,9 +82,8 @@ function solvedFlags(facelets) {
 
 // Corner-only / edge-only masks, for pseudo (mismatched) F2L checking: a
 // genuine pseudo-pair result places a corner piece and an edge piece at
-// *independent* home-slots (see PROJECT_STATUS.md's pseudo-dispatch
-// writeup), so "is the pair at slot X solved" (the combined masks above)
-// cannot validate it -- each half needs its own check.
+// *independent* home-slots, so "is the pair at slot X solved" (the combined
+// masks above) cannot validate it -- each half needs its own check.
 //
 // Derived from the combined BL/BR/FL/FR masks above by a geometric fact
 // about the Kociemba facelet convention also already in use via `CENTERS`
@@ -141,11 +139,10 @@ function pseudoSolvedFlags(facelets) {
     return { cornerAt, edgeAt };
 }
 
-// What a solver sees of the unsolved pairs during look-ahead (README "Pair
-// choice"). Kociemba facelet tables (as in random-state-scramble.js):
-// corners URF UFL ULB UBR DFR DLF DBL DRB, edges UR UF UL UB DR DF DL DB FR
-// FL BL BR. A slot's pieces are found by their colours, read off the centres,
-// so any whole-cube rotation is fine.
+// What a solver sees of the unsolved pairs during look-ahead. Kociemba facelet
+// tables (as in random-state-scramble.js): corners URF UFL ULB UBR DFR DLF DBL
+// DRB, edges UR UF UL UB DR DF DL DB FR FL BL BR. A slot's pieces are found by
+// their colours, read off the centres, so any whole-cube rotation is fine.
 const LOOK_CORNERS = [
     [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
     [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51],
@@ -239,9 +236,9 @@ function pairLookFeatures(facelets, out = [0, 0, 0, 0, 0], solved = null) {
 }
 
 /**
- * Pair planning (README "Pair planning"): what a solver plans with, of the
- * unsolved pairs, in the orientation the cube is held in (so, unlike
- * pairLookFeatures, it changes with y rotations), in PLAN_FEATURES order:
+ * Pair planning: what a solver plans with, of the unsolved pairs, in the
+ * orientation the cube is held in (so, unlike pairLookFeatures, it changes with
+ * y rotations), in PLAN_FEATURES order:
  * - edge orientation (EO; docs/general_EO_knowledge.txt) of each unsolved
  *   pair's edge: one of its two colours belongs to the front/back centres.
  *   In the U layer it is good (insertable with R, U and L turns) when its

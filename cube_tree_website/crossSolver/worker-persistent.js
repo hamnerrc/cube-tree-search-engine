@@ -61,9 +61,6 @@ const _solvers = {};   // keyed by "Type:slot1:slot2:..."
 // ---- Intercept postMessage from C++ -------------------------------------
 const originalPostMessage = self.postMessage.bind(self);
 
-// cube-tree modification (§4.40): a solve is running from its 'solve' message
-// until the engine reports how it ended; table requests wait for that (the
-// engine must not be re-entered while a search is paused at a yield).
 let _solveBusy = false;
 const _tableQueue = [];
 function _solveEnded() {
@@ -72,12 +69,8 @@ function _solveEnded() {
   setTimeout(function() { while (!_solveBusy && _tableQueue.length) _handleTables(_tableQueue.shift()); }, 0);
 }
 
-// cube-tree modification: an engine failure (an Emscripten abort, e.g. memory
-// growth failing) after a search has paused at a yield happens inside an
-// Asyncify-resumed promise, outside the message handler's try/catch: the call
-// never reported an end, so the page waited on it forever. Report it as a
-// fatal error instead; the module may be corrupt after an abort, so every
-// later solve is refused and the page replaces the worker.
+// Report it as a fatal error instead; the module may be corrupt after an abort,
+// so every later solve is refused and the page replaces the worker.
 let _broken = false;
 function _fatal(what) {
   _broken = true;
@@ -91,9 +84,6 @@ self.addEventListener('unhandledrejection', function(event) {
   _fatal((r && r.message) || String(r));
 });
 
-// cube-tree modification: solutions are sent in batches ({ type: 'solutions',
-// data: [...] }), not one message each -- a complete search lists hundreds
-// of thousands, and one page event per solution was most of a browser step.
 // The batch is always flushed before any other message, so order is kept.
 let _batch = [];
 const BATCH_SIZE = 4096;
@@ -136,8 +126,6 @@ globalThis.postMessage = function(message) {
 const scriptPath = self.location.href;
 const baseURL = scriptPath.substring(0, scriptPath.lastIndexOf('/') + 1);
 
-// cube-tree modification: forward this worker's own query string (engine
-// version) to solver.js and solver.wasm so cached old binaries are never used.
 const engineQuery = self.location.search || '';
 
 importScripts(baseURL + 'solver.js' + engineQuery);
@@ -253,11 +241,8 @@ self.onmessage = async function(event) {
       return;
     }
 
-    // cube-tree modification (PROJECT_STATUS.md §4.40): prune-table sharing.
-    // tableKeys -> the engine's cached table keys; getTables {keys} -> copies
-    // of those tables; putTables {tables} -> hand in tables built elsewhere
-    // (the engine keeps only new keys of the right size). Replies carry the
-    // request's id; an engine without the API answers with nothing.
+    // Replies carry the request's id; an engine without the API answers with
+    // nothing.
     if (data.type === 'tableKeys' || data.type === 'getTables' || data.type === 'putTables') {
       if (_solveBusy) _tableQueue.push(data); else _handleTables(data);
       return;
@@ -321,14 +306,10 @@ self.onmessage = async function(event) {
         solver = _getSolver(wasmModule, solverType);
     }
 
-    // cube-tree modification: moves allowed to leave every goal piece in
-    // place (see solver.cpp setNoopMoves). Reset on every call so one
-    // search's setting never leaks into the next.
+    // Reset on every call so one search's setting never leaks into the next.
     if (typeof wasmModule.setNoopMoves === 'function') {
       wasmModule.setNoopMoves(data.noopMoves ? _restStr(data.noopMoves) : '');
     }
-    // cube-tree modification: per-call deadline (epoch ms, 0 = none) that the
-    // engine checks itself (solver.cpp setDeadlineCheck, PROJECT_STATUS §4.36).
     wasmModule._deadline = data.deadline || 0;
     if (typeof wasmModule.setDeadlineCheck === 'function') {
       wasmModule.setDeadlineCheck(!!data.deadline);

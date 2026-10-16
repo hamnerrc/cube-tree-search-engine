@@ -1,6 +1,5 @@
 /**
- * spelling-search.js -- every spelling of every face-turn solution, best
- * first (README "Complete search").
+ * Every spelling of every face-turn solution, best first.
  *
  * The engine lists every face-turn solution of a goal up to the move limit
  * (uncapped). A human may write each of them in many ways: a free leading

@@ -1,27 +1,24 @@
 /**
- * NOTE (2026-10-04): results are solved only up to one free trailing D turn;
- * see the header of ../solver-helper-node.js and alignPseudoAlg in
- * solver-bridge.js (PROJECT_STATUS.md §4.14).
+ * NOTE: results are solved only up to one free trailing D turn; see the header
+ * of../solver-helper-node.js and alignPseudoAlg in solver-bridge.js.
  *
  * pseudoCrossSolver Web Helper - Promise-based API for Web Workers, mirroring
  * crossSolver/solver-helper.js's shape (and pseudoCrossSolver/solver-helper-
  * node.js's method signature) so solver-bridge.js can dispatch to either
  * engine uniformly.
  *
- * Wraps worker3.js (the vendored, unmodified or18/RubiksSolverDemo worker --
- * see PROJECT_STATUS.md's provenance notes), which is a much thinner worker
- * than crossSolver/worker-persistent.js: it has no `{type, data}` message
- * envelope, because in a real Worker, pseudo.cpp's EM_JS-bound postMessage
- * call IS the native `self.postMessage` already (unlike Node, which has no
- * such global and needs one shimmed -- see solver-helper-node.js). So this
- * class listens for the SAME raw strings ("Search finished.", a solution
- * line, "depth=N", "Error...") that solver-helper-node.js's `_doSolve`
- * intercepts, not wrapped objects.
+ * Wraps worker3.js, which is a much thinner worker than
+ * crossSolver/worker-persistent.js: it has no `{type, data}` message envelope,
+ * because in a real Worker, pseudo.cpp's EM_JS-bound postMessage call IS the
+ * native `self.postMessage` already (unlike Node, which has no such global and
+ * needs one shimmed -- see solver-helper-node.js). So this class listens for
+ * the SAME raw strings ("Search finished.", a solution line, "depth=N",
+ * "Error...") that solver-helper-node.js's `_doSolve` intercepts, not wrapped
+ * objects.
  *
- * No persistent prune-table reuse (see PROJECT_STATUS.md roadmap item 4 and
- * solver-helper-node.js's header comment): every solvePseudo() call rebuilds
- * its own search tables from scratch inside the worker's single WASM
- * instance. A known, accepted perf gap, not a bug.
+ * No persistent prune-table reuse: every solvePseudo call rebuilds its own
+ * search tables from scratch inside the worker's single WASM instance. A known,
+ * accepted perf gap, not a bug.
  *
  * @example
  * const helper = new PseudoSolverHelper();
@@ -158,7 +155,6 @@ class PseudoSolverHelper {
       moveCount = '',
     } = options;
 
-    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
     if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
     this._solutions = [];
 
@@ -178,8 +174,8 @@ class PseudoSolverHelper {
         max_rot_count: maxRotCount,
         ma2,
         mcString: moveCount,
-        noopMoves: options.noopMoves ? this._restStr(options.noopMoves) : '', // cube-tree modification
-        deadline: options.deadline || 0, // cube-tree modification: epoch ms, see worker3.js
+        noopMoves: options.noopMoves ? this._restStr(options.noopMoves) : '', // local addition
+        deadline: options.deadline || 0, // local addition: epoch ms, see worker3.js
       });
     });
   }

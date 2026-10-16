@@ -1,5 +1,5 @@
 /**
- * critique.js — the tree-searcher goes through a whole solution (README "Critique").
+ * Step-by-step review of a whole solution.
  *
  * The steps are the solution's committed steps (solve-editor.js reads them
  * off the typed text by replaying it). Each one is compared with the
@@ -7,22 +7,19 @@
  * unfiltered, at the same goal (the pieces it solved), the way the tuning
  * tools rank a professional's step in the app's list.
  *
- * What the solver reads has no numbers (developer, 2026-10-11): each step
- * gets why it is slower, in words (longer, a rotation, turns that don't
- * flow, nothing set up for the next pair, outside what I search...), and a
- * *similar* better step: the same pieces solved, and among those the one
- * that starts like the solver's step the longest (the same first move, say),
- * then the fastest. The numbers (rank, TPP gap) stay on the items for the
- * tests and tools.
+ * What the solver reads has no numbers: each step gets why it is slower, in
+ * words (longer, a rotation, turns that don't flow, nothing set up for the next
+ * pair, outside what I search...), and a *similar* better step: the same pieces
+ * solved, and among those the one that starts like the solver's step the
+ * longest (the same first move, say), then the fastest. The numbers (rank, TPP
+ * gap) stay on the items for the tests and tools.
  *
  * Engine-agnostic: the caller passes `search(fork, { multislot }) -> Promise<results>`.
  */
 'use strict';
 
 const isRotationTok = t => /^[xyz]/.test(t);
-// A step this close to the best of its kind is a fine choice, not a slow one
-// (developer, 2026-10-13: pair choices are often a matter of taste; the
-// critique must not sound more sure than the numbers are).
+// A step this close to the best of its kind is a fine choice, not a slow one.
 const FINE_MARGIN = 0.06;
 // Another goal (other pieces) is brought up only when it is clearly faster.
 const OTHER_GOAL_MARGIN = 0.10;

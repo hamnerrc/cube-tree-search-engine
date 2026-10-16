@@ -1,6 +1,6 @@
 /**
- * onboarding.js — index.html: sign-in (the profiles on this device) and the
- * first-visit questions (README "Profiles", "Onboarding").
+ * index.html: sign-in (the profiles on this device) and the
+ * first-visit questions.
  *
  * A signed-in, onboarded profile goes straight to solver.html. ?profiles
  * shows the profile list anyway (the main screen's "switch profile"),
@@ -24,16 +24,11 @@
     return n;
   };
   const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const searcherCanvas = (index, size = 64) => {
-    const c = el('canvas', { width: size, height: size, 'aria-hidden': 'true' });
-    drawSearcher(c, index, cssVar('--ink'), cssVar('--panel'));
-    return c;
-  };
+  const initial = name => el('span', { class: 'initial', 'aria-hidden': 'true', text: (name || '?')[0].toUpperCase() });
 
-  const SCREENS = ['welcome', 'speed', 'inspection', 'style', 'goals', 'lastlayer', 'lastslot', 'chat', 'colours'];
+  const SCREENS = ['welcome', 'speed', 'goals', 'inspection', 'style', 'lastlayer', 'lastslot', 'colours'];
   const params = new URLSearchParams(location.search);
   let draft = null; // { editingId, name, searcher, theme, answers }
-  let screen = 0;
   let showAllGoals = false;
 
   function startDraft(profile) {
@@ -50,29 +45,24 @@
         goals: (a.goals || []).slice(),
         lastLayer: (lastLayerOption(a.lastLayer) || LAST_LAYER_OPTIONS[1]).id,
         lastSlot: Array.isArray(a.lastSlot) ? a.lastSlot.slice() : [],
-        chat: a.chat || 'normal',
         colours: (a.colours && a.colours.length ? a.colours : ['white']).slice(),
       },
     };
-    screen = 0;
     showAllGoals = false;
     renderOnboarding();
   }
 
-  // ---- theme swatches (top bar) -------------------------------------------
-  const SWATCH = { ink: ['#0a0a0b', '#f1f1ee'], violet: ['#2b1a4a', '#f3efff'], paper: ['#faf9f4', '#141414'], mint: ['#e7f4e3', '#22314a'] };
+  // ---- light / dark (top bar) ---------------------------------------------
   function renderSwatches() {
     const box = $('#theme-swatches');
     if (!box) return;
     box.innerHTML = '';
     const current = document.documentElement.dataset.theme;
     for (const t of PROFILE_THEMES) {
-      const [bg, fg] = SWATCH[t];
       box.append(el('button', {
-        type: 'button', class: 'theme-swatch', title: t, 'aria-label': `${t} theme`, 'aria-pressed': String(t === current),
-        style: `background: linear-gradient(135deg, ${bg} 55%, ${fg} 55%)`,
+        type: 'button', class: 'theme-swatch', 'aria-pressed': String(t === current),
         onclick: () => setTheme(t),
-      }));
+      }, t[0].toUpperCase() + t.slice(1)));
     }
   }
   function setTheme(t) {
@@ -103,34 +93,38 @@
             applyProfileLook(cubeProfiles.active());
             if (p.onboarded) location.href = 'solver.html'; else startDraft(cubeProfiles.active());
           },
-        }, searcherCanvas(p.searcher, 32), el('span', { text: p.name }), el('span', { class: 'tag', text: level })),
+        }, initial(p.name), el('span', { text: p.name }), el('span', { class: 'tag', text: level })),
         el('button', {
-          type: 'button', class: 'px-btn icon quiet', title: 'export a code', 'aria-label': `export ${p.name}`,
+          type: 'button', class: 'btn quiet', 'aria-label': `edit ${p.name}`,
+          onclick: () => { cubeProfiles.signIn(p.id); applyProfileLook(cubeProfiles.active()); startDraft(cubeProfiles.active()); },
+        }, 'Edit'),
+        el('button', {
+          type: 'button', class: 'btn quiet', title: 'a code that copies this profile to another device', 'aria-label': `export ${p.name}`,
           onclick: () => showCode(cubeProfiles.exportCode(p.id)),
-        }, '⇪'),
+        }, 'Export'),
         el('button', {
-          type: 'button', class: 'px-btn icon quiet', title: 'delete', 'aria-label': `delete ${p.name}`,
+          type: 'button', class: 'btn quiet', 'aria-label': `delete ${p.name}`,
           onclick: () => { if (confirm(caption('profiles.deleteConfirm', { name: p.name }))) { cubeProfiles.remove(p.id); renderProfiles(); } },
-        }, '×'),
+        }, 'Delete'),
       ));
     }
-    const importBox = el('textarea', { class: 'px-textarea code-box', placeholder: 'paste a profile code', 'aria-label': 'profile code', hidden: true });
+    const importBox = el('textarea', { class: 'textarea code-box', placeholder: 'paste a profile code', 'aria-label': 'profile code', hidden: true });
     const importGo = el('button', {
-      type: 'button', class: 'px-btn', hidden: true,
+      type: 'button', class: 'btn', hidden: true,
       onclick: () => {
         const p = cubeProfiles.importCode(importBox.value);
         if (!p) { renderProfiles(caption('profiles.importFailed')); return; }
         applyProfileLook(p);
         if (p.onboarded) location.href = 'solver.html'; else startDraft(p);
       },
-    }, 'import');
+    }, 'Import');
     const active = cubeProfiles.active();
     body.append(...[
       list,
       message ? el('p', { class: 'sub', text: message }) : null,
       el('div', { class: 'speed-row' },
-        active && active.onboarded ? el('a', { class: 'px-btn primary', href: 'solver.html' }, `solve as ${active.name} >`) : null,
-        el('button', { type: 'button', class: active && active.onboarded ? 'px-btn' : 'px-btn primary', onclick: () => { cubeProfiles.signOut(); startDraft(null); } }, caption('profiles.new')),
+        active && active.onboarded ? el('a', { class: 'btn primary', href: 'solver.html' }, `Solve as ${active.name} ›`) : null,
+        el('button', { type: 'button', class: active && active.onboarded ? 'btn' : 'btn primary', onclick: () => { cubeProfiles.signOut(); startDraft(null); } }, caption('profiles.new')),
         el('button', { type: 'button', class: 'link-btn', onclick: () => { importBox.hidden = false; importGo.hidden = false; importBox.focus(); } }, caption('profiles.import')),
       ),
       importBox,
@@ -142,47 +136,41 @@
   function showCode(code) {
     const body = $('#screen');
     body.innerHTML = '';
-    const box = el('textarea', { class: 'px-textarea code-box', readonly: true, 'aria-label': 'profile code' });
+    const box = el('textarea', { class: 'textarea code-box', readonly: true, 'aria-label': 'profile code' });
     box.value = code;
     body.append(
       el('p', { class: 'sub', text: caption('profiles.exported') }),
       box,
       el('div', { class: 'speed-row' },
-        el('button', { type: 'button', class: 'px-btn', onclick: () => { box.select(); try { navigator.clipboard.writeText(code); } catch (e) { document.execCommand('copy'); } } }, 'copy'),
-        el('button', { type: 'button', class: 'px-btn quiet', onclick: () => renderProfiles() }, 'back'),
+        el('button', { type: 'button', class: 'btn', onclick: () => { box.select(); try { navigator.clipboard.writeText(code); } catch (e) { document.execCommand('copy'); } } }, 'Copy'),
+        el('button', { type: 'button', class: 'btn quiet', onclick: () => renderProfiles() }, 'Back'),
       ),
     );
   }
 
   // ---- the questions ----------------------------------------------------------
   function heading(key) {
-    return [el('h2', { text: caption(`onboard.${key}.title`) }), el('p', { class: 'sub', text: caption(`onboard.${key}.text`) })];
+    const text = `onboard.${key}.text`;
+    return [el('h2', { text: caption(`onboard.${key}.title`) }), CAPTIONS[text] ? el('p', { class: 'sub', text: caption(text) }) : null].filter(Boolean);
   }
 
   function choiceList(name, options, selected, multi, onChange) {
     return el('div', { class: 'choice-list', role: multi ? 'group' : 'radiogroup' }, options.map(o => {
       const input = el('input', { type: multi ? 'checkbox' : 'radio', name, value: o.id, checked: multi ? selected.includes(o.id) : selected === o.id });
       input.addEventListener('change', () => onChange(o.id, input.checked));
-      return el('label', { class: 'choice px-check' }, input, el('span', { text: caption(o.caption) }), o.tag ? el('span', { class: 'tag', text: o.tag }) : null);
+      return el('label', { class: 'choice check' }, input, el('span', { text: caption(o.caption) }), o.tag ? el('span', { class: 'tag', text: o.tag }) : null);
     }));
   }
 
   const SCREEN_RENDER = {
     welcome(body) {
-      const name = el('input', { class: 'px-input', type: 'text', maxlength: 24, placeholder: 'name', 'aria-label': 'name', value: draft.name });
+      const name = el('input', { class: 'input', type: 'text', maxlength: 24, placeholder: 'name', 'aria-label': 'name', value: draft.name });
       name.addEventListener('input', () => { draft.name = name.value; });
-      const grid = el('div', { class: 'searcher-grid', role: 'radiogroup', 'aria-label': 'tree-searcher' });
-      for (let i = 0; i < SEARCHER_COUNT(); i++) {
-        grid.append(el('button', {
-          type: 'button', class: 'searcher-choice', 'aria-pressed': String(draft.searcher === i), 'aria-label': `tree-searcher ${i + 1}`,
-          onclick: () => { draft.searcher = i; renderOnboarding(); },
-        }, searcherCanvas(i, 64)));
-      }
-      body.append(...heading('welcome'), name, grid);
-      setTimeout(() => name.focus(), 0);
+      body.append(...heading('welcome'), name);
+      if (!body.isConnected) setTimeout(() => name.focus(), 0);
     },
     speed(body) {
-      const input = el('input', { class: 'px-input', type: 'number', min: 3, max: 600, step: 0.1, inputmode: 'decimal', 'aria-label': 'average in seconds', value: draft.answers.speed });
+      const input = el('input', { class: 'input', type: 'number', min: 3, max: 600, step: 0.1, inputmode: 'decimal', 'aria-label': 'average in seconds', value: draft.answers.speed });
       const readout = el('span', { class: 'level-readout' });
       const note = el('p', { class: 'level-note' });
       const update = () => {
@@ -191,10 +179,10 @@
         readout.textContent = level ? caption(level.caption) : '';
         note.textContent = level ? caption(`${level.caption}.note`) : '';
       };
-      input.addEventListener('input', update);
+      let t = 0;
+      input.addEventListener('input', () => { update(); clearTimeout(t); t = setTimeout(() => rerender('goals'), 400); });
       update();
       body.append(...heading('speed'), el('div', { class: 'speed-row' }, input, el('span', { text: 's' }), readout), note);
-      setTimeout(() => input.focus(), 0);
     },
     inspection(body) {
       body.append(...heading('inspection'), choiceList('inspection', INSPECTION_OPTIONS, draft.answers.inspection, false, (id) => { draft.answers.inspection = id; }));
@@ -216,7 +204,7 @@
       ];
       if (extra.length) {
         if (showAllGoals) body.append(choiceList('goals-more', extra, draft.answers.goals, true, toggle));
-        else body.append(el('button', { type: 'button', class: 'link-btn', onclick: () => { showAllGoals = true; renderOnboarding(); } }, caption('onboard.goals.showAll')));
+        else body.append(el('button', { type: 'button', class: 'link-btn', onclick: () => { showAllGoals = true; rerender('goals'); } }, caption('onboard.goals.showAll')));
       }
       body.append(el('p', { class: 'sub', text: caption('onboard.goals.settings') }));
     },
@@ -229,11 +217,7 @@
         if (on) set.add(id); else set.delete(id);
         draft.answers.lastSlot = LAST_SLOT_OPTIONS.map(o => o.id).filter(x => set.has(x));
       };
-      body.append(...heading('lastslot'), choiceList('lastslot', LAST_SLOT_OPTIONS, draft.answers.lastSlot, true, toggle),
-        el('p', { class: 'sub', text: caption('onboard.lastslot.none') }));
-    },
-    chat(body) {
-      body.append(...heading('chat'), choiceList('chat', CHAT_OPTIONS, draft.answers.chat, false, (id) => { draft.answers.chat = id; }));
+      body.append(...heading('lastslot'), choiceList('lastslot', LAST_SLOT_OPTIONS, draft.answers.lastSlot, true, toggle));
     },
     colours(body) {
       const row = el('div', { class: 'colour-row', role: 'group', 'aria-label': 'cross colours' });
@@ -246,7 +230,7 @@
             const set = new Set(draft.answers.colours);
             if (on && set.size > 1) set.delete(c); else set.add(c);
             draft.answers.colours = CROSS_COLOURS.filter(x => set.has(x));
-            renderOnboarding();
+            rerender('colours');
           },
         }));
       }
@@ -254,29 +238,33 @@
     },
   };
 
+  function rerender(key) {
+    const sec = document.querySelector(`#screen [data-q="${key}"]`);
+    if (!sec) return;
+    sec.innerHTML = '';
+    SCREEN_RENDER[key](sec);
+  }
+
+  // every question on one page; each answer can be changed later in Options
   function renderOnboarding() {
-    $('#onboard-title').textContent = 'cube⑂tree';
+    $('#onboard-title').textContent = draft.editingId ? 'Profile setup' : 'New profile';
     const body = $('#screen');
     body.innerHTML = '';
-    SCREEN_RENDER[SCREENS[screen]](body);
-    const nav = $('#onboard-nav');
-    nav.hidden = false;
-    const dots = $('#onboard-dots');
-    dots.innerHTML = '';
-    SCREENS.forEach((_, i) => dots.append(el('span', { class: i <= screen ? 'on' : '' })));
-    $('#onboard-back').disabled = screen === 0 && !cubeProfiles.list().length;
-    $('#onboard-next').textContent = screen === SCREENS.length - 1 ? caption('onboard.done') : 'Next >';
+    for (const key of SCREENS) {
+      const sec = el('section', { class: 'q', 'data-q': key });
+      SCREEN_RENDER[key](sec);
+      body.append(sec);
+    }
+    $('#onboard-nav').hidden = false;
+    $('#onboard-back').hidden = !cubeProfiles.list().length;
+    $('#onboard-next').textContent = caption('onboard.done');
   }
 
   function next() {
-    if (!draft) return;
-    if (screen < SCREENS.length - 1) { screen++; renderOnboarding(); return; }
-    finish();
+    if (draft) finish();
   }
   function back() {
-    if (!draft) return;
-    if (screen > 0) { screen--; renderOnboarding(); return; }
-    if (cubeProfiles.list().length) renderProfiles();
+    if (draft && cubeProfiles.list().length) renderProfiles();
   }
 
   /** Saves the profile and its settings (scoped to it), then opens the main screen. */
@@ -318,12 +306,6 @@
     renderSwatches();
     $('#onboard-next').addEventListener('click', next);
     $('#onboard-back').addEventListener('click', back);
-    $('#onboard').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && draft && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        next();
-      }
-    });
     const active = cubeProfiles.active();
     if (params.has('onboard') && active) { startDraft(active); return; }
     if (active && active.onboarded && !params.has('profiles')) { location.replace('solver.html'); return; }

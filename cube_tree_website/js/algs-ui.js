@@ -1,19 +1,16 @@
 /**
- * algs-ui.js -- the alg sets page (algs.html; README "Algorithm sets").
+ * The alg sets page (algs.html).
  *
  * Every case of OLL, PLL, COLL, ZBLL, OLS and ZBLS with its algs, in the
  * order this solver sees them (the ranking plus their style; their main alg
  * first; awkward algs hidden where the case's community favourite is not
- * awkward: last-layer.js orderedAlgs). The look follows UI_references/: the
- * sets as a terminal menu, the set as a framed window with a title tab, the
- * subsets as an inventory row of slots, a case as a slot, a hover card for
- * its alg, the algs of a case as move buttons.
+ * awkward: last-layer.js orderedAlgs).
  *
  * One search box: words find cases by name ("oll 27", "t perm", "sune");
  * moves autocomplete like the solution bar (tab takes the ghost, ↑/↓
  * cycle, enter opens); a typed alg is recognised (the cases it solves).
  *
- * Learning (developer, 2026-10-13): a solver marks the cases they know --
+ * Learning: a solver marks the cases they know --
  * one by one, or in "mark what I know" mode by sweeping over the slots --
  * and picks a main alg per case (★). The menu counts what they know of each
  * set. The solving screen marks a case known by itself when they type its
@@ -34,11 +31,19 @@
   let matches = [];     // move search results [{ setId, i, a, score }]
   let activeMatch = -1;
   let learnMode = false;
-  // familiar names a search also finds
+  // a case's name as written on the page: "OLL 27", "ZBLL T 12"
+  function caseTitle(setName, caseName) {
+    const n = String(caseName), set = String(setName);
+    return n.toLowerCase().startsWith(`${set.toLowerCase()} `) || /^(WV|VLS|SV|HLS) /.test(n) ? n : `${set} ${n}`;
+  }
+  // nicknames, shown under the case and found by search
+  const NICKNAMES = {
+    oll: { 'OLL 21': 'H', 'OLL 22': 'Pi', 'OLL 23': 'Headlights', 'OLL 24': 'Chameleon', 'OLL 25': 'Bowtie', 'OLL 26': 'Antisune', 'OLL 27': 'Sune' },
+  };
   const ALIASES = {
     oll: { 'OLL 21': 'h double headlights', 'OLL 22': 'pi bruno', 'OLL 23': 'headlights u', 'OLL 24': 't chameleon', 'OLL 25': 'l bowtie', 'OLL 26': 'antisune', 'OLL 27': 'sune' },
   };
-  // OLS's subsets (README "Algorithm sets"), then every other pair placement
+  // OLS's subsets, then every other pair placement
   const OLS_TIERS = [['wv', 'wv'], ['sv', 'sv'], ['vls', 'vls'], ['hls', 'hls'], ['all', 'every pair']];
 
   // ---- the solver: profile, preferences, main and known algs -------------------
@@ -139,7 +144,7 @@
     const post = a.post ? ` <span class="auf">(${AlgSets.AUF[a.post]})</span>` : '';
     return `${pre}${body}${post}`;
   }
-  /** Where a community alg is listed (nothing for the rest: developer, 2026-10-13). */
+  /** Where a community alg is listed (generated algs get no source line). */
   const SOURCE_NAMES = {
     scdb: 'speedcubedb', wiki: 'wiki', cubingapp: 'cubingapp', jperm: 'j perm', zblssheet: 'zbls sheet', moishy: 'algsets',
     cuberoot: 'cuberoot', cuberpro: 'cuber.pro', juju: 'juju', taoyu: 'tao yu', holbein: 'holbein', gertner: 'gertner', gftw: 'goodforthewin', lllsheet: '1lll sheet',
@@ -195,7 +200,7 @@
   }
 
   // ---- the set menu --------------------------------------------------------------
-  /** A row of slots, filled as far as `done / total` (UI_inspo.png's inventory bar). */
+  /** A small meter, filled as far as `done / total`. */
   function slotsHtml(done, total, cells = 10) {
     const full = total ? Math.round(cells * done / total) : 0;
     return `<span class="slots" aria-hidden="true">${Array.from({ length: cells }, (_, k) => `<i class="${k < full ? 'on' : ''}"></i>`).join('')}</span>`;
@@ -216,7 +221,7 @@
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', String(s.id === view.set));
       const n = countKnown(s.id);
-      const name = s.name.toLowerCase();
+      const name = s.name;
       b.innerHTML = `<span class="set-name"><span class="set-key">${esc(name[0])}</span><span class="set-rest">${esc(name.slice(1))}</span></span>`
         + `<span class="set-count">${n && n.known ? `${n.known}/${n.total}` : n ? String(n.total) : ''}</span>`;
       b.addEventListener('click', () => {
@@ -238,7 +243,8 @@
       b.type = 'button';
       b.className = 'slot-chip';
       b.setAttribute('aria-pressed', String(current === value));
-      b.textContent = label.toLowerCase();
+      b.textContent = String(label).replace(/ (Shapes|Case)$/, '');
+      b.title = label;
       b.addEventListener('click', () => onPick(value));
       box.appendChild(b);
     }
@@ -283,7 +289,7 @@
           chip.classList.add('pair-chip');
           chip.title = placements[k].toLowerCase();
           chip.prepend(canvas);
-          CaseDiagram.draw(canvas, 'ols', c.state, { line: cssVar('--line'), mask: 'pair' });
+          CaseDiagram.draw(canvas, 'ols', c.state, { line: cssVar('--cube-line'), mask: 'pair' });
         });
       }
       renderSubsetNote();
@@ -322,7 +328,7 @@
       chip.classList.add('pair-chip');
       chip.title = values[k].toLowerCase();
       chip.prepend(canvas);
-      CaseDiagram.draw(canvas, view.set, c.state, { line: cssVar('--line'), mask });
+      CaseDiagram.draw(canvas, view.set, c.state, { line: cssVar('--cube-line'), mask });
     });
   }
   /** One line under the subsets: what the set, or its chosen subset, is (captions `algs.note.<set>[.<subset>]`). */
@@ -349,7 +355,7 @@
     drawQueue.clear();
   }
   function picture(canvas, setId, state) {
-    const job = () => CaseDiagram.draw(canvas, setId, state, { line: cssVar('--line'), body: cssVar('--cube-bg') });
+    const job = () => CaseDiagram.draw(canvas, setId, state, { line: cssVar('--cube-line'), body: cssVar('--field') });
     if (observer) { drawQueue.set(canvas, job); observer.observe(canvas); } else job();
   }
 
@@ -370,11 +376,14 @@
     canvas.setAttribute('aria-hidden', 'true');
     const name = document.createElement('span');
     name.className = 'case-name';
-    name.textContent = opts.withSet ? AlgSets.caseTitle(d.name, c.name) : c.name.toLowerCase();
+    name.textContent = opts.withSet ? caseTitle(d.name, c.name) : c.name;
     const marks = document.createElement('span');
     marks.className = 'marks';
     marks.innerHTML = '<i class="m-known" title="known">✓</i><i class="m-main" title="your main alg">★</i>';
-    b.append(canvas, name, marks);
+    const nick = (NICKNAMES[setId] || {})[c.name];
+    b.append(canvas, name);
+    if (nick) b.append(Object.assign(document.createElement('span'), { className: 'case-nick', textContent: nick }));
+    b.append(marks);
     b.setAttribute('aria-label', `${name.textContent}${known ? ', known' : ''}`);
     b.addEventListener('click', () => { if (!learnMode) openCase(setId, i); });
     b.addEventListener('pointerdown', (e) => {
@@ -411,7 +420,7 @@
     const a = algs[0];
     if (!a) { card.hidden = true; return; }
     const main = mainOf(setId, c) === a.alg;
-    card.innerHTML = `<div class="card-head"><span>${esc(AlgSets.caseTitle(d.name, c.name))}</span>${main ? `<span class="card-tag">${esc(caption('algs.main'))}</span>` : ''}</div>`
+    card.innerHTML = `<div class="card-head"><span>${esc(caseTitle(d.name, c.name))}</span>${main ? `<span class="card-tag">${esc(caption('algs.main'))}</span>` : ''}</div>`
       + `<div class="alg">${algHtml(a)}</div>`
       + `<div class="card-meta"><span>${esc(sourcesOf(a))}</span><span>${stm(a.alg)} stm</span></div>`
       + (algs.length > 1 ? `<div class="card-more">${esc(caption('algs.card.more', { n: algs.length - 1 }))}</div>` : '');
@@ -443,7 +452,7 @@
     resetPictures();
     hideCard();
     grid.innerHTML = '';
-    $('set-name').textContent = AlgSets.SET_BY_ID[view.set].name.toLowerCase();
+    $('set-name').textContent = AlgSets.SET_BY_ID[view.set].name;
     if (!d) {
       gridMessage(grid, 'algs.loading');
       $('set-title').textContent = '';
@@ -522,7 +531,7 @@
       canvas.setAttribute('aria-hidden', 'true');
       const text = document.createElement('span');
       text.className = 'match-text';
-      text.innerHTML = `<span class="case-name">${esc(AlgSets.caseTitle(d.name, c.name))}</span><span class="alg">${algHtml(m.a, typed.done.length)}</span>`;
+      text.innerHTML = `<span class="case-name">${esc(caseTitle(d.name, c.name))}</span><span class="alg">${algHtml(m.a, typed.done.length)}</span>`;
       row.append(canvas, text);
       row.addEventListener('click', () => openCase(m.setId, m.i, m.a.alg));
       list.appendChild(row);
@@ -543,7 +552,7 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'link-btn';
-      b.textContent = AlgSets.caseTitle(d.name, d.cases[s.i].name);
+      b.textContent = caseTitle(d.name, d.cases[s.i].name);
       b.addEventListener('click', () => openCase(s.setId, s.i));
       if (k) note.append(' · ');
       note.append(b);
@@ -650,8 +659,8 @@
   let shown = null; // { setId, i, alg }
   function caseCube() {
     if (cube) return cube;
-    cube = new PixelCube($('case-cube'), { resolution: profilePref('pixelRes', 'chunky'), backFaces: profilePref('backFaces', true) });
-    cube.setTheme({ bg: cssVar('--cube-bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
+    cube = new PixelCube($('case-cube'), { resolution: profilePref('pixelRes', 'smooth'), backFaces: profilePref('backFaces', true) });
+    cube.setTheme({ bg: cssVar('--field') || '#161618', line: cssVar('--cube-line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
     player = new CubePlayer(cube, () => {});
     player.speed = Number(profilePref('animSpeed', 1)) || 1;
     player.animated = Number(profilePref('animSpeed', 1)) > 0;
@@ -663,8 +672,7 @@
   }
 
   // Choosing an alg (again) shows the case at once -- never the alg running
-  // backwards -- and holds it a moment before the alg plays (developer,
-  // 2026-10-14: a second click ran the cube back and straight on again).
+  // backwards -- and holds it a moment before the alg plays.
   const CASE_HOLD_MS = 700;
   let holdTimer = 0;
   function showAlg(a, { play = false } = {}) {
@@ -696,12 +704,12 @@
       li.className = `alg-move${a.alg === main ? ' main' : ''}`;
       li.dataset.alg = a.alg;
       li.tabIndex = 0;
-      li.innerHTML = `<span class="alg">${algHtml(a)}</span><span class="meta"><span class="src">${esc(a.alg === main ? caption('algs.main') : sourcesOf(a))}</span><span class="stm"><small>STM</small>${stm(a.alg)}</span></span>`;
+      li.innerHTML = `<span class="alg">${algHtml(a)}</span><span class="meta"><span class="src">${esc(a.alg === main ? caption('algs.main') : sourcesOf(a))}</span><span class="stm">${stm(a.alg)}</span></span>`;
       const tools = document.createElement('span');
       tools.className = 'alg-tools';
       const star = document.createElement('button');
       star.type = 'button';
-      star.className = 'px-btn quiet star';
+      star.className = 'btn quiet star';
       star.textContent = '★';
       star.title = caption(a.alg === main ? 'algs.main.clear' : 'algs.main.set');
       star.setAttribute('aria-label', star.title);
@@ -715,13 +723,13 @@
       });
       const copy = document.createElement('button');
       copy.type = 'button';
-      copy.className = 'px-btn quiet copy';
-      copy.textContent = 'copy';
+      copy.className = 'btn quiet copy';
+      copy.textContent = 'Copy';
       copy.addEventListener('click', async (e) => {
         e.stopPropagation();
         const text = [AlgSets.AUF[a.pre], a.alg, AlgSets.AUF[a.post]].filter(Boolean).join(' ');
-        try { await navigator.clipboard.writeText(text); copy.textContent = 'copied'; } catch (err) { copy.textContent = 'copy failed'; }
-        setTimeout(() => { copy.textContent = 'copy'; }, 1200);
+        try { await navigator.clipboard.writeText(text); copy.textContent = 'Copied'; } catch (err) { copy.textContent = 'Failed'; }
+        setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
       });
       tools.append(star, copy);
       li.appendChild(tools);
@@ -736,7 +744,8 @@
     const c = d.cases[i];
     shown = { setId, i, alg };
     hideCard();
-    $('case-title').textContent = AlgSets.caseTitle(d.name, c.name);
+    const nick = (NICKNAMES[setId] || {})[c.name];
+    $('case-title').textContent = caseTitle(d.name, c.name) + (nick ? ` · ${nick}` : '');
     $('case-sub').textContent = [c.group || '', c.sub || '', ...(c.tags || []).map(t => t.toUpperCase())].filter((x, k, all) => x && all.indexOf(x) === k).join(' · ');
     renderCaseAlgs();
     const dlg = $('case-dialog');
@@ -822,7 +831,7 @@
     const p = profile();
     if (!chip) return;
     if (!p) { chip.hidden = true; return; }
-    drawSearcher(chip.querySelector('canvas'), p.searcher !== undefined ? p.searcher : p.avatar || 0, cssVar('--ink'), cssVar('--bg'));
+    chip.querySelector('.initial').textContent = (p.name || '?')[0].toUpperCase();
     $('profile-name').textContent = p.name;
   }
 

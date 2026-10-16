@@ -1,8 +1,6 @@
 /**
- * segmented.js — a <select data-seg> shown as a strip of joined buttons, the
- * selected one inverted: the generation and mode strips of Pokémon
- * Showdown's damage calculator (calc.pokemonshowdown.com), copied for the
- * settings that change what the site suggests.
+ * A <select data-seg> shown as a strip of joined buttons, the
+ * selected one pressed in. Used for the settings with two to four values.
  *
  * The <select> stays the source of truth (hidden, still read and set by the
  * page's code): a click sets its value and sends `change`; a value set by

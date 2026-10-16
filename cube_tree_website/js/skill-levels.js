@@ -1,20 +1,15 @@
 /**
- * skill-levels.js — onboarding data (README "Onboarding"): the speed
- * brackets, the learning goals each bracket should be offered, and how the
- * answers set the solver's existing settings.
+ * Onboarding data: the speed brackets, the learning goals
+ * each bracket should be offered, and how the answers set the solver's existing
+ * settings.
  *
- * DRAFT VALUES: the thresholds and which goals belong to which bracket are
- * placeholders for the developer to adjust; everything reads them from here.
  * The wording shown to users lives in captions.js (keys below).
  */
 'use strict';
 
 // Brackets by average solve time in seconds, slowest first: a time t falls in
 // the first bracket with t >= minSeconds. Each has a note (captions.js
-// `<caption>.note`) the onboarding shows with it. Developer's brackets
-// (2026-10-11): 10 s and up: xcrosses and optimal crosses with wide moves;
-// 8-10 intermediate: no multislotting; 6-8 advanced: no xxcross; under 6
-// professional: everything, pseudo f2l included.
+// `<caption>.note`) the onboarding shows with it.
 const SKILL_LEVELS = [
   { id: 'building', minSeconds: 10, caption: 'level.building' },
   { id: 'intermediate', minSeconds: 8, caption: 'level.intermediate' },
@@ -55,8 +50,8 @@ const STYLE_OPTIONS = [
 
 const CROSS_COLOURS = ['white', 'yellow', 'green', 'blue', 'red', 'orange'];
 
-// The last layer the solver uses (developer, 2026-10-13: more questions to
-// tailor the site): the solving screen's method and the sets they know.
+// The last layer the solver uses: the solving screen's method and the sets they
+// know.
 const LAST_LAYER_OPTIONS = [
   { id: 'twolook', caption: 'lastlayer.twolook', method: 'oll', knownSets: [] },
   { id: 'full', caption: 'lastlayer.full', method: 'oll', knownSets: ['oll', 'pll'] },
@@ -73,12 +68,6 @@ const LAST_SLOT_OPTIONS = [
   { id: 'hls', caption: 'lastslot.hls' },
   { id: 'ols', caption: 'lastslot.ols' },
   { id: 'zbls', caption: 'lastslot.zbls' },
-];
-// How much the tree-searcher talks.
-const CHAT_OPTIONS = [
-  { id: 'chatty', caption: 'chat.chatty' },
-  { id: 'normal', caption: 'chat.normal' },
-  { id: 'brief', caption: 'chat.brief' },
 ];
 const lastLayerOption = id => LAST_LAYER_OPTIONS.find(o => o.id === id) || null;
 
@@ -101,7 +90,7 @@ function goalsFor(level) {
   return out;
 }
 
-/** Is goal `id` one the tree-searcher may bring up for this profile (recommended, or chosen)? */
+/** Is goal `id` one the suggestions may bring up for this profile (recommended, or chosen)? */
 function goalAllowed(id, answers) {
   const a = answers || {};
   if ((a.goals || []).includes(id)) return true;
@@ -140,7 +129,7 @@ function settingsFromAnswers(answers) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, CROSS_COLOURS, LAST_LAYER_OPTIONS, LAST_SLOT_OPTIONS, CHAT_OPTIONS, lastLayerOption,
+    SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, CROSS_COLOURS, LAST_LAYER_OPTIONS, LAST_SLOT_OPTIONS, lastLayerOption,
     inspectionOption, levelFor, goalsFor, goalAllowed, settingsFromAnswers,
   };
 }

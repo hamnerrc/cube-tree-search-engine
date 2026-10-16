@@ -1,9 +1,8 @@
 /**
- * suggest.js — the tree-searcher's picks and their reasons (README "Tree-searcher").
+ * Which suggestions to show, and why.
  *
  * The picks come from the step's ranked list; the ranking itself is never
- * changed. Every pick has to be justified by a fact, never by taste
- * (developer, 2026-10-11):
+ * changed. Every pick has to be justified by a fact, never by taste:
  * 1. the fastest (best TPP);
  * 2. only when one is quantifiably different: a TPS solver gets a
  *    **smoother** step -- one of the top three that is more than two moves
@@ -14,14 +13,10 @@
  * 3. the **free pair setup**: the fastest step within SETUP_MARGIN that
  *    leaves more free pairs than there are now (or the look-ahead's best
  *    when look-ahead is on).
- * 4. when only one of those exists, the next fastest of another family
- *    (developer, 2026-10-13: always two to four suggestions).
- * Picks differ in family (not the same
- * moves after an AUF or rotation), and nothing above the solver's level is
- * suggested unless they chose to learn it.
- *
- * Reasons are facts, each with a captions.js key ('reason.<key>'); the
- * wording is the developer's.
+ * 4. When only one of those exists, the next fastest of another family. Picks
+ *    differ in family (not the same moves after an AUF or rotation), and
+ *    nothing above the solver's level is suggested unless they chose to learn
+ *    it.
  */
 'use strict';
 
@@ -47,10 +42,8 @@ const piecesOf = (r, isRoot) => {
 };
 /**
  * How many moves `r` saves against `best` for the pieces `r` solves: best's
- * moves per piece times r's pieces, minus r's moves (developer, 2026-10-13:
- * "more efficient" means fewer moves per piece; a step is not more
- * efficient for solving fewer pieces in fewer moves). The same pieces: the
- * plain difference in moves.
+ * moves per piece times r's pieces, minus r's moves. The same pieces: the plain
+ * difference in moves.
  */
 function movesSaved(r, best, isRoot) {
   const pr = piecesOf(r, isRoot), pb = piecesOf(best, isRoot);
@@ -89,9 +82,9 @@ function leavesFreePair(before, after) {
 }
 
 /**
- * The quantified "smoother" (README "Tree-searcher"): among the top three, more than
- * SMOOTH_EXTRA moves above the move-optimal step for the same goal, and
- * longer than the fastest -- it ranks that high only because its turns flow.
+ * The quantified "smoother": among the top three, more than SMOOTH_EXTRA moves
+ * above the move-optimal step for the same goal, and longer than the fastest --
+ * it ranks that high only because its turns flow.
  */
 function isSmoother(r, rank, best, optimal) {
   const n = stmOf(r.coreAlg);
@@ -134,7 +127,7 @@ function reasonsFor(r, ctx) {
 }
 
 /**
- * The tree-searcher's picks from `results` (ranked, filtered): up to 3 of
+ * The picks from `results` (ranked, filtered): up to 3 of
  * { r, role, reasons }. ctx: { style, answers, isRoot, stepAlgs, viewOf(r) ->
  * cubeView after r, before: cubeView now, lookahead: depth > 1 }.
  */
@@ -180,8 +173,7 @@ function searcherPicks(results, ctx = {}) {
       .find(r => leavesFreePair(ctx.before, ctx.viewOf(r))) || null;
   }
   if (third) picks.push({ r: third, role: 'setup', lookaheadBest });
-  // never fewer than two (developer, 2026-10-13: between two and four
-  // suggestions): the next fastest of another family, nearly as quick
+  // Never fewer than two: the next fastest of another family, nearly as quick
   if (picks.length < 2) {
     const next = list.slice(1, 60).find(r => fresh(r) && !picks.some(p => p.r === r));
     if (next) { picks.push({ r: next, role: 'next' }); families.add(pickFamily(next)); }

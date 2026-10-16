@@ -5,52 +5,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cube⑂tree · algs</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap">
-    <link rel="stylesheet" href="styles.css?v=20261018a">
-    <script src="js/profile.js?v=20261018a"></script>
+    <link rel="stylesheet" href="styles.css?v=48">
+    <script src="js/profile.js?v=48"></script>
 </head>
 
 <body>
-    <header class="topbar">
-        <div class="brand">
-            <h1>cube⑂tree</h1>
-            <!-- the menu of UI_references/1-bit_inspo_UI.png: capitals, the first letter lit -->
-            <nav class="page-nav" aria-label="pages">
-                <a class="menu-item" href="solver.html"><span class="key">S</span>olve</a>
-                <a class="menu-item" href="algs.html" aria-current="page"><span class="key">A</span>lgs</a>
-                <a class="menu-item" id="settings-link" href="solver.html#settings"><span class="key">S</span>ettings</a>
-                <button type="button" class="menu-item" id="info-btn"><span class="key">W</span>hat's this ?</button>
-            </nav>
-        </div>
-        <div class="topbar-actions">
-            <a class="profile-chip" id="profile-chip" href="index.html?profiles" title="switch profile">
-                <canvas width="32" height="32" aria-hidden="true"></canvas><span id="profile-name"></span>
+    <header class="header">
+        <a class="logo" href="solver.html">cube<span class="fork">⑂</span>tree</a>
+        <nav class="tabs" aria-label="pages">
+            <a class="tab" href="solver.html">Solve</a>
+            <a class="tab" href="algs.html" aria-current="page">Algs</a>
+        </nav>
+        <div class="userbar">
+            <button type="button" class="link" id="info-btn">Help</button>
+            <a class="profile-chip" id="profile-chip" href="index.html?profiles" title="Switch profile">
+                <span class="initial" aria-hidden="true"></span><span id="profile-name"></span>
             </a>
         </div>
     </header>
 
     <main class="algs-main">
-        <!-- the sets, as a terminal menu (UI_references/1-bit_inspo_UI.png), each with what you know of it -->
-        <nav class="set-menu window" aria-label="alg sets">
-            <span class="window-tab">Sets</span>
+        <nav class="set-menu" aria-label="alg sets">
             <ul class="set-list" id="set-tabs" role="tablist" aria-label="alg set"></ul>
         </nav>
 
-        <section class="set-window window" aria-labelledby="set-name">
-            <span class="window-tab" id="set-name">oll</span>
-            <div class="algs-search brackets" id="algs-search">
+        <section class="set-window" aria-labelledby="set-name">
+            <div class="set-head">
+                <h2 id="set-name">oll</h2>
+                <div class="algs-search" id="algs-search">
                 <div class="search-shadow" id="search-shadow" aria-hidden="true"></div>
                 <input type="text" id="alg-search" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"
                     aria-label="search cases by name, or type moves" aria-describedby="search-note" aria-autocomplete="inline">
+                </div>
             </div>
             <div class="search-note" id="search-note" role="status" aria-live="polite"></div>
             <div class="set-bar" id="set-bar">
                 <p class="set-title" id="set-title"></p>
                 <div class="progress" id="progress" aria-live="polite"></div>
             </div>
-            <!-- subsets as an inventory row of slots (UI_references/UI_inspo.png) -->
             <div class="slot-bar" id="group-chips" role="group" aria-label="subsets"></div>
             <div class="slot-bar sub" id="group-chips-2" role="group" aria-label="pair placement" hidden></div>
             <p class="subset-note" id="subset-note"></p>
@@ -60,7 +52,7 @@
                     <button type="button" class="chip" data-show="learn" aria-pressed="false">To learn</button>
                     <button type="button" class="chip" data-show="known" aria-pressed="false">Known</button>
                 </div>
-                <button type="button" class="px-btn learn-btn" id="learn-mode" aria-pressed="false">Mark what I know</button>
+                <button type="button" class="btn learn-btn" id="learn-mode" aria-pressed="false">Mark what I know</button>
             </div>
             <p class="learn-hint" id="learn-hint" hidden></p>
             <section class="case-grid" id="case-grid" aria-label="cases"></section>
@@ -68,42 +60,40 @@
         </section>
     </main>
 
-    <!-- the card a case shows on hover (UI_references/showdown_UI_inspo.png tooltips) -->
     <div class="case-card" id="case-card" role="tooltip" hidden></div>
 
-    <dialog class="case-dialog window" id="case-dialog" aria-labelledby="case-title">
-        <span class="window-tab" id="case-title"></span>
-        <button type="button" class="close-box" id="case-close" aria-label="close">X</button>
+    <dialog class="popup case-dialog" id="case-dialog" aria-labelledby="case-title">
+        <div class="popup-head"><h2 id="case-title"></h2><button type="button" class="close-x" id="case-close" aria-label="close">&times;</button></div>
         <div class="case-body">
             <div class="case-view">
                 <div class="cube-stage case-stage" id="case-stage">
                     <canvas id="case-cube" role="img" aria-label="the case on the cube"></canvas>
                 </div>
-                <div class="play-row">
-                    <button type="button" class="px-btn" id="case-reset" aria-label="back to the case" title="the case">|&lt;</button>
-                    <button type="button" class="px-btn" id="case-back" aria-label="one move back" title="back">&lt;</button>
-                    <button type="button" class="px-btn" id="case-play" aria-label="play" title="play">&gt;&gt;</button>
-                    <button type="button" class="px-btn" id="case-fwd" aria-label="one move forward" title="forward">&gt;</button>
+                <div class="playback">
+                    <button type="button" class="btn" id="case-reset" aria-label="back to the case" title="Back to the case">&laquo;</button>
+                    <button type="button" class="btn" id="case-back" aria-label="one move back" title="Back one move">&lsaquo; Back</button>
+                    <button type="button" class="btn play" id="case-play" aria-label="play" title="Play">Play</button>
+                    <button type="button" class="btn" id="case-fwd" aria-label="one move forward" title="Forward one move">Next &rsaquo;</button>
                 </div>
-                <button type="button" class="px-btn known-btn" id="case-known" aria-pressed="false">I know this case</button>
+                <button type="button" class="btn known-btn" id="case-known" aria-pressed="false">I know this case</button>
             </div>
             <div class="case-algs">
                 <p class="case-sub" id="case-sub"></p>
+                <div class="alg-list-head" aria-hidden="true"><span>#</span><span>Alg</span><span>STM</span></div>
                 <ol class="alg-list" id="alg-list"></ol>
             </div>
         </div>
     </dialog>
 
-    <script src="js/captions.js?v=20261018a"></script>
-    <script src="js/pro-steps.js?v=20261018a"></script>
-    <script src="js/script.js?v=20261018a"></script>
-    <script src="js/facelet-cube.js?v=20261018a"></script>
-    <script src="js/searchers.js?v=20261018a"></script>
-    <script src="js/pixel-cube.js?v=20261018a"></script>
-    <script src="js/alg-sets.js?v=20261018a"></script>
-    <script src="js/last-layer.js?v=20261018a"></script>
-    <script src="js/case-diagram.js?v=20261018a"></script>
-    <script src="js/algs-ui.js?v=20261018a"></script>
+    <script src="js/captions.js?v=48"></script>
+    <script src="js/pro-steps.js?v=48"></script>
+    <script src="js/script.js?v=48"></script>
+    <script src="js/facelet-cube.js?v=48"></script>
+    <script src="js/pixel-cube.js?v=48"></script>
+    <script src="js/alg-sets.js?v=48"></script>
+    <script src="js/last-layer.js?v=48"></script>
+    <script src="js/case-diagram.js?v=48"></script>
+    <script src="js/algs-ui.js?v=48"></script>
 </body>
 
 </html>

@@ -1,15 +1,14 @@
 /**
- * solver-bridge.js — the browser-side multi-step DAG traversal loop.
+ * The browser-side multi-step DAG traversal loop.
  *
  * Wires together the pruned DAG (localStorage, from script.js's pruneGraph),
  * the crossSolver persistent worker (CrossSolverHelper), and the existing
  * scoring utilities in script.js (algSpeed, calculateSolvedPieces, altAlgs,
- * isPseudoState) into the interactive loop described in README.md: search
- * the current node -> rank by TPP -> user clicks a result -> commit it and
- * search again from the new node.
+ * isPseudoState) into the interactive loop described: search the current node
+ * -> rank by TPP -> user clicks a result -> commit it and search again from the
+ * new node.
  *
- * Architecture notes (verified empirically — see PROJECT_STATUS.md §4.7 and
- * the "color/rotation" and "later-step preservation" findings):
+ * Architecture notes:
  *
  * - A whole-cube rotation MUST be passed via the solver's dedicated
  *   `rotation` option on every call, never embedded as a literal move in
@@ -24,18 +23,16 @@
  *   goal (use the solver class whose arity equals the TOTAL pairs needed,
  *   not just the newly-targeted ones), or it silently disturbs
  *   already-committed pairs about half the time.
- * - CRITICAL (found 2026-10-04, see dev note in PROJECT_STATUS.md's
- *   quick-orientation block): a later-step search must NEVER paste the
- *   committed path-so-far (`session.scoredPath`) into a fresh `scramble`
- *   string. That text is already expressed in the ROTATED frame the
- *   engine returned it in (previous bullet); pasting it into `scramble`
- *   and passing `rotation` again relabels it a SECOND time, searching a
- *   bogus state. Verified with a real cube simulator: this silently broke
- *   even the already-solved cross by the second committed step, on every
- *   path whose rotation was non-empty (i.e. every color except yellow).
- *   Fix: pass it via the engine's own `postAlg` option instead (applied
- *   directly in the already-rotated frame, no relabeling) — then strip the
- *   known `rotation + ' ' + postAlg` prefix, not just `rotation`, from the
+ * - A later-step search must NEVER paste the committed path-so-far
+ *   (`session.scoredPath`) into a fresh `scramble` string. That text is already
+ *   expressed in the ROTATED frame the engine returned it in (previous bullet);
+ *   pasting it into `scramble` and passing `rotation` again relabels it a
+ *   SECOND time, searching a bogus state. Verified with a real cube simulator:
+ *   this silently broke even the already-solved cross by the second committed
+ *   step, on every path whose rotation was non-empty (i.e. every color except
+ *   yellow). Fix: pass it via the engine's own `postAlg` option instead
+ *   (applied directly in the already-rotated frame, no relabeling) — then strip
+ *   the known `rotation + ' ' + postAlg` prefix, not just `rotation`, from the
  *   returned solution.
  * - A cross-solved (later-step) DAG node's outgoing edges include
  *   duplicates: tree_gen.py explores a mid-solve y/y' setup rotation at
@@ -44,61 +41,51 @@
  *   target with identical solved corners/edges (the only thing dispatch
  *   here cares about). Collapse them by target solved-state before
  *   searching, or every later-step action gets searched/shown 2-3x over.
- * - CRITICAL (found 2026-10-04 while verifying luck filtering against the
- *   real solver — see PROJECT_STATUS.md §4.12): that same mid-solve y/y'
- *   exploration can ALSO produce a later-step target whose solved
- *   corners/edges are NOT a superset of the current node's — a committed
- *   slot's label gets renamed by the relabeling instead of carried forward
- *   under its real name. Dispatch has no mechanism to apply that implied
- *   second rotation (`session.rotation` is fixed once at the root), so
- *   taking such an edge at face value silently asks the solver to protect
- *   the wrong slot — verified directly: 26 of 86 otherwise-normal-looking
- *   "Single pair" candidates disturbed an already-committed pair 100% of
- *   the time, with no error. Any later-step edge whose target drops a
- *   committed label is filtered out before searching (see the `!isRoot`
- *   block below) — it is not a safe transition from the session's actual
- *   frame.
- * - Pseudo (mismatched) edges are dispatched to pseudoCrossSolver when a
- *   pseudo helper is supplied (and skipped otherwise, or for >3 pairs). That
- *   engine only guarantees "solved up to one free trailing D turn", so its
- *   results go through alignPseudoAlg; see PROJECT_STATUS.md §4.14.
- * - Luck filtering (README "Luck filtering") IS implemented here, as of
- *   2026-10-04 — see PROJECT_STATUS.md §4.3/§4.9/§4.12. A solver-probe
- *   approach was attempted first and reverted (§4.9): the "0 onProgress
- *   events = already solved" signal this file's other verified findings
- *   rely on is ambiguous whenever a probe's maxLength is smaller than the
- *   TRUE solution depth, making that approach produce false positives on
- *   real scrambles. The real fix is a real cube-state check:
- *   `checkCandidateAgainstRealCubeState` replays the literal move sequence
- *   [scramble, rotation, priorPath, coreAlg] (the same order this file's
- *   own header comment and PROJECT_STATUS.md §4.10 already established is
- *   the correct physical replay of a committed path) through facelet-cube.js
- *   — a plain-JS facelet simulator cross-verified bit-for-bit against the
- *   `magiccube` Python package, see test/facelet-cube.test.js — and checks
- *   the resulting real cube state with facelet-flags.js (a JS port of
+ * - That same mid-solve y/y' exploration can ALSO produce a later-step target
+ *   whose solved corners/edges are NOT a superset of the current node's — a
+ *   committed slot's label gets renamed by the relabeling instead of carried
+ *   forward under its real name. Dispatch has no mechanism to apply that
+ *   implied second rotation (`session.rotation` is fixed once at the root), so
+ *   taking such an edge at face value silently asks the solver to protect the
+ *   wrong slot — verified directly: 26 of 86 otherwise-normal-looking "Single
+ *   pair" candidates disturbed an already-committed pair 100% of the time, with
+ *   no error. Any later-step edge whose target drops a committed label is
+ *   filtered out before searching (see the `!isRoot` block below) — it is not a
+ *   safe transition from the session's actual frame.
+ * - Pseudo (mismatched) edges are dispatched to pseudoCrossSolver when a pseudo
+ *   helper is supplied (and skipped otherwise, or for >3 pairs). That engine
+ *   only guarantees "solved up to one free trailing D turn", so its results go
+ *   through alignPseudoAlg.
+ * - Luck filtering IS implemented here. A solver-probe approach was attempted
+ *   first and reverted: the "0 onProgress events = already solved" signal this
+ *   file's other verified findings rely on is ambiguous whenever a probe's
+ *   maxLength is smaller than the TRUE solution depth, making that approach
+ *   produce false positives on real scrambles. The real fix is a real
+ *   cube-state check: `checkCandidateAgainstRealCubeState` replays the literal
+ *   move sequence [scramble, rotation, priorPath, coreAlg] through
+ *   facelet-cube.js — a plain-JS facelet simulator cross-verified bit-for-bit
+ *   against the `magiccube` Python package, see test/facelet-cube.test.js — and
+ *   checks the resulting real cube state with facelet-flags.js (a JS port of
  *   archived_attempts/try_1/utils/CFOPflags.py's facelet-mask slot check)
- *   against exactly what the candidate's DAG edge claims to solve. A
- *   candidate that solves anything beyond its claim (lucky) is discarded,
- *   per spec, in favor of it showing up under the matching higher-arity
- *   edge instead; a candidate that fails to solve what it claims (which
- *   would be a solver/DAG bug, not luck) is also discarded, with a console
- *   warning, since no result that doesn't actually solve what it claims
- *   should ever be shown. facelet-cube.js and facelet-flags.js must be
- *   loaded as bare globals (plain <script> tags, before this file, same as
- *   script.js's algSpeed/isPseudoState/altAlgs) in the browser; Node tests
- *   require() them and assign onto `global`, same pattern as script.js.
- * - Cross optimisation (README "Wide moves and Cross optimisation") IS
- *   implemented, as of 2026-10-04 — see PROJECT_STATUS.md §4.5/§4.13 and
- *   cross-optimization.js's own header comment for the derivation. Gated
- *   by `session.crossOptEnabled` (set from the `cross_opt` advanced-option
- *   checkbox), it only applies to root, Cross-only (`pairCount === 0`)
- *   candidates, generating its own additional candidates alongside (not
- *   instead of) the normal ones. Its results contain wide moves and end with
- *   the cube rotated; the candidate's `rotation` stays the inspection
- *   rotation and every later engine call uses SolveSession.engineFrame,
- *   which converts the committed text into {net rotation, face turns}
- *   (§4.19 -- composing the residual into `rotation` as well used to apply
- *   it twice, and the old "d" notation was physically wrong).
+ *   against exactly what the candidate's DAG edge claims to solve. A candidate
+ *   that solves anything beyond its claim (lucky) is discarded, per spec, in
+ *   favor of it showing up under the matching higher-arity edge instead; a
+ *   candidate that fails to solve what it claims (which would be a solver/DAG
+ *   bug, not luck) is also discarded, with a console warning, since no result
+ *   that doesn't actually solve what it claims should ever be shown.
+ *   facelet-cube.js and facelet-flags.js must be loaded as bare globals (plain
+ *   <script> tags, before this file, same as script.js's
+ *   algSpeed/isPseudoState/altAlgs) in the browser; Node tests require them and
+ *   assign onto `global`, same pattern as script.js.
+ * - Cross optimisation IS implemented and cross-optimization.js's own header
+ *   comment for the derivation. Gated by `session.crossOptEnabled` (set from
+ *   the `cross_opt` advanced-option checkbox), it only applies to root,
+ *   Cross-only (`pairCount === 0`) candidates, generating its own additional
+ *   candidates alongside (not instead of) the normal ones. Its results contain
+ *   wide moves and end with the cube rotated; the candidate's `rotation` stays
+ *   the inspection rotation and every later engine call uses
+ *   SolveSession.engineFrame, which converts the committed text into {net
+ *   rotation, face turns}.
  */
 'use strict';
 
@@ -108,10 +95,10 @@ const SLOT_INDICES = { BL: 0, BR: 1, FR: 2, FL: 3 };
 const SPELLING = typeof SpellingSearch !== 'undefined' ? SpellingSearch
   : (typeof require === 'function' ? require('./spelling-search.js').SpellingSearch : null);
 
-// Which rotation brings each color to the bottom (D) face, given the
-// README's stated convention (White=U, Green=F -> Yellow=D, Blue=B, Red=R,
-// Orange=L by the standard color wheel). Verified empirically against
-// solver.wasm — see crossSolver/test/color-orientation.test.js.
+// Which rotation brings each color to the bottom (D) face, given the convention
+// (White=U, Green=F -> Yellow=D, Blue=B, Red=R, Orange=L by the standard color
+// wheel). Verified empirically against solver.wasm — see
+// crossSolver/test/color-orientation.test.js.
 const COLOR_ROTATIONS = {
   white: 'z2',
   yellow: '',
@@ -123,15 +110,13 @@ const COLOR_ROTATIONS = {
 
 const MOVE_RESTRICT = 'U_U2_U-_D_D2_D-_L_L2_L-_R_R2_R-_F_F2_F-_B_B2_B-';
 
-// "pro move set" advanced option (pro_references.txt, PROJECT_STATUS.md
-// §4.20): wide r/l and ONE mid-step y/y'/x/x' (never y2, README) on top of
+// "pro move set" advanced option: wide r/l and ONE mid-step y/y'/x/x' on top of
 // the face turns, for matched searches. The engine then needs every final
 // centre orientation that keeps the cross colour on D.
 const PRO_MOVE_RESTRICT = `${MOVE_RESTRICT}_r_r2_r-_l_l2_l-_y_y-_x_x-`;
 const ENGINE_CENTER_OFFSETS = ['', 'y', 'y2', "y'", 'z2', 'z2 y', 'z2 y2', "z2 y'", "z'", "z' y", "z' y2", "z' y'",
   'z', 'z y', 'z y2', "z y'", "x'", "x' y", "x' y2", "x' y'", 'x', 'x y', 'x y2', "x y'"];
-// A first step never rotates inside its alg (README "Complete search": its
-// only rotation is the free inspection), so root calls get no y/x.
+// A first step never rotates inside its alg, so root calls get no y/x.
 const PRO_MOVE_RESTRICT_ROOT = PRO_MOVE_RESTRICT.split('_').filter(m => !/^[xyz]/.test(m)).join('_');
 function proEngineOptions(rotation, isRoot = false) {
   const down = applyAlgorithm(SOLVED_FACELETS, rotation || '')[31];
@@ -143,7 +128,7 @@ function proEngineOptions(rotation, isRoot = false) {
 /** A cross-solved node whose solved corners/edges are exactly these labels. */
 function nodeByLabels(session, corners, edges) {
   const key = JSON.stringify([corners.slice().sort(), edges.slice().sort()]);
-  // First matching cross-solved node, indexed once per tree (§4.36).
+  // First matching cross-solved node, indexed once per tree.
   let index = nodeByLabelsIndex.get(session.tree);
   if (!index) {
     index = new Map();
@@ -158,36 +143,35 @@ function nodeByLabels(session, corners, edges) {
 }
 const nodeByLabelsIndex = typeof WeakMap !== 'undefined' ? new WeakMap() : new Map();
 
-// U-layer turns may leave every goal piece in place (positioning other
-// pieces, e.g. the U in "R' U R'" instead of "R2"); upstream engine rejected
-// such solutions, the patched engine accepts them for these moves
-// (crossSolver/solver.cpp setNoopMoves, PROJECT_STATUS.md §4.22).
+// U-layer turns may leave every goal piece in place (positioning other pieces,
+// e.g. the U in "R' U R'" instead of "R2"); upstream engine rejected such
+// solutions, the patched engine accepts them for these moves.
 const NOOP_MOVES = "U U2 U'";
 
-// Appended to every later-step postAlg; see searchCurrentNode. "y2 y2", not
-// "y y'": once rotations are searchable the engine groups y with the U/D
-// axis, so a tail ending in y' blocked U/D-first candidates instead. y2 is
-// never a searchable move (README forbids it mid-algorithm), so this tail
-// constrains nothing -- measured as a superset of both alternatives (§4.20).
+// Appended to every later-step postAlg; see searchCurrentNode. "y2 y2", not "y
+// y'": once rotations are searchable the engine groups y with the U/D axis, so
+// a tail ending in y' blocked U/D-first candidates instead. y2 is never a
+// searchable move, so this tail constrains nothing -- measured as a superset of
+// both alternatives.
 const POSTALG_BOUNDARY = 'y2 y2';
 
 // Solutions requested per pseudo engine call, and per matched call when the
 // complete search is off (SolveSession.completeSearch false: tools only).
 const DEFAULT_MAX_SOLUTIONS = 10000;
 
-// Complete search (README "Complete search"): a matched engine call lists
-// EVERY face-turn solution of its goal up to the move limit (this cap only
-// guards against runaway per-type settings; reaching it is reported as a cut
-// search), and spelling-search.js keeps exactly the best DEFAULT_TOP_N
-// results of each step type and results-page filter among every spelling
-// of them (SolveSession.topN; the per-type "max solutions" overrides it).
+// Complete search: a matched engine call lists EVERY face-turn solution of its
+// goal up to the move limit (this cap only guards against runaway per-type
+// settings; reaching it is reported as a cut search), and spelling-search.js
+// keeps exactly the best DEFAULT_TOP_N results of each step type and
+// results-page filter among every spelling of them (SolveSession.topN; the
+// per-type "max solutions" overrides it).
 const COMPLETE_ENGINE_CAP = 3000000;
 const DEFAULT_TOP_N = 300;
 // A later step whose goal has no solution within its limit is searched up
 // to this many moves deeper (its shortest solutions only).
 const LATER_DEEPEN = 3;
-// The results-page filters that hide results instantly; the best N are kept
-// for each, so a filter never empties the list (see README "Complete search").
+// The results-page filters that hide results instantly; the best N are kept for
+// each, so a filter never empties the list.
 const RESULT_VIEWS = [
   { test: () => true, wide: true },
   { test: c => !isWideAlg(c.coreAlg), wide: false },
@@ -214,37 +198,34 @@ async function yieldIfDue(state) {
   state.lastYield = now();
 }
 
-// Distance-1 (first step) move limits per README "Search limits", keyed by
-// pair count: cross 9, xcross 10, xxcross 10, xxxcross 11 (the user's
-// defaults, 2026-10-07; were 10/11/12/13).
+// Distance-1 (first step) move limits, keyed by pair count: cross 9, xcross 10,
+// xxcross 10, xxxcross 11.
 const DISTANCE1_LIMITS = { 0: 9, 1: 10, 2: 10, 3: 11 };
 
-// EXPERIMENTALLY DISCOVERED (PROJECT_STATUS §4.8): a later step's true
-// difficulty depends on how many pairs TOTAL must be preserved/solved
-// (old + new), not on how many are *new* -- the search is far more
-// constrained each time it also has to keep more already-committed pairs
-// intact. A real trial (2 old pairs + 1 new) found zero solutions at the
-// spec's flat 10-move "single pair" budget and needed 14. This table is
-// keyed by total pairs in goal and uses crossSolver's own documented
+// EXPERIMENTALLY DISCOVERED: a later step's true difficulty depends on how many
+// pairs TOTAL must be preserved/solved (old + new), not on how many are *new*
+// -- the search is far more constrained each time it also has to keep more
+// already-committed pairs intact. A real trial (2 old pairs + 1 new) found zero
+// solutions at the spec's flat 10-move "single pair" budget and needed 14. This
+// table is keyed by total pairs in goal and uses crossSolver's own documented
 // per-arity default maxLength (Xcross=10, Xxcross=12, Xxxcross=14,
-// Xxxxcross=16) -- not arbitrary, and it exactly reproduces the spec's
-// numbers for the *first* use of each category (totalPairs=1 -> 10 matches
-// "single pair", totalPairs=2 from scratch -> 12 matches "multislot"); it
-// only extends beyond the spec's flat table for deeper, more-constrained
-// later steps the spec's table didn't distinguish.
+// Xxxxcross=16) -- not arbitrary, and it exactly reproduces the spec's numbers
+// for the *first* use of each category (totalPairs=1 -> 10 matches "single
+// pair", totalPairs=2 from scratch -> 12 matches "multislot"); it only extends
+// beyond the spec's flat table for deeper, more-constrained later steps the
+// spec's table didn't distinguish.
 const LATER_LIMITS_BY_TOTAL = { 1: 10, 2: 12, 3: 14, 4: 16 };
 // Complete search: a matched later step's limit by the pairs it solves (the
-// table above is for pseudo steps, whose engine calls stay capped): the
-// README's single pair 10, multislot 12. Every face-turn solution within it
-// is searched; 10 moves hold 89% of the professional later steps in
-// data/reco_solves.txt, 11 moves 93% but ~5x the solutions (a per-type
-// limit of 11 is a setting away; PROJECT_STATUS "Complete search").
+// table above is for pseudo steps, whose engine calls stay capped): the single
+// pair 10, multislot 12. Every face-turn solution within it is searched; 10
+// moves hold 89% of the professional later steps in data/reco_solves.txt, 11
+// moves 93% but ~5x the solutions.
 const LATER_LIMITS = { 1: 10, 2: 12, 3: 12 };
 
 // Semantic category keys matching the results table's "type" column
 // (edgeTypeLabel below) -- this is the axis granular per-type search config
-// (README "Granular search configuration") lets a user override, independent
-// of the engine's own internal totalPairsInGoal/pairCount bookkeeping.
+// lets a user override, independent of the engine's own internal
+// totalPairsInGoal/pairCount bookkeeping.
 function categoryFor(pairCount, isRoot) {
   if (isRoot) return ['cross', 'xcross', 'xxcross', 'xxxcross'][pairCount] || 'xxxcross';
   return pairCount === 1 ? 'singlePair' : 'multislot';
@@ -256,12 +237,11 @@ function categoryKeyFor(pairCount, isRoot, isPseudo) {
 }
 
 /**
- * `searchConfig` (optional; from criteria.searchConfig, README "Granular
- * search configuration") overrides the move-depth limit for the edge's whole
- * semantic category (cross/xcross/xxcross/xxxcross/singlePair/multislot,
- * each matched or pseudo) -- a flat override replaces LATER_LIMITS_BY_TOTAL's
- * per-total nuance entirely for that category, since a user configuring this
- * manually is opting out of that empirically-tuned table, not refining it.
+ * `searchConfig` overrides the move-depth limit for the edge's whole semantic
+ * category (cross/xcross/xxcross/xxxcross/singlePair/multislot, each matched or
+ * pseudo) -- a flat override replaces LATER_LIMITS_BY_TOTAL's per-total nuance
+ * entirely for that category, since a user configuring this manually is opting
+ * out of that empirically-tuned table, not refining it.
  */
 function searchLimitFor(pairCount, isRoot, totalPairsInGoal, searchConfig, isPseudo) {
   const override = searchConfig && searchConfig[categoryKeyFor(pairCount, isRoot, isPseudo)];
@@ -276,13 +256,12 @@ function maxSolutionsFor(pairCount, isRoot, searchConfig, isPseudo, fallback) {
   return (override && override.maxSolutions) || fallback;
 }
 
-// Empirically derived (not hand-derived -- see PROJECT_STATUS.md §4.11/§4.12
-// and test/solver-bridge.test.js): a y-rotation prefix cycles F2L slot
-// names in this fixed order, independent of which slot or algorithm it's
-// applied to. Confirmed directly via facelet-cube.js/facelet-flags.js with
-// four different single-pair-disturbing trigger algorithms, and matches
-// §4.11's own prior finding (claimed FR, y' variant actually solves BR:
-// CORNER_CYCLE.indexOf('FR')=0, steps['y\'']=3, CORNER_CYCLE[3]='BR').
+// Empirically derived: a y-rotation prefix cycles F2L slot names in this fixed
+// order, independent of which slot or algorithm it's applied to. Confirmed
+// directly via facelet-cube.js/facelet-flags.js with four different
+// single-pair-disturbing trigger algorithms, and matches's own prior finding
+// (claimed FR, y' variant actually solves BR: CORNER_CYCLE.indexOf('FR')=0,
+// steps['y\'']=3, CORNER_CYCLE[3]='BR').
 const CORNER_CYCLE = ['FR', 'FL', 'BL', 'BR'];
 const ROTATION_STEPS = { '': 0, y: 1, y2: 2, "y'": 3 };
 
@@ -316,24 +295,23 @@ const F2L_SLOTS = ['BL', 'BR', 'FR', 'FL'];
  * Replays [scramble, rotation, priorPath, coreAlg] as literal moves on a
  * solved cube and returns the resulting facelet string.
  *
- * `priorPath` can contain wide-move tokens if an earlier step was a
- * committed Cross-optimisation result (README "Wide moves and Cross
- * optimisation") -- facelet-cube.js deliberately has no notion of wide
- * moves (see cross-optimization.js's header comment), so they're expanded
- * back to their literal face-move+rotation definition before replay. This
- * must happen here, not just at the point a cross-opt candidate is itself
- * being checked, since the SAME priorPath text is reused by every later
- * step's own luck check once committed.
+ * `priorPath` can contain wide-move tokens if an earlier step was a committed
+ * Cross-optimisation result -- facelet-cube.js deliberately has no notion of
+ * wide moves (see cross-optimization.js's header comment), so they're expanded
+ * back to their literal face-move+rotation definition before replay. This must
+ * happen here, not just at the point a cross-opt candidate is itself being
+ * checked, since the SAME priorPath text is reused by every later step's own
+ * luck check once committed.
  */
 // Every candidate of a search replays the same scramble + rotation + committed
 // path before its own moves; that prefix state is cached (a few dozen distinct
-// prefixes per search: colours x inspection variants), so only the
-// candidate's own moves are replayed (PROJECT_STATUS.md §4.36).
+// prefixes per search: colours x inspection variants), so only the candidate's
+// own moves are replayed.
 const REPLAY_PREFIX_LIMIT = 256;
 const replayPrefixCache = new Map();
 function replayFacelets(scramble, rotation, priorPath, coreAlg) {
-  // facelet-cube.js replays wide/slice moves natively (magiccube-verified,
-  // §4.19), so the committed text is replayed exactly as a human reads it.
+  // Facelet-cube.js replays wide/slice moves natively, so the committed text is
+  // replayed exactly as a human reads it.
   const prefix = `${scramble}|${rotation}|${priorPath}`;
   let start = replayPrefixCache.get(prefix);
   if (start === undefined) {
@@ -345,21 +323,20 @@ function replayFacelets(scramble, rotation, priorPath, coreAlg) {
 }
 
 /**
- * Luck filtering (README "Luck filtering"): replays the candidate for real
- * (see replayFacelets) and checks, via facelet-flags.js, that the result
- * solves EXACTLY what the candidate's DAG edge claims -- cross, plus every
- * claimed corner/edge, and no additional complete pair. Returns
- * { ok: true, facelets } (the cube after it) or { ok: false, reason }. See this file's header comment for
- * why this exact replay order is correct and where it's verified.
+ * Luck filtering: replays the candidate for real (see replayFacelets) and
+ * checks, via facelet-flags.js, that the result solves EXACTLY what the
+ * candidate's DAG edge claims -- cross, plus every claimed corner/edge, and no
+ * additional complete pair. Returns { ok: true, facelets } (the cube after it)
+ * or { ok: false, reason }. See this file's header comment for why this exact
+ * replay order is correct and where it's verified.
  *
  * `claimedEdges` defaults to `claimedCorners` (a matched claim: a slot is
- * claimed iff both its corner and its edge are). Passing a DIFFERENT list
- * makes this a pseudo claim: each corner/edge in the claim is checked as an
- * independent piece (facelet-flags.js's pseudoSolvedFlags) -- the corner at
- * one home-slot and the edge at another can each be genuinely solved
- * without either having its natural partner. A lone extra solved piece
- * with no partner is tolerated either way (README: it "may appear
- * transiently as a side effect"); only an extra COMPLETE pair is luck.
+ * claimed iff both its corner and its edge are). Passing a DIFFERENT list makes
+ * this a pseudo claim: each corner/edge in the claim is checked as an
+ * independent piece (facelet-flags.js's pseudoSolvedFlags) -- the corner at one
+ * home-slot and the edge at another can each be genuinely solved without either
+ * having its natural partner. A lone extra solved piece with no partner is
+ * tolerated either way; only an extra COMPLETE pair is luck.
  */
 function checkCandidateAgainstRealCubeState(scramble, rotation, priorPath, coreAlg, claimedCorners, claimedEdges, claimSets = null) {
   return checkFacelets(replayFacelets(scramble, rotation, priorPath, coreAlg), claimedCorners, claimedEdges, claimSets);
@@ -446,13 +423,12 @@ function replayTokenIds(startCodes, ids) {
 }
 
 /**
- * Pseudo-solver results are only "solved up to a D-layer offset": the
- * engine (pseudoCrossSolver) considers cross + the targeted corners/edges
- * solved relative to EACH OTHER, which physically means one final free D
- * turn (D, D2 or D') -- or none -- brings every one of them home at once.
- * Established empirically (PROJECT_STATUS.md §4.14: 96/96 solutions across
- * random scrambles and all six cross colors); an earlier investigation that
- * ignored this offset wrongly concluded the solver was unreliable.
+ * Pseudo-solver results are only "solved up to a D-layer offset": the engine
+ * (pseudoCrossSolver) considers cross + the targeted corners/edges solved
+ * relative to EACH OTHER, which physically means one final free D turn (D, D2
+ * or D') -- or none -- brings every one of them home at once. Established
+ * empirically; an earlier investigation that ignored this offset wrongly
+ * concluded the solver was unreliable.
  *
  * Returns `coreAlg` with exactly that aligning D turn merged onto its end (a
  * trailing D-family move absorbs it, possibly cancelling), or null if no D
@@ -484,11 +460,10 @@ function alignPseudoAlg(scramble, rotation, priorPath, coreAlg) {
 // without r/l, and the wide spellings (cross optimisation, side-cross
 // inspections, wideSpellingParts) are not made.
 const WIDE_TOKEN = /(^| )[rludfbMES]/;
-// README "Wide moves": a wide B turn (b, b', b2) is never part of a solution
-// (developer's rule, PROJECT_STATUS.md §4.46). Engine r/l relabelled by an
-// inspection y, wide spellings and cross optimisation can all write one;
-// postProcessCall's push drops such candidates and dedupeSolutions (the end
-// of every result list) guarantees it.
+// A wide B turn (b, b', b2) is never part of a solution. Engine r/l relabelled
+// by an inspection y, wide spellings and cross optimisation can all write one;
+// postProcessCall's push drops such candidates and dedupeSolutions (the end of
+// every result list) guarantees it.
 const WIDE_B_TOKEN = /(^| )b/;
 function hasWideB(alg) {
   return WIDE_B_TOKEN.test(alg);
@@ -501,18 +476,17 @@ function withoutWide(allowedMoves) {
 }
 
 /**
- * README "Unorthodox solutions": a step is unorthodox when it turns the R
- * layer (or the L layer) a half turn away from where the step started. The
- * displacement starts at 0; R is +1, R' is -1, and a half turn is executed
- * in whichever direction the hand is free to go: from +1 an R2 is done as
- * R2' (to -1), from -1 as R2 (to +1), and from 0 either way reaches +-2.
- * The step is unorthodox as soon as the displacement reaches +-2:
- * "R U R2 U' R" goes 1, 1, -1, -1, 0 and is fine; "R U R U' R'" (2 at the
- * second R), "R' U R'" and a lone "R2" are not. r counts as R and l as L
- * (the same hand turns that side); a y or z rotation (also inside u d f b E
- * S) puts other layers in the hands, so both counts start again. Only later
- * steps are flagged (the results page calls the filter "hide awkward f2l
- * solutions"): first steps are never hidden.
+ * A step is unorthodox when it turns the R layer (or the L layer) a half turn
+ * away from where the step started. The displacement starts at 0; R is +1, R'
+ * is -1, and a half turn is executed in whichever direction the hand is free to
+ * go: from +1 an R2 is done as R2' (to -1), from -1 as R2 (to +1), and from 0
+ * either way reaches +-2. The step is unorthodox as soon as the displacement
+ * reaches +-2: "R U R2 U' R" goes 1, 1, -1, -1, 0 and is fine; "R U R U' R'" (2
+ * at the second R), "R' U R'" and a lone "R2" are not. r counts as R and l as L
+ * (the same hand turns that side); a y or z rotation (also inside u d f b E S)
+ * puts other layers in the hands, so both counts start again. Only later steps
+ * are flagged (the results page calls the filter "hide awkward f2l solutions"):
+ * first steps are never hidden.
  */
 function isUnorthodox(alg) {
   // The displacement after one more turn of the layer, or null at +-2.
@@ -555,14 +529,13 @@ function solverCallFor(helper, corners, scramble, rotation, maxLength, postAlg, 
 
 /**
  * Time of committed steps `stepAlgs` plus `alg` as the next step: MCC
- * (algSpeed) of the whole path, plus each step's own stepPenalty (step-aware,
- * e.g. a y at the start of a step is free; PROJECT_STATUS.md §4.35).
- * TPP = this / pieces. The committed path is the same for every candidate of
- * a search: its MCC grip search (algSpeedPrefix) and step penalties are
- * computed once per path (cached on `holder`), and each candidate only
- * resumes from there. Exact: equal to algSpeed of the whole path
- * (test/script.test.js). The constants are the holder's `scoring` (its
- * settings', script.js scoringFor; the defaults without one).
+ * (algSpeed) of the whole path, plus each step's own stepPenalty. TPP = this /
+ * pieces. The committed path is the same for every candidate of a search: its
+ * MCC grip search (algSpeedPrefix) and step penalties are computed once per
+ * path (cached on `holder`), and each candidate only resumes from there. Exact:
+ * equal to algSpeed of the whole path (test/script.test.js). The constants are
+ * the holder's `scoring` (its settings', script.js scoringFor; the defaults
+ * without one).
  */
 function costBase(holder, stepAlgs) {
   let base = holder._costBase;
@@ -603,15 +576,14 @@ function stepsPathMcc(holder, stepAlgs, alg) {
 }
 
 // ---------------------------------------------------------------------------
-// Corpus candidates (README "Corpus candidates"): every later step also
-// tries the F2L algorithms people actually use (script.js f2lCorpusAlgs:
-// standard F2L algs and every professional step, mirrored), each after a
-// free y-family rotation and an optional U turn. The engine lists the
-// shortest solutions first, so with many short ones a natural 9-11 move alg
-// is often never generated. A corpus alg that solves exactly a planned
-// matched edge's goal joins that call's solutions and is post-processed like
-// them (luck filter, spellings, TPP). Checked on permutations: one 54-entry
-// array per alg, built once.
+// Corpus candidates: every later step also tries the F2L algorithms people
+// actually use (script.js f2lCorpusAlgs: standard F2L algs and every
+// professional step, mirrored), each after a free y-family rotation and an
+// optional U turn. The engine lists the shortest solutions first, so with many
+// short ones a natural 9-11 move alg is often never generated. A corpus alg
+// that solves exactly a planned matched edge's goal joins that call's solutions
+// and is post-processed like them (luck filter, spellings, TPP). Checked on
+// permutations: one 54-entry array per alg, built once.
 // ---------------------------------------------------------------------------
 
 const CORPUS_ROTATIONS = ['', 'y', 'y2', "y'"];
@@ -634,7 +606,7 @@ function corpusTable() {
     if (!toks.every(t => MOVE_TABLE[t])) continue;
     const net = netRotation(alg);
     if (!CORPUS_ROTATIONS.includes(net)) continue; // the cross would leave the bottom
-    if (toks.includes('y2')) continue; // README: y2 only as a step's first move
+    if (toks.includes('y2')) continue; // y2 only as a step's first move
     const perm = composePerm(permOfAlg(alg), net ? permOfAlg(inverseRotation(net)) : IDENTITY_PERM);
     algs.push({ alg, toks, turns: toks.filter(t => !/^[xyz]/.test(t)).length, perm: Uint8Array.from(perm) });
   }
@@ -742,17 +714,14 @@ function pseudoCallFor(pseudoHelper, edges, corners, scramble, rotation, maxLeng
   });
 }
 
-// Search time budget (README "Performance goal", PROJECT_STATUS.md §4.36):
-// with session.timeBudgetMs set, every engine call of a search gets a
-// deadline the engine checks itself; a call still running then returns the
-// solutions it found so far (shortest first), and calls not started yet are
-// skipped. The engines get this share of the budget; the rest is left for
-// post-processing the last calls' solutions. With look-ahead, the step's own
-// search gets LOOKAHEAD_FIRST_SHARE of it and the follow-up searches the rest.
-// Post-processing stops at POST_SHARE of the rest, and ranking is planned to
-// end at RANK_END_SHARE of it (a margin for the rest of the step): with
-// 10,000 solutions per call, a root search with every option on used to
-// post-process for ~110 s after the engines' deadline (155 s in all).
+// Search time budget: with session.timeBudgetMs set, every engine call of a
+// search gets a deadline the engine checks itself; a call still running then
+// returns the solutions it found so far (shortest first), and calls not started
+// yet are skipped. The engines get this share of the budget; the rest is left
+// for post-processing the last calls' solutions. With look-ahead, the step's
+// own search gets LOOKAHEAD_FIRST_SHARE of it and the follow-up searches the
+// rest. Post-processing stops at POST_SHARE of the rest, and ranking is planned
+// to end at RANK_END_SHARE of it (a margin for the rest of the step).
 const SEARCH_ENGINE_SHARE = 0.75;
 const LOOKAHEAD_FIRST_SHARE = 0.5;
 const POST_SHARE = 0.7;
@@ -780,7 +749,7 @@ class SolveSession {
     this.crossOptEnabled = (advancedOptions || []).includes('cross_opt');
     this.maxSolutions = DEFAULT_MAX_SOLUTIONS; // pseudo engine calls (and every call with completeSearch off)
     this.topN = DEFAULT_TOP_N; // complete search: results kept per step type and filter
-    this.completeSearch = true; // README "Complete search"; false = the capped pro-move-set engine search (tools)
+    this.completeSearch = true; // false = the capped pro-move-set engine search (tools)
     this.searchConfig = null; // per-category {maxSolutions, maxLength} overrides; see searchLimitFor/maxSolutionsFor
     this.proMoves = (advancedOptions || []).includes('pro_moves');
     this.nodeMap = new Map(prunedTree.nodes.map(n => [n.id, n]));
@@ -844,8 +813,7 @@ class SolveSession {
   get scoredPath() { return this.stepAlgs.join(' ').trim(); }
   /**
    * Time of the committed path plus `alg` as the next step: MCC (algSpeed) of
-   * the whole path, plus each step's own stepPenalty (step-aware, e.g. a y at
-   * the start of a step is free; PROJECT_STATUS.md §4.35). TPP = this / pieces.
+   * the whole path, plus each step's own stepPenalty. TPP = this / pieces.
    */
   pathCost(alg) {
     return stepsPathCost(this, this.stepAlgs, alg);
@@ -878,13 +846,12 @@ class SolveSession {
   }
 
   /**
-   * Undo the most recent commit (README "Search tree navigation (undo)"):
-   * steps back to the previous node so a different outgoing edge can be
-   * explored. Mirrors commit()'s root-only rotation capture in reverse --
-   * undoing back to zero commits re-arms it, so a later re-commit captures
-   * rotation correctly again (see test/solver-bridge.test.js's root-rotation
-   * test for the asymmetry this must respect). Returns false (no-op) at the
-   * root, where there is nothing to undo.
+   * Undo the most recent commit: steps back to the previous node so a different
+   * outgoing edge can be explored. Mirrors commit's root-only rotation capture
+   * in reverse -- undoing back to zero commits re-arms it, so a later re-commit
+   * captures rotation correctly again (see test/solver-bridge.test.js's
+   * root-rotation test for the asymmetry this must respect). Returns false
+   * (no-op) at the root, where there is nothing to undo.
    */
   undo() {
     if (!this.committedRows.length) return false;
@@ -1080,27 +1047,25 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   }
 
   if (!isRoot) {
-    // CRITICAL (found 2026-10-04 while verifying luck filtering end-to-end
-    // against the real solver -- see PROJECT_STATUS.md §4.12): the same
-    // mid-solve y/y' exploration described above can also produce a target
-    // whose solved corners/edges are NOT a superset of the current node's
-    // -- a previously-committed slot's label gets renamed by the rotation
-    // (e.g. a committed "BR" becomes "FR" or "BL" under the relabeling)
-    // instead of carried forward under its real name. Dispatch here has no
-    // mechanism to apply that implied second rotation (session.rotation is
-    // fixed once at the root and reused verbatim) -- taking such an edge at
-    // face value asks the solver to protect the wrong slot entirely,
-    // silently disturbing the real, already-committed piece. Verified
-    // directly against the real WASM solver + a real facelet replay: for
-    // one committed session, 26 of 86 otherwise-plausible later-step
-    // candidates (spanning multiple distinct target nodes, all sharing this
-    // shape) disturbed a committed pair 100% of the time, with no error and
-    // a perfectly normal-looking "Single pair" label -- this predates and
-    // is independent of luck filtering, and luck filtering's own check
-    // cannot catch it, since both the (wrong) claim and the real outcome
-    // agree the dropped slot isn't solved. Any later-step edge that drops a
-    // committed label is therefore not a safe transition from the session's
-    // actual (unrotated-beyond-session.rotation) frame and must be skipped.
+    // The same mid-solve y/y' exploration described above can also produce a
+    // target whose solved corners/edges are NOT a superset of the current
+    // node's -- a previously-committed slot's label gets renamed by the
+    // rotation (e.g. a committed "BR" becomes "FR" or "BL" under the
+    // relabeling) instead of carried forward under its real name. Dispatch here
+    // has no mechanism to apply that implied second rotation (session.rotation
+    // is fixed once at the root and reused verbatim) -- taking such an edge at
+    // face value asks the solver to protect the wrong slot entirely, silently
+    // disturbing the real, already-committed piece. Verified directly against
+    // the real WASM solver + a real facelet replay: for one committed session,
+    // 26 of 86 otherwise-plausible later-step candidates (spanning multiple
+    // distinct target nodes, all sharing this shape) disturbed a committed pair
+    // 100% of the time, with no error and a perfectly normal-looking "Single
+    // pair" label -- this predates and is independent of luck filtering, and
+    // luck filtering's own check cannot catch it, since both the (wrong) claim
+    // and the real outcome agree the dropped slot isn't solved. Any later-step
+    // edge that drops a committed label is therefore not a safe transition from
+    // the session's actual (unrotated-beyond-session.rotation) frame and must
+    // be skipped.
     const committed = session.currentNode.state;
     const committedCorners = new Set(committed.corners || []);
     const committedEdges = new Set(committed.edges || []);
@@ -1151,18 +1116,17 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // already-rotated frame -- exactly what's needed here -- without any
       // further relabeling.
       const scramble = session.scramble;
-      // The engine needs the committed path as face turns in the CURRENT
-      // frame, with the net rotation (inspection + any wide moves or
-      // mid-solve rotations) in its `rotation` option: it rejects a postAlg
-      // that leaves the centres rotated. See SolveSession.engineFrame / §4.19.
+      // The engine needs the committed path as face turns in the CURRENT frame,
+      // with the net rotation (inspection + any wide moves or mid-solve
+      // rotations) in its `rotation` option: it rejects a postAlg that leaves
+      // the centres rotated. See SolveSession.engineFrame /.
       const frame = isRoot ? null : session.engineFrame;
       const callRotation = isRoot ? baseRotation : frame.rotation;
-      // The engine's move-adjacency pruning spans the postAlg boundary: a
-      // step could never start on the same face (or axis) the previous step
-      // ended on -- e.g. after "... R2", every R/L-first candidate was
-      // silently missing (19 of 33 found on pro reference #5's 2nd pair;
-      // PROJECT_STATUS.md §4.20). A cancelling rotation pair that is not
-      // itself searchable resets that without changing the state.
+      // The engine's move-adjacency pruning spans the postAlg boundary: a step
+      // could never start on the same face (or axis) the previous step ended on
+      // -- e.g. after "... R2", every R/L-first candidate was silently missing.
+      // A cancelling rotation pair that is not itself searchable resets that
+      // without changing the state.
       const postAlgForCall = isRoot || !frame.moves ? '' : `${frame.moves} ${POSTALG_BOUNDARY}`;
 
       plan.push({
@@ -1174,32 +1138,31 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     }
   }
 
-  // Pass 2: start them all at once (PROJECT_STATUS.md §4.34). A pooled,
-  // scheduler-gated helper runs them in parallel on several engine workers;
-  // a plain helper gets them one at a time (serialEngine). Results are still
-  // consumed in plan order below, so the output is the same either way.
-  // Under a time budget the calls START cheapest first (callCostRank), so the
-  // deadline lands on the expensive tail; they are still consumed in plan
-  // order, so whatever finishes gives the same output as without a budget.
-  // A look-ahead search's calls carry its rank (its path of candidate indices,
-  // see searchWithLookahead) so a scheduler can run the best candidates'
-  // follow-ups first; the step's own search has none and runs before them.
+  // Pass 2: start them all at once. A pooled, scheduler-gated helper runs them
+  // in parallel on several engine workers; a plain helper gets them one at a
+  // time (serialEngine). Results are still consumed in plan order below, so the
+  // output is the same either way. Under a time budget the calls START cheapest
+  // first (callCostRank), so the deadline lands on the expensive tail; they are
+  // still consumed in plan order, so whatever finishes gives the same output as
+  // without a budget. A look-ahead search's calls carry its rank (its path of
+  // candidate indices, see searchWithLookahead) so a scheduler can run the best
+  // candidates' follow-ups first; the step's own search has none and runs
+  // before them.
   const rank = session.lookaheadRank || null;
   const ranked = (h) => (rank && h && typeof h.withRank === 'function' ? h.withRank(rank) : h);
   const engine = ranked(serialEngine(helper));
   const pseudoEngine = ranked(serialEngine(pseudoHelper));
   // Without a budget: later steps start their single-pair calls before the
-  // multislot ones, whose results the results page hides by default (they
-  // are always searched, README "Multislot"), so the rows a solver sees are
-  // final sooner; the order calls are consumed in is unchanged.
+  // multislot ones, whose results the results page hides by default, so the
+  // rows a solver sees are final sooner; the order calls are consumed in is
+  // unchanged.
   const startOrder = deadline
     ? plan.slice().sort((a, b) => callCostRank(a, session.proMoves) - callCostRank(b, session.proMoves))
     : (isRoot ? plan : plan.slice().sort((a, b) => (a.pairCount > 1) - (b.pairCount > 1)));
   // ... and the multislot engine calls wait until the single-pair calls are
   // ranked: on a machine with few cores the engine worker otherwise takes a
-  // core from the ranking of the rows a solver is waiting for (a first pair
-  // after a plain cross: 49 s -> see PROJECT_STATUS). Only the start order
-  // changes, never what is searched.
+  // core from the ranking of the rows a solver is waiting for. Only the start
+  // order changes, never what is searched.
   let releaseMultislots = null;
   const singlesRanked = !isRoot && !deadline && session.holdMultislots !== false
     ? new Promise((resolve) => { releaseMultislots = resolve; })
@@ -1268,11 +1231,10 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
   // is missing their results, so it is marked and not memoised.
   let failedCalls = 0;
 
-  // Pass 3: post-process each call's solutions as soon as that call
-  // finishes, so the JS work overlaps the engine calls still running
-  // (PROJECT_STATUS.md §4.36); each call's candidates are kept apart and
-  // joined in plan order below, so the output is the same as processing the
-  // calls one by one in plan order.
+  // Pass 3: post-process each call's solutions as soon as that call finishes,
+  // so the JS work overlaps the engine calls still running; each call's
+  // candidates are kept apart and joined in plan order below, so the output is
+  // the same as processing the calls one by one in plan order.
   const ctx = postProcessContext(session, isRoot);
   // Complete search: the best TPPs of each step type and filter so far
   // (finished calls), so a call's spellings only compete for places its type
@@ -1397,13 +1359,11 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // Finished at or after the deadline without reaching its cap: cut short
     // (or skipped) by the time budget, so its list may be incomplete.
     if (deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions) truncatedCalls++;
-    // The per-candidate work is a pure function of (ctx, job, solutions), so
-    // a page can run it off the main thread (session.postProcessor, a worker
-    // pool; PROJECT_STATUS.md §4.40) -- same function, same output.
-    // A big call no longer waits for the smaller calls of its type (their
-    // results would bound it, typeLimits): on a worker pool the wait left
-    // workers idle and made it the tail of the search (hardest root
-    // measured: 30.6 s -> see PROJECT_STATUS). Without a pool it still does.
+    // The per-candidate work is a pure function of (ctx, job, solutions), so a
+    // page can run it off the main thread -- same function, same output. A big
+    // call no longer waits for the smaller calls of its type (their results
+    // would bound it, typeLimits): on a worker pool the wait left workers idle
+    // and made it the tail of the search. Without a pool it still does.
     if (p.complete && cores.length > COMPLETE_CHUNK && !session.postProcessor) {
       const others = plan.filter(q => q !== p && q.complete && q.category === p.category && q.processing && !q.big);
       p.big = true;
@@ -1430,8 +1390,7 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
       // The chunks start once every big call of the type has its seeds
       // (quick jobs): their N-th best together is close to the type's final
       // one, while a call ranked before the others' engine calls finish
-      // only knows its own (a first pair after a plain cross: the first of
-      // four calls walked 73% of its solutions instead of ~45%).
+      // only knows its own and walks far more of its solutions.
       await Promise.all(plan.filter(q => q !== p && q.complete && q.category === p.category).map(q => q.seedReady));
       // nobody wants this search any more (a click while it waited)
       if (stop && stop.shouldStop && stop.shouldStop()) {
@@ -1453,10 +1412,10 @@ async function searchCurrentNode(session, helper, onStatus, pseudoHelper, deadli
     // Cut short by the time budget (postProcessCall stopped at job.stopAt).
     if (postStop && p.candidates.stopped && !(deadline && p.doneAt >= deadline && cores.length < p.effectiveMaxSolutions)) truncatedCalls++;
   };
-  // Progressive results (README "Results table"): while calls are still
-  // running, the calls finished so far are ranked exactly like the final
-  // list and handed to onPartial, throttled so ranking tens of thousands of
-  // candidates does not crowd out the post-processing itself.
+  // Progressive results: while calls are still running, the calls finished so
+  // far are ranked exactly like the final list and handed to onPartial,
+  // throttled so ranking tens of thousands of candidates does not crowd out the
+  // post-processing itself.
   let lastPartial = 0;
   let partialCost = 0;
   // Once only multislot calls are left (later steps; the results page hides
@@ -1609,8 +1568,7 @@ function postProcessContext(session, isRoot) {
 
 /**
  * The pair-choice look weights: only with pair planning on. Off, a step is
- * ranked by itself alone -- nothing about the pairs it leaves (README "Pair
- * planning").
+ * ranked by itself alone -- nothing about the pairs it leaves.
  */
 function lookWeightsFor(session) {
   const w = session.planning !== false && typeof PAIR_PLANNING !== 'undefined' ? PAIR_PLANNING.look : null;
@@ -1703,7 +1661,7 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
   const push = (c, look = 0) => {
     if (!wideOn && isWideAlg(c.coreAlg)) return;
     if (hasWideB(c.coreAlg)) return;
-    // a first step's only rotation is the inspection (README)
+    // A first step's only rotation is the inspection
     if (isRoot && /(^| )[xyz]/.test(c.coreAlg)) return;
     // pair planning: the cube as the step leaves it held
     if (ctx.planWeights) look += planCost(ctx.planWeights, replayFacelets(ctx.scramble, isRoot ? c.rotation : ctx.rotation, ctx.scoredPath, c.coreAlg));
@@ -1734,15 +1692,11 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       break;
     }
 
-    // Cross optimisation (README "Wide moves and Cross optimisation") --
-    // a first-step-only, Cross-only (pairCount=0) post-process, kept
-    // independent of altAlgs below (its own rotation search already
-    // explores reorientation; combining both was judged unnecessary
-    // added complexity -- see PROJECT_STATUS.md §4.5/§4.13). Every
-    // variant it returns is mathematically equal to "the raw coreAlg,
-    // followed by a pure y-rotation" (see cross-optimization.js's
-    // header comment for the proof), so a plain luck-check call below
-    // is a cheap safety net, not load-bearing.
+    // Cross optimisation -- a first-step-only, Cross-only (pairCount=0)
+    // post-process, kept independent of altAlgs below. Every variant it returns
+    // is mathematically equal to "the raw coreAlg, followed by a pure
+    // y-rotation" (see cross-optimization.js's header comment for the proof),
+    // so a plain luck-check call below is a cheap safety net, not load-bearing.
     if (isRoot && pairCount === 0 && wideOn && ctx.crossOptEnabled && typeof optimizeCrossSolution === 'function') {
       const optimized = optimizeCrossSolution(coreAlg.trim().split(/\s+/));
       for (const opt of optimized) {
@@ -1765,11 +1719,11 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
           continue;
         }
 
-        // The residual rotation happens DURING the algorithm (it is part
-        // of the wide moves), so the inspection rotation stays
-        // baseRotation; later steps derive the real frame from the
-        // committed text via SolveSession.engineFrame (§4.19). Composing
-        // it in here as well applied it twice.
+        // The residual rotation happens DURING the algorithm (it is part of the
+        // wide moves), so the inspection rotation stays baseRotation; later
+        // steps derive the real frame from the committed text via
+        // SolveSession.engineFrame. Composing it in here as well applied it
+        // twice.
         const optRotation = baseRotation;
 
         const optTpp = pathCostFor(ctx, optAlg) / p.pieces;
@@ -1790,10 +1744,10 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
     // A root result that STARTS with a rotation duplicates a free
     // inspection-rotation variant below; only mid-step rotations count.
     if (isRoot && ctx.proMoves && /^[xyz]/.test(coreAlg)) continue;
-    // Inspection variants. With the pro move set the alg can contain
-    // wide moves and rotations, which altAlgs' face table can't relabel,
-    // so the mechanical (permutation-derived) relabel is used instead;
-    // it agrees with altAlgs on every face-turn alg (§4.20).
+    // Inspection variants. With the pro move set the alg can contain wide moves
+    // and rotations, which altAlgs' face table can't relabel, so the mechanical
+    // (permutation-derived) relabel is used instead; it agrees with altAlgs on
+    // every face-turn alg.
     const variants = !isRoot ? [coreAlg]
       : ctx.proMoves ? ['', 'y', 'y2', "y'"].map(t => (t ? `${t} ${relabelAlgForRotation(coreAlg, t)}` : coreAlg))
       : typeof altAlgs === 'function' ? altAlgs([coreAlg]) : [coreAlg];
@@ -1822,35 +1776,32 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       }
       if (!finalCoreAlg) continue; // alignment cancelled the whole algorithm
 
-      // Rotation-correct claim (PROJECT_STATUS.md §4.11/§4.12 finding
-      // #3): for a ROOT candidate, `allCorners`/`allEdges` (== newCorners
-      // /newEdges here, since the root's current node has none solved
-      // yet) are the DAG edge's UNROTATED labels -- but a non-identity
+      // Rotation-correct claim: for a ROOT candidate, `allCorners`/`allEdges`
+      // (== newCorners /newEdges here, since the root's current node has none
+      // solved yet) are the DAG edge's UNROTATED labels -- but a non-identity
       // altAlgs variant physically solves a y/y2/y'-cycled slot, not the
-      // unrotated one (confirmed empirically, see relabelSlotsForRotation
-      // and test/solver-bridge.test.js). The luck check below MUST use
-      // this corrected claim, not the raw label -- using the raw label
-      // made every non-identity-rotation root candidate with
-      // pairCount>=1 look like it "failed to solve what it claims" and
-      // get wrongly discarded as a bug, which is not what's happening.
-      // For a non-root candidate there is no yToken (altAlgs isn't
-      // applied there) and §4.12's superset filter already makes
-      // `allCorners` trustworthy, so it's used unchanged.
+      // unrotated one (confirmed empirically, see relabelSlotsForRotation and
+      // test/solver-bridge.test.js). The luck check below MUST use this
+      // corrected claim, not the raw label -- using the raw label made every
+      // non-identity-rotation root candidate with pairCount>=1 look like it
+      // "failed to solve what it claims" and get wrongly discarded as a bug,
+      // which is not what's happening. For a non-root candidate there is no
+      // yToken (altAlgs isn't applied there) and's superset filter already
+      // makes `allCorners` trustworthy, so it's used unchanged.
       const trueClaimedCorners = isRoot ? relabelSlotsForRotation(allCorners, yToken) : allCorners;
       const trueClaimedEdges = isRoot ? relabelSlotsForRotation(allEdges, yToken) : allEdges;
 
-      // The node this candidate really reaches is the one labelled with
-      // the slots it PHYSICALLY solves (in the frame after fullRotation,
-      // which every later step searches and replays in) -- not the
-      // unrotated DAG target. Committing the unrotated target made later
-      // steps protect the wrong slot: found 2026-10-04 (PROJECT_STATUS.md
-      // §4.16), 26 of 501 later-step candidates on one scramble broke the
-      // committed pair while still passing the luck check.
-      // A pro-move-set alg can end rotated (a mid-step y, or wide moves):
-      // claims are checked in the step's STARTING frame (its own net
-      // rotation undone), but the node it reaches is labelled in the
-      // frame the cube ends in -- read off the physical result, like the
-      // §4.16 fix, so later steps keep reading labels correctly.
+      // The node this candidate really reaches is the one labelled with the
+      // slots it PHYSICALLY solves (in the frame after fullRotation, which
+      // every later step searches and replays in) -- not the unrotated DAG
+      // target. Committing the unrotated target made later steps protect the
+      // wrong slot, 26 of 501 later-step candidates on one scramble broke the
+      // committed pair while still passing the luck check. A pro-move-set alg
+      // can end rotated (a mid-step y, or wide moves): claims are checked in
+      // the step's STARTING frame (its own net rotation undone), but the node
+      // it reaches is labelled in the frame the cube ends in -- read off the
+      // physical result, like the fix, so later steps keep reading labels
+      // correctly.
       const stepRotation = ctx.proMoves && !isPseudo ? netRotation(finalCoreAlg) : '';
       let reachedNodeId;
       if (stepRotation) {
@@ -1867,12 +1818,11 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
         continue;
       }
 
-      // Luck filtering (README "Luck filtering") -- discard any
-      // candidate that doesn't solve EXACTLY `trueClaimedCorners` (this
-      // edge's full claimed target, old+new pairs, rotation-corrected)
-      // when physically replayed. See this file's header comment and
-      // PROJECT_STATUS.md §4.3/§4.9 for why a real cube-state check, not
-      // a solver probe, is needed.
+      // Luck filtering -- discard any candidate that doesn't solve EXACTLY
+      // `trueClaimedCorners` (this edge's full claimed target, old+new pairs,
+      // rotation-corrected) when physically replayed. See this file's header
+      // comment and for why a real cube-state check, not a solver probe, is
+      // needed.
       const luckCheck = checkCandidateAgainstRealCubeState(
         ctx.scramble, fullRotation, ctx.scoredPath,
         stepRotation ? `${finalCoreAlg} ${inverseRotation(stepRotation)}` : finalCoreAlg,
@@ -1886,15 +1836,14 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       }
       const tppScore = pathCostFor(ctx, finalCoreAlg) / p.pieces;
 
-      // Display label ("corners"/"edges" columns: what's NEWLY solved
-      // by this step specifically, not the full cumulative claim used
-      // above). Root: `trueClaimedCorners` already IS just the new
-      // slots, rotation-corrected (root's current node has none solved
-      // yet). Non-root: take the set difference between the target's
-      // full (trustworthy, superset-checked) claim and the current
-      // node's own corners/edges -- simpler and more robust than any
-      // rotation algebra, since it only depends on fields already known
-      // to be correct (§4.12 finding #3's fix).
+      // Display label ("corners"/"edges" columns: what's NEWLY solved by this
+      // step specifically, not the full cumulative claim used above). Root:
+      // `trueClaimedCorners` already IS just the new slots, rotation-corrected
+      // (root's current node has none solved yet). Non-root: take the set
+      // difference between the target's full (trustworthy, superset-checked)
+      // claim and the current node's own corners/edges -- simpler and more
+      // robust than any rotation algebra, since it only depends on fields
+      // already known to be correct.
       const displayCorners = isRoot
         ? trueClaimedCorners
         : allCorners.filter(c => !ctx.currentCorners.includes(c));
@@ -1916,9 +1865,9 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
       const look = lookCost(luckCheck.facelets);
       push(candidate, look);
 
-      // Every spelling of this alg with a final rotation r is physically
-      // "alg, then r", so the node it reaches depends only on r: replayed
-      // once per rotation, not once per spelling (§4.38).
+      // Every spelling of this alg with a final rotation r is physically "alg,
+      // then r", so the node it reaches depends only on r: replayed once per
+      // rotation, not once per spelling.
       const nodeByRotation = new Map();
       const nodeAfter = (rot) => {
         let nodeId = nodeByRotation.get(rot);
@@ -1931,16 +1880,15 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
         return nodeId;
       };
 
-      // Rotation spellings (pro move set; README "Professional reference
-      // solves"): the engine often returns the un-rotated spelling
+      // Rotation spellings: the engine often returns the un-rotated spelling
       // ("U' B U B'") of what a human does with a rotation ("y U' R U R'").
       // Each spelling is physically "this alg, then y/y'", so it solves the
-      // same pieces; only the frame it ends in (hence the node labels)
-      // changes, read off the physical result as above. At most one
-      // rotation per step, as in the pro move set; never a leading one at
-      // the root (that is an inspection variant). §4.20.
-      // An alg that already rotates has no such spelling: the inserted y
-      // would be its second rotation (relabelling keeps rotations rotations).
+      // same pieces; only the frame it ends in (hence the node labels) changes,
+      // read off the physical result as above. At most one rotation per step,
+      // as in the pro move set; never a leading one at the root (that is an
+      // inspection variant).. An alg that already rotates has no such spelling:
+      // the inserted y would be its second rotation (relabelling keeps
+      // rotations rotations).
       if (ctx.proMoves && !isPseudo && typeof rotationSpellingParts === 'function'
         && !finalCoreAlg.split(' ').some(t => /^[xyz]/.test(t))) {
         for (const { alg: spelling, rotation: rot } of rotationSpellingParts(finalCoreAlg, !isRoot)) {
@@ -1953,17 +1901,17 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
         }
       }
 
-      // Wide-move spellings (README "Wide moves"): a D turn done as u, a U
-      // as d, B/F pairs as f/b, the rest relabelled -- e.g. "D y R U' R'" as
-      // "u R U' R'", "B U' B'" as "f R' f'". Each is physically "alg, then a
-      // y-family rotation", so it solves the same pieces, with the slots
-      // relabelled for the frame it ends in: read off the physical result for
-      // a matched step; for a pseudo step (whose lone pieces a replay cannot
-      // tell from its claim) the claim is relabelled, which is the same thing
-      // (checked in test/wide-spellings-e2e.js).
-      // Later steps only: the first step already gets wide moves from cross
-      // optimisation, side-cross inspections and the engine's r/l, and these
-      // spellings doubled its candidates (root search ~60% slower).
+      // Wide-move spellings: a D turn done as u, a U as d, B/F pairs as f/b,
+      // the rest relabelled -- e.g. "D y R U' R'" as "u R U' R'", "B U' B'" as
+      // "f R' f'". Each is physically "alg, then a y-family rotation", so it
+      // solves the same pieces, with the slots relabelled for the frame it ends
+      // in: read off the physical result for a matched step; for a pseudo step
+      // (whose lone pieces a replay cannot tell from its claim) the claim is
+      // relabelled, which is the same thing (checked in
+      // test/wide-spellings-e2e.js). Later steps only: the first step already
+      // gets wide moves from cross optimisation, side-cross inspections and the
+      // engine's r/l, and these spellings doubled its candidates (root search
+      // ~60% slower).
       if (!isRoot && wideOn && typeof wideSpellingParts === 'function') {
         for (const { alg: spelling, rotation: rot } of wideSpellingParts(finalCoreAlg)) {
           let nodeId;
@@ -1980,12 +1928,11 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
         }
       }
 
-      // Side-cross inspections (pro move set, root only): start with a
-      // wide move from an inspection that has the cross on a side. Each
-      // variant is physically identical to this candidate, end orientation
-      // included (the wide move's x-rotation is undone in the free
-      // inspection rotation), so it reaches the same node with the same
-      // labels. §4.25.
+      // Side-cross inspections (pro move set, root only): start with a wide
+      // move from an inspection that has the cross on a side. Each variant is
+      // physically identical to this candidate, end orientation included (the
+      // wide move's x-rotation is undone in the free inspection rotation), so
+      // it reaches the same node with the same labels..
       if (isRoot && wideOn && ctx.proMoves && !isPseudo && typeof inspectionWideVariants === 'function') {
         for (const v of inspectionWideVariants(finalCoreAlg)) {
           const vTpp = pathCostFor(ctx, v.alg) / p.pieces;
@@ -2003,13 +1950,12 @@ async function postProcessCall(ctx, p, cores, yieldState, live = null) {
 }
 
 /**
- * Complete search (README "Complete search"): a matched call's face-turn
- * solutions -> exactly the best p.topN results of each RESULT_VIEWS filter
- * among every spelling of every solution (spelling-search.js), plus the
- * call's corpus algs as written. Each solution is luck-filtered once (every
- * spelling solves the same pieces, then a y-family rotation); the node a
- * spelling reaches is read off the physical result per end rotation. Pure,
- * like postProcessCall.
+ * Complete search: a matched call's face-turn solutions -> exactly the best
+ * p.topN results of each RESULT_VIEWS filter among every spelling of every
+ * solution (spelling-search.js), plus the call's corpus algs as written. Each
+ * solution is luck-filtered once (every spelling solves the same pieces, then a
+ * y-family rotation); the node a spelling reaches is read off the physical
+ * result per end rotation. Pure, like postProcessCall.
  */
 async function postProcessComplete(ctx, p, cores, live = null) {
   const { isRoot } = ctx;
@@ -2227,12 +2173,12 @@ function rankCandidates(calls) {
 }
 
 /**
- * The last step of every result list (README "Results table"): one row per
- * solution as written -- inspection rotation plus alg, the exact text a row
- * shows. The same text is the same turns from the same cube, so a later
- * copy (e.g. reached through another DAG edge, or merged in from a search
- * with other options) is dropped; the first, best-ranked one stays. Keeps
- * the list's flags. One pass over the list.
+ * The last step of every result list: one row per solution as written --
+ * inspection rotation plus alg, the exact text a row shows. The same text is
+ * the same turns from the same cube, so a later copy (e.g. reached through
+ * another DAG edge, or merged in from a search with other options) is dropped;
+ * the first, best-ranked one stays. Keeps the list's flags. One pass over the
+ * list.
  */
 function dedupeSolutions(list) {
   const seen = new Set();
@@ -2258,7 +2204,7 @@ function mergeRanked(a, b) {
 }
 
 // ---------------------------------------------------------------------------
-// Look-ahead (README "Look-ahead optimisation depth", PROJECT_STATUS.md §4.31)
+// Look-ahead
 // ---------------------------------------------------------------------------
 
 // Depths 4 and 5 were removed: no use for finding a human solution.
@@ -2318,8 +2264,7 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
   // The committed steps, not just their joined text: TPP depends on where the
   // steps start (stepPenalty: a y that starts a step is free), and e.g. a
   // multislot "S" and the same moves committed as two single pairs reach the
-  // same node with the same text (they used to share one memo entry, so one
-  // was shown the other's TPPs).
+  // same node with the same text but different TPPs.
   // The results-page search options are part of it (searchSettingsKey).
   const key = searchMemoKey(session);
   // a search stopped for want of callers is never reused
@@ -2346,12 +2291,11 @@ function memoSearch(session, helper, onStatus, pseudoHelper, deadline, onPartial
     onStopped: () => { if (promise) promise.stopped = true; },
   };
   let promise;
-  // Results-page "wide moves" (README): switched off on a step already
-  // searched with them, the step's list is that search's without its wide
-  // results -- hidden, not searched again, so switching back shows them at
-  // once. Switched on where only the search without them is known, the wide
-  // search runs and its results join that list as they come, instead of
-  // starting from an empty one.
+  // Results-page "wide moves": switched off on a step already searched with
+  // them, the step's list is that search's without its wide results -- hidden,
+  // not searched again, so switching back shows them at once. Switched on where
+  // only the search without them is known, the wide search runs and its results
+  // join that list as they come, instead of starting from an empty one.
   const twin = deadline ? null : wideTwin(session);
   let base = null; // the finished list without wide moves, merged into every list
   const emit = (list) => {
@@ -2497,11 +2441,11 @@ async function searchWithLookahead(session, helper, onStatus, pseudoHelper, opti
   const results = options.stepResults || filterResults(await memoSearch(session, helper, onStatus, pseudoHelper, firstDeadline, onPartial, options.isCancelled || ALWAYS_WANTED), filter, true);
   if (depth === 1 || !results.length) return results;
 
-  // The breadth grows (developer, 2026-10-13: no breadth setting): the best
-  // `breadth` candidates are looked at first; then, one by one in rank order,
-  // the next ones, for as long as options.grow() says the engines are not
-  // needed elsewhere. options.bests (a Map the caller keeps) remembers every
-  // finished look-ahead, so a later round goes on where this one stopped.
+  // The breadth grows: the best `breadth` candidates are looked at first; then,
+  // one by one in rank order, the next ones, for as long as options.grow says
+  // the engines are not needed elsewhere. options.bests (a Map the caller
+  // keeps) remembers every finished look-ahead, so a later round goes on where
+  // this one stopped.
   const known = options.bests || null;
   const grow = typeof options.grow === 'function' ? options.grow : null;
   const keyOf = c => `${c.rotation || ''}|${c.coreAlg}|${c.targetNodeId}`;

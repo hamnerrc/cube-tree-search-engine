@@ -115,7 +115,6 @@ class CrossSolverHelper {
 
         this._worker.onmessage = (event) => this._handleMessage(event.data, resolve, reject);
         this._worker.onerror = (err) => {
-          // cube-tree modification: an uncaught worker error is fatal (fatal: true).
           const error = new Error((err && err.message) || 'Engine worker error');
           error.fatal = true;
           if (this._reject) {
@@ -151,7 +150,6 @@ class CrossSolverHelper {
       this._worker.terminate();
       this._worker = null;
       this._ready = false;
-      // cube-tree modification: settle what the terminated worker never will.
       if (this._reject) this._reject(Object.assign(new Error('Engine worker terminated'), { fatal: true }));
       this._clearState();
       if (this._tableRequests) {
@@ -200,12 +198,9 @@ class CrossSolverHelper {
   }
 
   /**
-   * Solve xcross (cross + one F2L pair).
-   * @param {string} scramble
-   * @param {number} slot - 0=BL, 1=BR, 2=FR, 3=FL
-   *   (verified empirically against solver.wasm; see crossSolver/README.md)
-   * @param {Object} [options] - Same as solveCross; default maxLength=10.
-   * @returns {Promise<string[]>}
+   * Solve xcross (cross + one F2L pair). @param {string} scramble @param
+   * {number} slot - 0=BL, 1=BR, 2=FR, 3=FL @param {Object} [options] - Same as
+   * solveCross; default maxLength=10. @returns {Promise<string[]>}
    */
   solveXcross(scramble, slot, options = {}) {
     return this._doSolve({ solverType: 'Xcross', scramble, slot }, options, { maxLength: 10 });
@@ -308,7 +303,6 @@ class CrossSolverHelper {
       onCancel = null,
     } = options;
 
-    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
     if (deadline && Date.now() >= deadline) return Promise.resolve([]);
 
     this._solutions = [];
@@ -332,15 +326,14 @@ class CrossSolverHelper {
         maxRotCount,
         moveAfterMove,
         moveCount,
-        noopMoves, // cube-tree modification, see worker-persistent.js
-        deadline, // cube-tree modification: epoch ms, see worker-persistent.js
+        noopMoves, // local addition, see worker-persistent.js
+        deadline, // local addition: epoch ms, see worker-persistent.js
       });
     });
   }
 
-  // cube-tree modification (PROJECT_STATUS.md §4.40): prune-table sharing,
-  // see worker-persistent.js. These requests can be made while a solve runs
-  // (the worker answers between search depths).
+  // These requests can be made while a solve runs (the worker answers between
+  // search depths).
   /** @returns {Promise<string[]>} keys of the tables the engine has built or received */
   tableKeys() {
     return this._tableRequest({ type: 'tableKeys' }).then(s => String(s || '').split('\n').filter(Boolean));
@@ -382,7 +375,6 @@ class CrossSolverHelper {
       if (this._onSolution) this._onSolution(msg.data);
       return;
     }
-    // cube-tree modification: batched solutions (worker-persistent.js)
     if (msg.type === 'solutions') {
       for (const sol of msg.data) {
         this._solutions.push(sol);
@@ -418,7 +410,6 @@ class CrossSolverHelper {
 
     if (msg.type === 'error') {
       const err = new Error(msg.data);
-      // cube-tree modification: the worker's engine is unusable (see worker-persistent.js).
       if (msg.fatal) err.fatal = true;
       if (this._reject) {
         this._reject(err);

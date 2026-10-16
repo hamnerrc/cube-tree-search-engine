@@ -1,5 +1,5 @@
 /**
- * solve-editor.js — the solution bar's logic (README "Solution entry").
+ * The solution bar's logic.
  *
  * The text the user types is the source of truth. It is read as lines of
  * moves with optional `// comments`; the steps are found by replaying it on
@@ -61,9 +61,9 @@ function solvedPairsOf(facelets) {
 
 /**
  * The row for a step the user wrote (`tokens`, after the committed steps of
- * `session`), scored exactly as a search scores a corpus step (README
- * "Ranking"); null when it does not finish a step: the cross unsolved, a
- * solved pair broken, nothing new solved, or a node outside the tree.
+ * `session`), scored exactly as a search scores a corpus step; null when it
+ * does not finish a step: the cross unsolved, a solved pair broken, nothing new
+ * solved, or a node outside the tree.
  */
 function userStepRow(session, tokens) {
   const isRoot = session.isAtRoot;
@@ -208,8 +208,7 @@ function readSolution(session, text, candidates = []) {
     if (s.isComplete) break;
     tryStep(i, false);
   }
-  // the step that finishes the F2L needs no line end after it (developer,
-  // 2026-10-13: a finished solution has no empty line under it)
+  // The step that finishes the F2L needs no line end after it
   if (from < flat.length && !s.isComplete && !lineEnds.has(flat.length - 1)) tryStep(flat.length - 1, true);
   const tailTokens = flat.slice(from);
   const endsInSpace = /\s$/.test(String(text)) || !String(text).length;
@@ -233,10 +232,10 @@ function readSolution(session, text, candidates = []) {
 }
 
 /**
- * Results whose tokens start with what is typed (README: strict prefix):
- * every complete token must match, and the token still being typed must
- * start the next one ("R" matches R, R' and R2). At the first step a result
- * reads as its inspection rotation, then its alg.
+ * Results whose tokens start with what is typed: every complete token must
+ * match, and the token still being typed must start the next one ("R" matches
+ * R, R' and R2). At the first step a result reads as its inspection rotation,
+ * then its alg.
  */
 function prefixMatches(results, typed, partial, isRoot) {
   typed = typed.map(normTok);

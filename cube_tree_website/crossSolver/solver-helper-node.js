@@ -136,12 +136,10 @@ class CrossSolverHelperNode {
   }
 
   /**
-   * Solve xcross (cross + one F2L pair).
-   * @param {string} scramble
-   * @param {number} slot - F2L slot to include: 0=BL, 1=BR, 2=FR, 3=FL
-   *   (verified empirically against solver.wasm; see crossSolver/README.md)
-   * @param {Object} [options] - Same as solveCross; default maxLength=10.
-   * @returns {Promise<string[]>}
+   * Solve xcross (cross + one F2L pair). @param {string} scramble @param
+   * {number} slot - F2L slot to include: 0=BL, 1=BR, 2=FR, 3=FL @param {Object}
+   * [options] - Same as solveCross; default maxLength=10. @returns
+   * {Promise<string[]>}
    */
   solveXcross(scramble, slot, options = {}) {
     this._assertReady();
@@ -369,7 +367,6 @@ class CrossSolverHelperNode {
    */
   _doSolve(callFn, options = {}) {
     const { onProgress = null, onSolution = null, onCancel = null } = options;
-    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
     if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
     const solutions = [];
     const origPostMessage = globalThis.postMessage;
@@ -397,13 +394,9 @@ class CrossSolverHelperNode {
         }
       };
       try {
-        // cube-tree modification: per-call no-op move set (solver.cpp
-        // setNoopMoves); always reset so settings never leak between calls.
         if (this.Module && typeof this.Module.setNoopMoves === 'function') {
           this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
         }
-        // cube-tree modification: per-call deadline (epoch ms, 0 = none),
-        // checked inside the search (solver.cpp setDeadlineCheck, §4.36).
         if (this.Module) {
           this.Module._deadline = options.deadline || 0;
           if (typeof this.Module.setDeadlineCheck === 'function') this.Module.setDeadlineCheck(!!options.deadline);

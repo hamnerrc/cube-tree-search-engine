@@ -1,37 +1,19 @@
 /**
- * solver-ui.js — DOM glue between solver.html's markup and solver-bridge.js's
- * SolveSession / searchCurrentNode logic: the solution bar (solve-editor.js)
- * with its inline autocomplete, the tree-searcher (suggest.js), the critique (critique.js), the cube
- * (pixel-cube.js) and the settings drawer (README "The solving screen").
+ * solver.html: the solution bar (solve-editor.js), the
+ * suggestions (suggest.js), the critique (critique.js), the cube and Options.
  *
- * One SolveSession per scramble (per README: "Multiple scrambles are solved
- * independently of one another... results are never merged or compared
- * across different scrambles"), created lazily and cached across scramble
- * navigation so switching back to an earlier scramble keeps its progress.
- *
- * README "Asynchronous background searching": every scramble's search is
- * enqueued as soon as the pruned tree is ready (scheduleBackgroundSearches),
- * not only when it becomes active -- switching scrambles never blocks on or
- * restarts a search, it just displays whatever that session's cached
- * promise resolves to, whenever it resolves. README "State persistence on
- * reload": committed progress for every scramble is written to
- * localStorage (SESSION_STATE_KEY) after every commit/undo/switch and
- * replayed back through the same SolveSession.commit() a click would use.
- *
- * Searches run through a priority scheduler (search-scheduler.js): the
- * scramble on screen -- e.g. the search started by committing a result --
- * jumps ahead of every background scramble, and switching scrambles promotes
- * the new one and demotes the old. With a look-ahead depth > 1 (README
- * "Look-ahead optimisation depth") each search re-ranks its top candidates
- * by the combined TPP of the best follow-up steps (searchWithLookahead).
+ * One SolveSession per scramble, kept while you switch between scrambles.
+ * Every scramble starts searching as soon as the tree is ready; the one on
+ * screen goes first (search-scheduler.js). Committed steps are saved to
+ * localStorage and replayed through SolveSession.commit() on reload.
  */
 'use strict';
 
 // Bump whenever crossSolver/ or pseudoCrossSolver/ binaries or workers change:
 // the workers forward this query string to solver.js/pseudo.js and to the
 // .wasm files, so a browser can never keep running a cached older engine
-// (which would silently lack e.g. setNoopMoves; PROJECT_STATUS.md §4.27).
-const ENGINE_VERSION = '20261006-fatal1';
+// (which would silently lack e.g. setNoopMoves).
+const ENGINE_VERSION = '20261006b';
 // The engine worker's JS glue (crossSolver/worker-persistent.js) can change
 // without the engine: its own URL parameter, so the prune-table cache
 // (keyed by ENGINE_VERSION) stays valid.
@@ -42,10 +24,7 @@ const ENGINE_GLUE_VERSION = 'batch1';
 const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src)
   ? new URL(document.currentScript.src).search : '';
 
-// SESSION_STATE_KEY is declared once, in script.js (loaded before this file
-// on solver.html, and needed standalone by index.html's clearScrambleData)
-// -- plain <script> tags share one global scope, so redeclaring it here
-// would break page load (see test/browser-globals.test.js).
+// SESSION_STATE_KEY comes from script.js (shared global scope).
 
 (function () {
   let helper = null;
@@ -65,7 +44,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return (colors && colors.length) ? colors : ['white'];
   }
 
-  // A pool of engine workers (PROJECT_STATUS.md §4.34): each search starts all
+  // A pool of engine workers: each search starts all
   // of its solver calls at once and the scheduler runs one per worker, so the
   // calls of a search (one per DAG edge and colour) run in parallel. One core
   // is left for the page itself; each worker holds its own tables (~100 MB).
@@ -76,13 +55,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const HARDWARE_THREADS = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
   const ENGINE_POOL_SIZE = HARDWARE_THREADS >= 8 ? 2 : 1;
 
-  // Prune-table sharing (PROJECT_STATUS.md §4.40). Every engine worker used
-  // to build the same "cross + corner/edge" tables itself (~0.4 s per 4.5 MB
-  // table, up to 8 per move list), on every page load. Now a table one worker
-  // has built is handed to the others, and kept in IndexedDB (per
-  // ENGINE_VERSION), so a later page load starts with the tables in place.
-  // A table depends only on its key (the engine checks key and size), so the
-  // results are the same. Anything failing here only costs the old rebuild.
+  // Prune tables: a table one worker builds is handed to the others and kept
+  // in IndexedDB (per ENGINE_VERSION). A table depends only on its key (the
+  // engine checks key and size); if anything here fails, the workers just
+  // build their own.
   const TABLE_DB = 'cubetree-engine-tables';
   const knownTables = new Set();
   function tableDb() {
@@ -216,8 +192,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (!needed || typeof PseudoSolverHelper === 'undefined') return null;
     if (!pseudoHelper) {
       try {
-        // A pool like the matched engine's (§4.36): with full pseudo on, most
-        // of a root search's calls are pseudo ones (48 of 63 per colour).
+        // A pool like the matched engine's: with full pseudo on, most of a root
+        // search's calls are pseudo ones (48 of 63 per colour).
         const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
           const h = new PseudoSolverHelper(`pseudoCrossSolver/worker3.js?v=${ENGINE_VERSION}`);
           await h.init();
@@ -235,17 +211,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return pseudoHelper;
   }
 
-  // Post-processing workers (PROJECT_STATUS.md §4.40): each engine call's
-  // solutions are turned into ranked candidates (luck filter, spellings, TPP)
-  // by solver-bridge.js's postProcessCall on a small worker pool instead of
-  // the page's main thread, which used to be the bottleneck of root searches
-  // and look-ahead. Same function, same output; any worker failure falls back
-  // to running that call's post-processing here.
-  // Sized to the threads the engine pool leaves (at least two, at most 12;
-  // big calls are ranked in chunks side by side). The page's own thread is
-  // idle while they rank, and the engines finish in seconds, so no thread is
-  // kept back for them (on a 2-thread report, one worker ranked a first step
-  // alone: 29 s instead of ~20 s).
+  // Post-processing (luck filter, spellings, TPP) runs on a worker pool, off
+  // the main thread; if a worker fails, that call is post-processed here.
+  // Sized to the threads the engine pool leaves, two to twelve. No thread is
+  // kept back for the page: it's idle while the workers rank.
   const POST_POOL_SIZE = Math.max(2, Math.min(12, HARDWARE_THREADS - ENGINE_POOL_SIZE));
   let postPool = null;
   function postProcessor() {
@@ -363,7 +332,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const post = postProcessor();
       if (post) session.postProcessor = post;
       if (criteria && criteria.searchConfig) session.searchConfig = criteria.searchConfig;
-      session._status = 'pending'; // README "Asynchronous background searching": pending|searching|done|error
+      session._status = 'pending'; // pending|searching|done|error
       sessions.set(index, session);
     }
     return sessions.get(index);
@@ -377,7 +346,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   // ---------------------------------------------------------------------
   // The solution as text: committed steps written back (rowsText), copy,
-  // copy all, move count (README "Solution entry").
+  // copy all, move count.
   // ---------------------------------------------------------------------
 
   /** The committed steps as editor text, one per line (as found: the editor keeps steps uncancelled). */
@@ -409,10 +378,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /** STM / ETM of the solution and its last-layer steps. */
   function solutionCounts(session) {
     const c = moveCounts(session);
-    if (!llRead) return c.text;
     let stm = c.stm, etm = c.etm;
-    for (const st of llRead.steps) for (const t of st.toks) { etm++; if (!/^[xyz]/.test(t)) stm++; }
-    return `${stm}STM / ${etm}ETM`;
+    if (llRead) for (const st of llRead.steps) for (const t of st.toks) { etm++; if (!/^[xyz]/.test(t)) stm++; }
+    return `${stm} STM · ${etm} ETM`;
   }
 
   /** What copy writes: the scramble, the solution as a reconstruction (cancellations merged), then any unfinished moves. */
@@ -514,9 +482,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const view = {
     lookaheadDepth: 1, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
-    llMethod: 'oll', // README "Algorithm sets": oll | coll | zbll | 1lll
-    // the last-slot sets, each on its own (developer, 2026-10-13); when any
-    // is on, the last two pairs are never solved at once (README "Algorithm sets")
+    llMethod: 'oll', // oll | coll | zbll | 1lll
+    // the last-slot sets, each on its own; when any
+    // is on, the last two pairs are never solved at once
     lsSets: null,
     hideAwkwardAlgs: true,
   };
@@ -548,8 +516,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
     view.llMethod = ['oll', 'coll', 'zbll', '1lll'].includes(view.llMethod) ? view.llMethod : 'oll';
-    // the last-slot sets: saved, else the onboarding's answer, else the
-    // easy ones (the old single switch "last slot algs" meant zbls + vls/hls)
+    // the last-slot sets: saved, else the setup answer, else ZBLS + VLS/HLS
     const a = answers();
     if (!view.lsSets || typeof view.lsSets !== 'object') {
       const fromAnswers = Array.isArray(a.lastSlot) ? a.lastSlot : null;
@@ -565,12 +532,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   /** The solver's last-layer preferences (style, main and known algs, last-slot sets) for last-layer.js. */
   function syncLastLayerPrefs() {
-    // who the tree-searcher talks to: their speed bracket, how much they want it to talk
-    if (typeof CAPTION_CONTEXT !== 'undefined') {
-      const a = answers();
-      CAPTION_CONTEXT.level = a.speed && typeof SKILL_LEVELS !== 'undefined' ? SKILL_LEVELS[levelFor(a.speed)].id : '';
-      CAPTION_CONTEXT.chat = a.chat === 'brief' || a.chat === 'chatty' ? a.chat : '';
-    }
     if (typeof LastLayer === 'undefined') return;
     const p = profile();
     const algs = p && cubeProfiles ? cubeProfiles.algs(p.id) : { main: {}, known: {} };
@@ -642,7 +603,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       el.textContent = msg || '';
       el.dataset.state = kind;
     }
-    const searcher = $('searcher');
+    const searcher = $('suggestions');
     if (searcher) searcher.classList.toggle('thinking', kind === 'busy');
   }
 
@@ -652,9 +613,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     shownResults = results;
     shownOwner = activeStepKey();
     shownPartial = partial;
-    // No counts or other numbers on screen (developer, 2026-10-11): the
-    // tree-searcher says when it is thinking; the line only speaks up when it must.
-    // (a look-ahead whose first candidates are in only grows quietly from here)
+    // the status line only speaks for a failure or an empty result
     const final = !partial || results.lookaheadPending === 0
       || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
     shownFinal = final;
@@ -667,8 +626,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // Searching (unchanged machinery: one search per session, path and
-  // settings; a priority scheduler; background scrambles one at a time).
+  // Searching: one search per session, path and settings; background
+  // scrambles one at a time.
   // ---------------------------------------------------------------------
   const scheduler = createSearchScheduler();
   const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
@@ -688,7 +647,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const single = !view.multislot;
     const noWide = !view.wideMoves;
     // a last-slot set on: the last pair is always one pair on its own, so the
-    // last two pairs are never solved at once, multislot or not (developer, 2026-10-13)
+    // last two pairs are never solved at once, multislot or not
     const lastTwo = !single && lastSlotOn();
     if (!simple && !orthodox && !single && !noWide && !lastTwo) return { fn: null, key: '' };
     return {
@@ -759,7 +718,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /**
    * The step's search with look-ahead as a scheduler job. The look-ahead's
    * breadth grows while this is the step on screen, the page is visible and
-   * no other search needs the engines (README "Look-ahead").
+   * no other search needs the engines.
    */
   function submitLookahead(session, cache, h, ph, opts, priority, { onUpdate, onStatus, isCancelled, isShown }, stepResults = null) {
     let job = null;
@@ -908,7 +867,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /**
-   * After the F2L (README "Algorithm sets"): the tail's finished lines read
+   * After the F2L: the tail's finished lines read
    * as last-layer steps (last-layer.js, by replay), their lines drawn as
    * steps; what follows the last of them is the last layer's tail.
    */
@@ -959,8 +918,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return { steps: r.steps, base: first, cube: r.cube, stage: r.stage, tailTokens, tailLine, finished };
   }
 
-  // the last layer needs both scripts; without them (a failed load) the
-  // F2L works as before
+  // the last layer needs both scripts; if they failed to load, F2L still works
   const llAvailable = () => typeof LastLayer !== 'undefined' && typeof AlgSets !== 'undefined';
   let llLoading = null;
   /** Loads every alg set once (data/ll/*.json); re-renders when they arrive. */
@@ -1034,8 +992,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /**
-   * The solution's steps as line ranges, the way lichess's move list numbers
-   * moves: [{ first, last, label, from, to }] where from..to are the moves
+   * The solution's steps as line ranges: [{ first, last, label, from, to }] where from..to are the moves
    * (playback positions) the step covers. The inspection line goes with the
    * cross; the unfinished tail is no step.
    */
@@ -1061,14 +1018,14 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return out;
   }
 
-  // critique glyphs by the playback position of the step they judge ({ key, at: Map(move -> glyph) })
+  // critique marks by the playback position of the step they judge ({ key, at: Map(move -> glyph) })
   let critiqueMarks = null;
-  const GLYPH_NAMES = { '!!': 'brilliant', '!': 'good', '?!': 'inaccuracy', '?': 'mistake' };
+  const MARKS = { '!!': ['beyond', 'beats the search'], '!': ['best', 'best'], '?!': ['slower', 'slower'], '?': ['off', 'slower, unusual'] };
+  const markHtml = (glyph, style = '') => `<b class="mark" data-mark="${MARKS[glyph][0]}"${style}>${MARKS[glyph][1]}</b>`;
 
   /**
    * The gutter: each step's number beside its labelled line, the step the
-   * cube is showing lit (lichess's current move), and after a critique its
-   * glyph right after the line (lichess: "Nf6?!").
+   * cube is showing lit, and after a critique its mark after the line.
    */
   function layoutGutter() {
     const gutter = $('editor-gutter');
@@ -1079,7 +1036,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (!box.height) return;
     const rectsOf = (li) => { const el = lines[li]; return el ? el.getClientRects() : []; };
     const session = sessions.get(activeIndex);
-    // the glyphs stay (as lichess keeps its annotations) until the solution changes
+    // the marks stay until the solution changes
     const marks = critiqueMarks && session && editor && critiqueMarks.key === `${activeIndex}|${session.scoredPath}` && critiqueMarks.text === editor.value ? critiqueMarks.at : null;
     const pos = player && !previewing ? player.pos : -1;
     let html = '';
@@ -1098,7 +1055,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (glyph) {
         const end = b[b.length - 1];
         const left = Math.min(end.right - box.left + 8, box.width - 34);
-        html += `<b class="glyph" data-glyph="${GLYPH_NAMES[glyph]}" style="top:${end.top - box.top}px;left:${left}px" title="${GLYPH_NAMES[glyph]}">${glyph}</b>`;
+        html += markHtml(glyph, ` style="top:${end.top - box.top}px;left:${left}px"`);
       }
     });
     // the typed moves after the last step: their line lit while the cube shows them
@@ -1162,7 +1119,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   function commitSuggestion(r) {
     const session = getOrCreateSession(activeIndex);
     if (!committable(r)) return;
-    // steps taken from the tree-searcher (the critique notices a solve made only of them)
+    // steps taken from the suggestions (the critique notices a solve made only of them)
     (session._followed = session._followed || new Set()).add(rowTokens(r, session.isAtRoot).join(' '));
     const label = labelFor(session, r) + (r.lastSlot ? ` (${r.lastSlot.name})` : '');
     const node = session.nodeMap.get(r.targetNodeId);
@@ -1178,8 +1135,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   /**
    * Tab: commit the top (or chosen) suggestion with its label, or write the
    * label of a typed step that is finished; either way the caret goes to the
-   * next line, which commits the step (developer, 2026-10-11: a filled step
-   * is committed at once, never left greyed out).
+   * next line, which commits the step.
    */
   function acceptSuggestion() {
     const s = suggestions[activeIdx >= 0 ? activeIdx : 0];
@@ -1226,8 +1182,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const text = editor ? editor.value : '';
     const lastLine = reading ? reading.parsed[reading.parsed.length - 1] : null;
     const lastInfo = reading ? reading.lines[reading.parsed.length - 1] : null;
-    // nothing is offered to the right of a comment (developer, 2026-10-13: tab,
-    // delete, tab wrote the comment twice)
+    // nothing is offered to the right of a comment
     const commented = !!lastLine && lastLine.commentStart >= 0 && !text.endsWith('\n');
     // the last step of the solution ends the text: its comment first
     if (lastLine && !commented && !text.endsWith('\n') && lastInfo && lastInfo.kind === 'step' && lastInfo.label && lastLine.tokens.length) {
@@ -1253,7 +1208,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (session && reading && !session.isComplete) {
       const tail = reading.tail;
       const list = currentList();
-      // a tail that finishes a step: suggest its comment (CubeDB-style)
+      // a tail that finishes a step: suggest its comment
       const done = tail.tokens.length && !tail.onNewLine ? stepFromTail(session, tail.tokens, list) : null;
       tailStep = done;
       if (done && !commented) suggestions.push({ kind: 'comment', text: `// ${done.label}`, final: false });
@@ -1293,7 +1248,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return LastLayer.stageOf(f);
       } catch (e) { return null; }
     };
-    // the solver's own alg for the case first (README "Algorithm sets": main algs)
+    // the solver's own alg for the case first
     const ofSet = setId => rows.find(r => r.lastSlot.setId === setId && r.lastSlot.main) || rows.find(r => r.lastSlot.setId === setId);
     const ols = ofSet('ols');
     const pickStages = picks.map(p => leaves(p.r));
@@ -1320,7 +1275,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   /**
-   * At the last pair (README "Algorithm sets"): the ZBLS and OLS algs of the
+   * At the last pair: the ZBLS and OLS algs of the
    * cube's last-slot case, the slot turned to the front right by a y, each
    * replayed and scored as a step the user wrote (userStepRow), so they rank
    * like any step. Memoised per node.
@@ -1362,7 +1317,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // The continuation search (developer, 2026-10-11): moves typed that start
+  // The continuation search: moves typed that start
   // no listed step are searched onward -- the step's search again from the
   // cube after those moves -- so the ghost can still finish the step the
   // solver has in mind. Each continuation is the typed moves plus a found
@@ -1400,7 +1355,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (continuation && continuation.key === key) return;
     if (continuation && continuation.job) scheduler.setStale(continuation.job);
     const mine = { key, list: null, job: null };
-    continuation = mine; // pending from now on: the tree-searcher says it is following
+    continuation = mine; // pending from now on: the suggestions panel says it's searching
     renderSearcher();
     continuationTimer = setTimeout(() => {
       runContinuation(session, typed, mine).catch(() => { if (continuation === mine) { mine.list = []; renderSearcher(); } });
@@ -1470,13 +1425,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderSearcher();
   }
 
-  /** monkeytype's legend under the test ("tab + enter - restart test"): the keys of the solution bar. */
+  /** The keys of the solution bar, under it. */
   function renderKeyLegend() {
     const el = $('key-legend');
     if (!el) return;
     const keys = k => k.split(' ').map(x => `<kbd>${esc(x)}</kbd>`).join('');
     el.innerHTML = [['tab', 'keys.tab'], ['↑ ↓', 'keys.arrows'], ['esc', 'keys.esc']]
-      .map(([k, c]) => `<span>${keys(k)} - ${esc(caption(c))}</span>`).join('');
+      .map(([k, c]) => `<span>${keys(k)} ${esc(caption(c))}</span>`).join('');
     // the rows of the gutter move with the text's wrapping
     let t = 0;
     window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(layoutGutter, 60); });
@@ -1535,7 +1490,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function cubeTheme() {
     if (!pixelCube) return;
-    pixelCube.setTheme({ bg: cssVar('--bg') || '#161618', line: cssVar('--line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
+    pixelCube.setTheme({ bg: cssVar('--field') || '#161618', line: cssVar('--cube-line') || '#f1f1ee', clear: true, floorShadow: true, shadow: cssVar('--shadow') || undefined });
   }
 
   function scrambledState(scramble) {
@@ -1585,21 +1540,21 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     const label = $('cube-step');
     if (label && player) {
-      // Showdown's "Turn 17" box: the step the cube is in, then the move
+      // the step the cube is in, then the move
       const g = previewing ? null : stepGroups().find(x => player.pos > x.from && player.pos <= x.to);
       const name = previewing ? caption('stage.preview') : g ? g.label : player.pos ? caption('stage.typing') : caption('stage.scrambled');
-      label.innerHTML = player.length || !previewing ? `<b>${esc(name || '')}</b>${player.length ? ` ${player.pos}/${player.length}` : ''}` : '';
+      const shown = caseName(name);
+      label.innerHTML = player.length || !previewing ? `<b>${esc(shown)}</b>${player.length ? ` <small title="move, rotations included">${player.pos}/${player.length}</small>` : ''}` : '';
     }
     const play = $('pb-play');
-    if (play && player) play.textContent = player.playing ? '||' : '>>';
+    if (play && player) play.textContent = player.playing ? 'Pause' : 'Play';
     renderGauge();
     layoutGutter();
   }
 
   /**
-   * lichess's eval gauge, for a solve: one cell per stage (the cross, four
-   * pairs, the oriented and the solved last layer), filled from the bottom
-   * as far as the cube the board shows has got.
+   * One cell per stage (the cross, four pairs, the oriented and the solved
+   * last layer), filled as far as the cube on screen has got.
    */
   function renderGauge() {
     const gauge = $('gauge');
@@ -1699,7 +1654,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   // ---------------------------------------------------------------------
-  // The tree-searcher (suggest.js): its picks with reasons, or the critique
+  // Suggestions (suggest.js) with their reasons, or the critique
   // ---------------------------------------------------------------------
   let critiqueShown = null; // { key, items } while the critique is on screen
   const viewMemo = new Map();
@@ -1728,89 +1683,48 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     };
   }
 
-  function drawSearcherSprites() {
+  function drawProfileChip() {
     const p = profile();
-    const sprite = $('searcher-sprite');
-    if (sprite) searcherAnimator.redraw();
     const chip = $('profile-chip');
     if (chip) {
-      drawSearcher(chip.querySelector('canvas'), p ? p.searcher : 0, cssVar('--ink'), cssVar('--bg'));
+      chip.querySelector('.initial').textContent = p ? (p.name || '?')[0].toUpperCase() : '';
       const name = $('profile-name');
       if (name) name.textContent = p ? p.name : '';
     }
   }
 
-  /**
-   * The tree-searcher's minimal life (developer, 2026-10-11): a pixel shine that
-   * runs diagonally across it now and then, a blink when idle, a faster bob
-   * and thinking dots while it searches (CSS, .thinking). Off with reduced
-   * motion.
-   */
-  const searcherAnimator = (() => {
-    let timer = 0;
-    let frame = null; // { shine, blink }
-    const still = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    function redraw() {
-      const sprite = $('searcher-sprite');
-      if (!sprite) return;
-      const p = profile();
-      drawSearcher(sprite.querySelector('canvas'), p ? p.searcher : 0, cssVar('--ink'), cssVar('--panel'), {
-        blink: !!(frame && frame.blink),
-        shine: frame && frame.shine !== undefined ? { band: frame.shine, colour: cssVar('--shine') || '#7dff9a' } : null,
-      });
-    }
-    function play(frames, ms) {
-      let i = 0;
-      const next = () => {
-        frame = frames[i++] || null;
-        redraw();
-        if (frame) timer = setTimeout(next, ms);
-        else schedule();
-      };
-      next();
-    }
-    function schedule() {
-      clearTimeout(timer);
-      if (still()) return;
-      timer = setTimeout(() => {
-        if (document.hidden) { schedule(); return; }
-        if (Math.random() < 0.45) play(Array.from({ length: 36 }, (_, k) => ({ shine: k - 4 })), 40);
-        else play([{ blink: true }], 140);
-      }, 2600 + Math.random() * 3600);
-    }
-    return { redraw, start: () => { redraw(); schedule(); } };
-  })();
-
   function setThinking(on) {
-    const searcher = $('searcher');
+    const searcher = $('suggestions');
     if (searcher) searcher.classList.toggle('thinking', !!on);
   }
 
   // A preview whose button goes away ends with it: a removed button sends no
   // mouseleave, so the cube stayed on the preview and stopped following the
-  // solution after tab or a click on a pick (developer, 2026-10-14). The
+  // solution after tab or a click on a pick. The
   // same pick drawn again (the list re-ranked) keeps it.
-  /**
-   * Showdown's move buttons carry their type bottom left, as the dex's type
-   * icons (dex.pokemonshowdown.com): here the kind of step, each kind with a
-   * type's colour -- a cross Normal, an xcross Fighting, a pair Grass, a
-   * multislot Psychic, a pseudo step Ghost, a last-slot alg Water, OLL
-   * Electric, PLL Steel, COLL Fire, ZBLL and 1LLL Dragon.
-   */
-  const LL_TYPES = { oll: 'electric', pll: 'steel', epll: 'steel', coll: 'fire', zbll: 'dragon', '1lll': 'dragon' };
+  /** A step label as shown on screen: "oll 47" -> "OLL 47", "pll ja" -> "PLL Ja", "cross" -> "Cross". */
+  const SET_PREFIX = /^(oll|pll|epll|coll|zbll|1lll|ols|zbls|vls|hls|wv|sv)( |$)/i;
+  function caseName(label) {
+    const s = String(label || '');
+    if (!SET_PREFIX.test(s)) return s.replace(/^./, c => c.toUpperCase());
+    return s.replace(SET_PREFIX, (m, set, sp) => set.toUpperCase() + sp).replace(/ ([a-z])/, (m, c) => ' ' + c.toUpperCase());
+  }
+
+  /** The kind of step a pick is, for its corner label and tint (styles.css [data-kind]). */
+  const LL_KINDS = { oll: 'oll', pll: 'pll', epll: 'pll', coll: 'coll', zbll: 'zbll', '1lll': 'zbll' };
   function stepKind(label, lastSlot = null) {
     const l = String(label || '').toLowerCase();
-    if (lastSlot && lastSlot.name) return { text: lastSlot.name, type: 'water' };
-    if (/pseudo/.test(l)) return { text: 'pseudo', type: 'ghost' };
-    if (/^x+cross/.test(l)) return { text: l.split(' ')[0], type: 'fighting' };
-    if (/cross/.test(l)) return { text: 'cross', type: 'normal' };
-    if (/pairs/.test(l)) return { text: 'multi', type: 'psychic' };
-    if (/pair/.test(l)) return { text: 'pair', type: 'grass' };
-    return { text: l.split(' ')[0] || 'step', type: 'normal' };
+    if (lastSlot && lastSlot.name) return { text: lastSlot.name, type: 'ls' };
+    if (/pseudo/.test(l)) return { text: 'pseudo', type: 'pseudo' };
+    if (/^x+cross/.test(l)) return { text: l.split(' ')[0], type: 'xcross' };
+    if (/cross/.test(l)) return { text: 'cross', type: 'cross' };
+    if (/pairs/.test(l)) return { text: 'multislot', type: 'multi' };
+    if (/pair/.test(l)) return { text: 'pair', type: 'pair' };
+    return { text: l.split(' ')[0] || 'step', type: 'cross' };
   }
-  const typeBadge = kind => `<span class="type-badge" data-type="${kind.type}">${esc(kind.text)}</span>`;
+  const typeBadge = kind => `<span class="kind">${esc(kind.text)}</span>`;
 
-  /** Slice turn metric of a move string: every turn but rotations (Showdown's count in the corner of a pick). */
+  /** Slice turn metric of a move string: every turn but rotations. */
   const turnCount = moves => String(moves).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
 
   function renderSearcher() {
@@ -1822,30 +1736,30 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     else endPreview();
   }
   function renderSearcherInner() {
-    const say = $('searcher-say');
+    const say = $('suggest-note');
     const picksEl = $('picks');
-    const actions = $('bubble-actions');
-    const title = $('bubble-title');
+    const actions = $('suggest-actions');
+    const title = $('suggest-title');
     if (!say || !picksEl) return;
     const session = sessions.get(activeIndex);
     if (critiqueShown && session && critiqueShown.key === `${activeIndex}|${session.scoredPath}`) return; // the critique stays until something changes
     critiqueShown = null;
     picksEl.innerHTML = '';
     actions.innerHTML = '';
-    title.textContent = caption('searcher.title');
+    title.textContent = caption('suggest.title');
     const list = currentList();
     const statusBusy = ($('search-status') || {}).dataset ? $('search-status').dataset.state === 'busy' : false;
     setThinking(!session || (!session.isComplete && (!list || statusBusy)) || continuationPending());
-    if (!session) { say.textContent = caption('searcher.thinking'); return; }
+    if (!session) { say.textContent = caption('suggest.thinking'); return; }
     if (session.isComplete && llRead && llRead.stage && llRead.stage !== 'done' && llRead.stage !== 'auf') {
       renderLastLayerPicks(session, say, picksEl, title, actions);
       return;
     }
     if (session.isComplete) {
-      say.textContent = caption(llRead && llRead.stage === 'auf' ? 'searcher.ll.auf' : 'searcher.solved');
+      say.textContent = caption(llRead && llRead.stage === 'auf' ? 'suggest.ll.auf' : 'suggest.solved');
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'px-btn primary';
+      b.className = 'btn primary';
       b.textContent = caption('critique.button');
       b.addEventListener('click', runCritique);
       actions.appendChild(b);
@@ -1854,20 +1768,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     let pickList = list;
     if (reading && reading.tail.tokens.length) {
       if (tailStep) {
-        say.textContent = caption(tailStep.last ? 'searcher.lastDone' : 'searcher.stepDone', { label: tailStep.label });
+        say.textContent = caption(tailStep.last ? 'suggest.lastDone' : 'suggest.stepDone', { label: caseName(tailStep.label) });
         return;
       }
       if (!suggestions.some(s => s.kind === 'alg')) {
-        say.textContent = caption(continuationPending() || !shownFinal ? 'searcher.following' : 'searcher.offNode');
+        say.textContent = caption(continuationPending() || !shownFinal ? 'suggest.following' : 'suggest.offNode');
         return;
       }
       // picks that carry on what is typed, when only the continuation has it
       const cont = continuationFor(reading.tail);
       if (cont && list && !prefixMatches(list, reading.tail.tokens, reading.tail.partial, session.isAtRoot).length) pickList = cont;
     }
-    if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'searcher.thinking'); return; }
+    if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'suggest.thinking'); return; }
     // a new step, new words (the same step keeps saying the same)
-    CAPTION_CONTEXT.seed = session.committedRows.length * 31 + activeIndex;
     let picks = searcherPicks(pickList, pickContext(session));
     if (reading && reading.tail.tokens.length) {
       // only picks that start like what is typed
@@ -1875,30 +1788,30 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     const ls = lastSlotPick(session, picks);
     if (ls && (!reading || !reading.tail.tokens.length || prefixMatches([ls.r], reading.tail.tokens, reading.tail.partial, false).length)) picks.push(ls);
-    say.textContent = caption(!picks.length ? 'searcher.keepGoing' : picks.length > 1 ? 'searcher.greeting' : 'searcher.greetingOne');
+    say.textContent = !picks.length ? caption('suggest.keepGoing') : picks.length === 1 ? caption('suggest.greetingOne') : '';
     picks.forEach((p) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      const why = p.reasons.slice(0, CAPTION_CONTEXT.chat === 'chatty' ? 2 : 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
+      const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
       const kind = stepKind(labelFor(session, p.r), p.r.lastSlot);
-      b.dataset.type = kind.type;
-      b.innerHTML = `<span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>${typeBadge(kind)}<span class="tag">${esc(caption(`searcher.pick.${p.role}`))}</span><span class="cnt">${turnCount(tokens)} STM</span>`;
+      b.dataset.kind = kind.type;
+      b.innerHTML = `<span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>${typeBadge(kind)}<span class="cnt">${turnCount(tokens)} STM</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
       b.dataset.preview = `${activeIndex}|${session.committedRows.length}|${tokens}`;
       b.addEventListener('mouseenter', () => previewCandidate(p.r, b));
       b.addEventListener('mouseleave', endPreview);
-      // a last-slot alg can become the solver's own for its case (README "Algorithm sets")
+      // a last-slot alg can become the solver's own for its case
       const ls = p.r.lastSlot;
       if (ls && ls.caseId && ls.alg && !ls.main) {
         const row = document.createElement('div');
         row.className = 'pick-row';
         const star = document.createElement('button');
         star.type = 'button';
-        star.className = 'px-btn quiet star';
+        star.className = 'btn quiet star';
         star.textContent = '★';
-        star.title = caption('searcher.ll.makeMain');
+        star.title = caption('suggest.ll.makeMain');
         star.setAttribute('aria-label', star.title);
         star.addEventListener('click', () => { setMainAlg(ls.caseId, ls.alg.alg); commitSuggestion(p.r); });
         row.append(b, star);
@@ -1913,19 +1826,19 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
    * to four picks -- the fastest of the method's set (for this solver's
    * style), the community's favourite when it is another one, the fastest of
    * the other set that applies -- each with a star that uses it and makes it
-   * the solver's main alg, and "neither" for more (developer, 2026-10-13).
+   * the solver's main alg, and "neither" for more.
    */
   // "neither": page 0 is the usual picks (or the main alg), pages 1.. the case's other algs, three at a time
   let llMore = { caseId: null, page: 0 };
   const LL_PAGE = 3;
   function renderLastLayerPicks(session, say, picksEl, title, actions) {
-    if (!Object.keys(LastLayer.LOADED).length) { say.textContent = caption('searcher.thinking'); ensureLastLayerData(); return; }
-    if (llRead.finished) { say.textContent = caption('searcher.ll.stepDone', { label: llRead.finished.label }); return; }
+    if (!Object.keys(LastLayer.LOADED).length) { say.textContent = caption('suggest.thinking'); ensureLastLayerData(); return; }
+    if (llRead.finished) { say.textContent = caption('suggest.ll.stepDone', { label: caseName(llRead.finished.label) }); return; }
     const pool = LastLayer.suggestions(llRead.cube, LastLayer.LOADED, view.llMethod);
     const { tokens, partial } = typedTail();
     const fits = tokenPrefixMatches(pool, tokens, partial);
-    if (!pool.length) { say.textContent = caption('searcher.ll.unknown'); return; }
-    if (!fits.length) { say.textContent = caption('searcher.keepGoing'); return; }
+    if (!pool.length) { say.textContent = caption('suggest.ll.unknown'); return; }
+    if (!fits.length) { say.textContent = caption('suggest.keepGoing'); return; }
     const firstSet = fits[0].setId;
     const own = fits.filter(m => m.setId === firstSet);
     const cid = own[0].caseId;
@@ -1965,26 +1878,26 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       // never fewer than two
       for (const m of own) { if (picks.length >= 2) break; add(m, 'll.next', 'll.next'); }
     }
-    title.textContent = fits[0].label;
-    say.textContent = caption(main && !llMore.page ? 'searcher.ll.yours' : llMore.page ? 'searcher.ll.others' : 'searcher.ll.case', { label: fits[0].label });
+    title.textContent = caseName(fits[0].label);
+    say.textContent = main && !llMore.page ? caption('suggest.ll.yours') : llMore.page ? caption('suggest.ll.others', { label: caseName(fits[0].label) }) : '';
     picks.forEach((p) => {
       const row = document.createElement('div');
       row.className = 'pick-row';
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      const kind = { text: p.m.setId, type: LL_TYPES[p.m.setId] || 'normal' };
-      b.dataset.type = kind.type;
-      b.innerHTML = `<span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: p.m.label }))}</span>${typeBadge(kind)}<span class="tag">${esc(caption(`searcher.pick.${p.role}`, { set: p.m.setId }))}</span><span class="cnt">${turnCount(p.m.toks.join(' '))} STM</span>`;
+      const kind = { text: p.m.setId, type: LL_KINDS[p.m.setId] || 'oll' };
+      b.dataset.kind = kind.type;
+      b.innerHTML = `<span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: caseName(p.m.label) }))}</span>${typeBadge(kind)}<span class="cnt">${turnCount(p.m.toks.join(' '))} STM</span>`;
       b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
       row.appendChild(b);
       if (!p.m.main) {
         const star = document.createElement('button');
         star.type = 'button';
-        star.className = 'px-btn quiet star';
+        star.className = 'btn quiet star';
         star.textContent = '★';
-        star.title = caption('searcher.ll.makeMain');
-        star.setAttribute('aria-label', caption('searcher.ll.makeMain'));
+        star.title = caption('suggest.ll.makeMain');
+        star.setAttribute('aria-label', caption('suggest.ll.makeMain'));
         star.addEventListener('click', () => { setMainAlg(p.m.caseId, p.m.alg.alg); commitLastLayer({ toks: p.m.toks, label: p.m.label }); });
         row.appendChild(star);
       }
@@ -1994,18 +1907,18 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (pages > 1) {
       const neither = document.createElement('button');
       neither.type = 'button';
-      neither.className = 'px-btn quiet';
-      neither.textContent = caption(main && !llMore.page ? 'searcher.ll.change' : 'searcher.ll.neither');
+      neither.className = 'btn quiet';
+      neither.textContent = caption(main && !llMore.page ? 'suggest.ll.change' : 'suggest.ll.neither');
       neither.addEventListener('click', () => { llMore.page = (llMore.page + 1) % pages; renderSearcher(); });
       actions.appendChild(neither);
     }
     // every alg of the case, on the algs page
     const more = document.createElement('a');
-    more.className = 'px-btn quiet';
+    more.className = 'btn quiet';
     more.href = `algs.html#${fits[0].setId}/${String(fits[0].caseName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
     more.target = '_blank';
     more.rel = 'noopener';
-    more.textContent = caption('searcher.ll.more');
+    more.textContent = caption('suggest.ll.more');
     actions.appendChild(more);
   }
 
@@ -2020,8 +1933,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   /**
    * Last-layer steps the solver typed themselves (not taken with tab or a
-   * pick): they know that case, so it is marked known (developer,
-   * 2026-10-13: track which algs a solver knows without asking).
+   * pick): they know that case, so it is marked known.
    */
   const tabbedLL = new Set(); // alg texts written by tab or a pick
   function markTypedKnown(session) {
@@ -2048,45 +1960,36 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function bindSearcher() {
-    const sprite = $('searcher-sprite');
-    const searcher = $('searcher');
-    if (!sprite || !searcher) return;
-    if (matchMedia('(max-width: 600px)').matches) { searcher.classList.add('collapsed'); sprite.setAttribute('aria-expanded', 'false'); }
-    sprite.addEventListener('click', () => {
-      const collapsed = searcher.classList.toggle('collapsed');
-      sprite.setAttribute('aria-expanded', String(!collapsed));
-    });
-    drawSearcherSprites();
-    searcherAnimator.start();
+    drawProfileChip();
   }
+
 
   // ---------------------------------------------------------------------
   // The critique (critique.js)
   // ---------------------------------------------------------------------
   async function runCritique() {
     const session = getOrCreateSession(activeIndex);
-    const say = $('searcher-say');
+    const say = $('suggest-note');
     const picksEl = $('picks');
-    const actions = $('bubble-actions');
-    const searcher = $('searcher');
+    const actions = $('suggest-actions');
+    const searcher = $('suggestions');
     if (searcher) searcher.classList.remove('collapsed');
-    $('bubble-title').textContent = caption('critique.title');
+    $('suggest-title').textContent = caption('critique.title');
     picksEl.innerHTML = '';
     actions.innerHTML = '';
     critiqueShown = { key: `${activeIndex}|${session.scoredPath}`, items: null };
     if (!session.committedRows.length) { say.textContent = caption('critique.needSolve'); return; }
-    CAPTION_CONTEXT.seed++;
-    // every step one of the tree-searcher's own suggestions: it declines, jokingly
+    // every step was a top suggestion: nothing to critique
     const followed = session._followed || new Set();
     const allFollowed = session.committedRows.length >= 2
       && session.committedRows.every((row, i) => followed.has(rowTokens(row, i === 0).join(' ')))
       && (!llRead || llRead.steps.every(st => tabbedLL.has(st.toks.join(' '))));
     if (allFollowed) {
-      say.textContent = caption('critique.egg');
+      say.textContent = caption('critique.allTop');
       const ok = document.createElement('button');
       ok.type = 'button';
-      ok.className = 'px-btn';
-      ok.textContent = 'ok';
+      ok.className = 'btn';
+      ok.textContent = 'Close';
       ok.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
       actions.appendChild(ok);
       return;
@@ -2163,17 +2066,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     layoutGutter();
     const close = document.createElement('button');
     close.type = 'button';
-    close.className = 'px-btn';
-    close.textContent = 'ok';
+    close.className = 'btn';
+    close.textContent = 'Close';
     close.addEventListener('click', () => { critiqueShown = null; renderSearcher(); });
     actions.appendChild(close);
   }
 
   /**
-   * A step's verdict as a chess annotation glyph (lichess's analysis): !! a
-   * step outside what the tree-searcher looks for that nothing it found
-   * beats, ! its best, ?! a slower step or a slower kind of step, ? a slower
-   * step of a kind it never suggests; a fine step (close to the best) none.
+   * A step's verdict: '!!' outside what the search looks for, and nothing it
+   * found beats it; '!' its best; '?!' slower, or a slower kind of step; '?'
+   * slower and of a kind it never suggests; '' close enough to the best.
    */
   function critiqueGlyph(item) {
     if (item.why && item.why.length) return item.outside ? '?' : '?!';
@@ -2184,24 +2086,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const LL_GLYPHS = { 'critique.ll.best': '!', 'critique.ll.main': '!', 'critique.ll.slower': '?!', 'critique.ll.notMain': '?!' };
 
   /**
-   * One step of the critique as a turn of Showdown's battle log: a full-width
-   * bar with the step (and its glyph), the verdict, and the alternative in
-   * smaller type with its moves in bold, as the log bolds a move's name.
+   * One step of the critique: a bar with the step (and its mark), the
+   * verdict, and the alternative in smaller type with its moves in bold.
    */
   function logEntry(label, glyph, text, alt, altAlg) {
-    const g = glyph ? ` <b class="glyph" data-glyph="${GLYPH_NAMES[glyph]}" title="${GLYPH_NAMES[glyph]}">${glyph}</b>` : '';
+    const g = glyph ? ` ${markHtml(glyph)}` : '';
     // the bar names the step: the verdict need not start with it again
     if (label && String(text).startsWith(`${label}: `)) text = String(text).slice(label.length + 2).replace(/^./, c => c.toUpperCase());
     let altHtml = esc(alt || '');
     if (altAlg && alt && alt.includes(altAlg)) altHtml = altHtml.replace(esc(altAlg), `<b class="moves">${esc(altAlg)}</b>`);
-    return `<h4 class="turn">${esc(label || '')}${g}</h4><div>${esc(text)}</div>${alt ? `<div class="alt">${altHtml}</div>` : ''}`;
+    return `<h4 class="turn">${esc(caseName(label))}${g}</h4><div>${esc(text)}</div>${alt ? `<div class="alt">${altHtml}</div>` : ''}`;
   }
 
   /**
-   * The last pair. Done with a last-slot alg of a set the solver has on
-   * (README "Algorithm sets"), it is judged against that set's algs for the
-   * case, not against a plain insert (developer, 2026-10-13: never "but I
-   * wanted the one I switched on"). Otherwise, when it still leaves the last
+   * The last pair. Done with a last-slot alg of a set the solver has on,
+   * it is judged against that set's algs for the
+   * case, not against a plain insert. Otherwise, when it still leaves the last
    * layer further on than the quicker alternative, the critique says so.
    */
   function creditLastSlot(session, report) {
@@ -2298,7 +2198,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       cubeTheme();
     }
     if (player) { player.speed = p.animSpeed > 0 ? p.animSpeed : 1; player.animated = p.animSpeed > 0; }
-    drawSearcherSprites();
+    drawProfileChip();
   }
 
   function bindSettings() {
@@ -2308,18 +2208,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const btn = $('settings-btn');
     if (!dialog || !btn || typeof dialog.showModal !== 'function') return;
     btn.addEventListener('click', () => { syncLookControls(); dialog.showModal(); });
+    const tabs = [...dialog.querySelectorAll('[data-tab]')];
+    for (const t of tabs) {
+      t.addEventListener('click', () => {
+        for (const o of tabs) o.setAttribute('aria-selected', String(o === t));
+        dialog.querySelectorAll('[data-page]').forEach((pg) => { pg.hidden = pg.dataset.page !== t.dataset.tab; });
+      });
+    }
     $('settings-close').addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
-    const themes = $('theme-choices');
-    if (themes) {
-      for (const t of PROFILE_THEMES) {
-        const label = document.createElement('label');
-        label.className = 'px-check';
-        label.innerHTML = `<input type="radio" name="theme" value="${t}"> ${t[0].toUpperCase()}${t.slice(1)}`;
-        label.querySelector('input').addEventListener('change', () => setPref({ theme: t }));
-        themes.appendChild(label);
-      }
-    }
+    const theme = $('theme-select');
+    if (theme) theme.addEventListener('change', () => setPref({ theme: theme.value }));
     const res = $('pixel-res');
     if (res) res.addEventListener('change', () => setPref({ pixelRes: res.value }));
     const back = $('back-faces');
@@ -2339,9 +2238,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   function syncLookControls() {
     const p = prefs();
-    document.querySelectorAll('#theme-choices input').forEach((i) => { i.checked = i.value === (p.theme || 'ink'); });
+    const theme = $('theme-select');
+    if (theme) theme.value = document.documentElement.dataset.theme;
     const res = $('pixel-res');
-    if (res) res.value = p.pixelRes || 'chunky';
+    if (res) res.value = p.pixelRes || 'smooth';
     const back = $('back-faces');
     if (back) back.checked = p.backFaces !== false;
     const speed = $('anim-speed');
@@ -2354,7 +2254,23 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     applyLook();
   }
 
+  function bindScrambleList() {
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('scramble-prev', () => scrambleController.navigate(-1));
+    on('scramble-next', () => scrambleController.navigate(1));
+    on('generate-scrambles', () => populateScrambles());
+    on('apply-scrambles', () => persistAndNavigate());
+    on('scramble-edit-btn', (e) => {
+      const box = $('scramble-edit');
+      box.hidden = !box.hidden;
+      e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
+      e.currentTarget.setAttribute('aria-pressed', String(!box.hidden));
+      if (!box.hidden) $('scramble-input').focus();
+    });
+  }
+
   function bindNewScramble() {
+    bindScrambleList();
     const btn = $('new-scramble-btn');
     if (!btn) return;
     btn.addEventListener('click', () => {

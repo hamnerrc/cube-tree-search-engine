@@ -1,11 +1,10 @@
 /**
- * search-scheduler.js — priority scheduling of searches onto the solver
- * engines (README "Multi-scramble queueing": the user's active focus comes
- * first).
+ * Priority scheduling of searches onto the solver
+ * engines.
  *
- * Each engine worker can only run one solve at a time, so searches used to be
- * chained FIFO: a search started by committing a result waited behind every
- * background scramble queued before it. Here:
+ * Each engine worker runs one solve at a time. A plain FIFO would make the
+ * search for the scramble on screen wait behind every background scramble,
+ * so instead:
  *
  *  - BACKGROUND jobs (other scrambles) start one at a time, only while
  *    nothing else is running.
@@ -14,10 +13,10 @@
  *  - Every engine call of every job goes through a priority gate per engine
  *    (helper, or array of helpers = a worker pool, one slot per worker): calls
  *    already in flight finish, then the ACTIVE job's calls run, and a
- *    BACKGROUND job's calls wait for as long as any ACTIVE job is still
- *    running -- including its non-engine post-processing between calls -- so
- *    a background search pauses at its next engine call instead of competing.
- *    A pool runs up to one call per worker at once (PROJECT_STATUS.md §4.34).
+ *    BACKGROUND job's calls wait for as long as any ACTIVE job is still running
+ *    -- including its non-engine post-processing between calls -- so a
+ *    background search pauses at its next engine call instead of competing. A
+ *    pool runs up to one call per worker at once.
  *  - A job's priority can change while it is queued or running (setPriority):
  *    switching scrambles promotes the newly active one and demotes the old.
  *  - A stale job (replaced on screen: the next step after a click, another

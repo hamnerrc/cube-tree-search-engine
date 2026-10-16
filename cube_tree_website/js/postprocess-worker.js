@@ -1,10 +1,8 @@
 /**
- * Post-processing worker (PROJECT_STATUS.md §4.40): runs solver-bridge.js's
- * postProcessCall -- luck filter, inspection variants, rotation spellings,
- * TPP of every candidate of one engine call -- off the page's main thread.
- * That work used to be most of a root search's time and nearly all of a
- * look-ahead's main-thread time, while the engine workers sat idle; a pool of
- * these lets the calls of a search be post-processed side by side.
+ * Post-processing worker: runs solver-bridge.js's postProcessCall -- luck
+ * filter, inspection variants, rotation spellings, TPP of every candidate of
+ * one engine call -- off the page's main thread, so the calls of a search are
+ * post-processed side by side.
  *
  * Message in:  { id, ctx, job, cores, live }  (see postProcessContext / postProcessJob)
  *              { id, limits }  (live jobs: the type's latest limits)

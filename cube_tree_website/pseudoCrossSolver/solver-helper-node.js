@@ -1,22 +1,19 @@
 /**
- * NOTE (2026-10-04): the engine's corner/edge targeting was once suspected
- * unreliable; that was a misreading. pseudo.cpp guarantees only "cross + the
- * targeted corners/edges solved UP TO ONE FREE TRAILING D TURN" (a D/D2/D'
- * brings all of them home at once). Callers must align that D -- see
- * alignPseudoAlg in solver-bridge.js and PROJECT_STATUS.md §4.14. Verified
- * 96/96 across 6 colors with real facelet replay.
+ * NOTE: the engine's corner/edge targeting was once suspected unreliable; that
+ * was a misreading. pseudo.cpp guarantees only "cross + the targeted
+ * corners/edges solved UP TO ONE FREE TRAILING D TURN" (a D/D2/D' brings all of
+ * them home at once). Callers must align that D. Verified 96/96 across 6 colors
+ * with real facelet replay.
  *
  * pseudoCrossSolver Node.js Helper - Promise-based API, mirroring
  * crossSolver/solver-helper-node.js's shape so solver-bridge.js can dispatch
  * to either engine uniformly, once the above is resolved.
  *
- * Unlike crossSolver, pseudo.cpp exposes a single free function
- * (`controller`, bound as `solve`) rather than a family of
- * Persistent*Solver classes -- there is no persistent prune-table reuse
- * here yet (see PROJECT_STATUS.md roadmap item 4: porting that pattern to
- * pseudo.cpp needs recompiling with emcc, not available in this
- * environment). Every solvePseudo() call rebuilds its own search tables
- * from scratch; this is a known, accepted perf gap, not a bug.
+ * Unlike crossSolver, pseudo.cpp exposes a single free function (`controller`,
+ * bound as `solve`) rather than a family of Persistent*Solver classes -- there
+ * is no persistent prune-table reuse here yet. Every solvePseudo call rebuilds
+ * its own search tables from scratch; this is a known, accepted perf gap, not a
+ * bug.
  *
  * `controller`'s `slot`/`pslot` strings are independent goal sets -- "slot"
  * (edges) and "pslot" (corners) name which EDGE-home-slots and
@@ -149,17 +146,12 @@ class PseudoSolverHelperNode {
 
     const slot = edgeSlots.join(' ');
     const pslot = cornerSlots.join(' ');
-    // cube-tree modification: a call queued past its deadline is skipped (PROJECT_STATUS §4.36).
     if (options.deadline && Date.now() >= options.deadline) return Promise.resolve([]);
 
     return this._doSolve(() => {
-      // cube-tree modification: per-call no-op move set (pseudo.cpp
-      // setNoopMoves); always reset so settings never leak between calls.
       if (typeof this.Module.setNoopMoves === 'function') {
         this.Module.setNoopMoves(options.noopMoves ? this._restStr(options.noopMoves) : '');
       }
-      // cube-tree modification: per-call deadline (epoch ms, 0 = none),
-      // checked inside the search (pseudo.cpp setDeadlineCheck, §4.36).
       this.Module._deadline = options.deadline || 0;
       if (typeof this.Module.setDeadlineCheck === 'function') this.Module.setDeadlineCheck(!!options.deadline);
       return this.Module.solve(

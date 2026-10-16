@@ -11,16 +11,15 @@
 //
 // The 9 base-generator permutations below (one quarter turn CW of each of
 // U/D/R/L/F/B, plus whole-cube x/y/z) were derived empirically against
-// `magiccube`, not hand-derived: each one was solved for by running many
-// random scrambles through both a "before" and "after" state and
-// intersecting, per output position, the set of input positions whose color
-// was consistent with that transformation across all trials - this project
-// has a standing rule (see PROJECT_STATUS.md) against hand-deriving rotation
-// algebra after past bugs from doing exactly that. Every base permutation
-// was then independently re-verified (not just derived) against 30 more
-// random trials. ', 2 and -axis-rotation combinations are all computed
-// mechanically from these 9 tables (permutation composition/inversion), not
-// typed by hand.
+// `magiccube`, not hand-derived: each one was solved for by running many random
+// scrambles through both a "before" and "after" state and intersecting, per
+// output position, the set of input positions whose color was consistent with
+// that transformation across all trials - this project has a standing rule
+// against hand-deriving rotation algebra after past bugs from doing exactly
+// that. Every base permutation was then independently re-verified (not just
+// derived) against 30 more random trials. ', 2 and -axis-rotation combinations
+// are all computed mechanically from these 9 tables (permutation
+// composition/inversion), not typed by hand.
 
 const FACE_ORDER = 'URFDLB';
 const SOLVED_FACELETS = 'WWWWWWWWWRRRRRRRRRGGGGGGGGGYYYYYYYYYOOOOOOOOOBBBBBBBBB';
@@ -65,12 +64,11 @@ function buildMoveTable() {
 const MOVE_TABLE = buildMoveTable();
 
 // Wide and slice moves, as compositions of the verified tables above. Each
-// decomposition was FOUND by exhaustive search over 1-3 token sequences of
-// the 27 base tokens against magiccube's Rw/Lw/Uw/Dw/Fw/Bw/M/E/S on 60 random
+// decomposition was FOUND by exhaustive search over 1-3 token sequences of the
+// 27 base tokens against magiccube's Rw/Lw/Uw/Dw/Fw/Bw/M/E/S on 60 random
 // states each (the first, shortest hit is used), not written from memory;
 // test/facelet-fixture.json re-verifies them against magiccube directly.
-// Lowercase is WCA wide notation (r == Rw). Added 2026-10-04 so the
-// professional reference solves (pro_references.txt) can be replayed.
+// Lowercase is WCA wide notation (r == Rw).
 const DERIVED_MOVES = {
     r: ['L', 'x'], l: ['R', "x'"], u: ['D', 'y'], d: ['U', "y'"], f: ['B', 'z'], b: ['F', "z'"],
     M: ['R', "L'", "x'"], E: ['U', "D'", "y'"], S: ["F'", 'B', 'z'],
@@ -98,8 +96,7 @@ function isMoveToken(token) {
 // 54-char facelet string and returns the resulting facelet string. Throws on
 // any unrecognized token so a typo fails loudly instead of silently no-opping.
 // The tokens are applied to two char-code buffers in turn and the string is
-// built once at the end (one string per token before; every candidate of every
-// search is replayed through here, PROJECT_STATUS.md §4.40).
+// built once at the end.
 const ALG_BUF_A = new Uint16Array(54);
 const ALG_BUF_B = new Uint16Array(54);
 function applyAlgorithm(facelets, algorithm) {
@@ -125,7 +122,7 @@ function applyAlgorithm(facelets, algorithm) {
 }
 
 // ---------------------------------------------------------------------------
-// Frame canonicalisation (2026-10-04, PROJECT_STATUS.md §4.19).
+// Frame canonicalisation.
 //
 // The solver engines take a whole-cube `rotation` option plus a `postAlg`, and
 // require the centres to end where the rotation put them -- so a committed
@@ -183,14 +180,13 @@ for (const t of [...FACE_TURNS, ...ROTATION_TOKENS, ...Object.keys(DERIVED_MOVES
 }
 
 // ---------------------------------------------------------------------------
-// Orientation tables (PROJECT_STATUS.md §4.34, performance). The 24 whole-cube
-// orientations are indexed once, so the hot paths below (canonicalizeForEngine,
-// relabelAlgForRotation, rotationSpellings -- called for every candidate)
-// compose rotations by table lookup and conjugate tokens through a cache
-// instead of building and string-keying 54-element permutations per token.
-// Everything is still derived from the verified permutations above, and
-// test/facelet-cube.test.js checks the results against the plain
-// permutation implementations on random inputs.
+// Orientation tables. The 24 whole-cube orientations are indexed once, so the
+// hot paths below (canonicalizeForEngine, relabelAlgForRotation,
+// rotationSpellings -- called for every candidate) compose rotations by table
+// lookup and conjugate tokens through a cache instead of building and
+// string-keying 54-element permutations per token. Everything is still derived
+// from the verified permutations above, and test/facelet-cube.test.js checks
+// the results against the plain permutation implementations on random inputs.
 const ROT_PERMS = [];
 const ROT_INDEX_BY_KEY = new Map();
 for (const [key] of ROTATION_BY_PERM) {
@@ -297,10 +293,9 @@ function commuteNormalize(alg) {
 }
 
 /**
- * Rotation spellings of `alg` (README "Professional reference solves": rotations
- * chosen during solving): for each split point, insert y or y' and relabel the
- * rest so the result is physically "alg, then that rotation". Skips a trailing
- * rotation (pointless) and, unless allowLeading, a leading one.
+ * Rotation spellings of `alg`: for each split point, insert y or y' and relabel
+ * the rest so the result is physically "alg, then that rotation". Skips a
+ * trailing rotation (pointless) and, unless allowLeading, a leading one.
  */
 function rotationSpellings(alg, allowLeading = true) {
     return rotationSpellingParts(alg, allowLeading).map(s => s.alg);
@@ -340,19 +335,19 @@ function rotationSpellingParts(alg, allowLeading = true) {
 }
 
 /**
- * Inspection-absorbed wide-move variants (PROJECT_STATUS.md §4.25): converting
- * an L/R-family turn into its wide form ("L" -> "r", which is "L x") makes the
- * alg physically "alg, then rho" for an x-family rho, so the cross would end
- * off the bottom. Undoing rho in the (free) inspection instead keeps the
- * result physically identical to the original: returns
- * [{ alg, inspection }] where `inspection` is the rotation to append to the
- * original inspection and `alg` the rewritten algorithm. Only the first
- * `maxPos` turns are converted -- that is where solvers use this ("inspect
- * with the cross on a side, bring it down with a wide move").
+ * Inspection-absorbed wide-move variants: converting an L/R-family turn into
+ * its wide form ("L" -> "r", which is "L x") makes the alg physically "alg,
+ * then rho" for an x-family rho, so the cross would end off the bottom. Undoing
+ * rho in the (free) inspection instead keeps the result physically identical to
+ * the original: returns [{ alg, inspection }] where `inspection` is the
+ * rotation to append to the original inspection and `alg` the rewritten
+ * algorithm. Only the first `maxPos` turns are converted -- that is where
+ * solvers use this ("inspect with the cross on a side, bring it down with a
+ * wide move").
  */
-// The single token equal to "token, then rho" (or undefined), cached: it
-// only depends on the pair, and inspectionWideVariants runs for every root
-// candidate (the permutation key was ~8% of a root search, §4.40).
+// The single token equal to "token, then rho" (or undefined), cached: it only
+// depends on the pair, and inspectionWideVariants runs for every root
+// candidate.
 const WIDE_TOKEN_CACHE = new Map();
 function wideTokenFor(token, rho) {
     const key = `${token} ${rho}`;
@@ -380,13 +375,13 @@ function inspectionWideVariants(alg, maxPos = 2) {
 }
 
 /**
- * Wide-move spellings of `alg` (README "Wide moves"): a D, U, B or F turn can
- * be done as the opposite wide turn, which turns the same pieces and also
- * rotates the cube -- D = "u y'", U = "d y", B = "f z'", F = "b z" (each
- * found by permutation below, not written by hand). The rest of the alg is
- * relabelled for that rotation, and an explicit rotation of `alg` that the
- * new frame makes redundant can be absorbed. So "D y R U' R'" becomes
- * "u R U' R'", and "B U' B'" becomes "f R' f'".
+ * Wide-move spellings of `alg`: a D, U, B or F turn can be done as the opposite
+ * wide turn, which turns the same pieces and also rotates the cube -- D = "u
+ * y'", U = "d y", B = "f z'", F = "b z" (each found by permutation below, not
+ * written by hand). The rest of the alg is relabelled for that rotation, and an
+ * explicit rotation of `alg` that the new frame makes redundant can be
+ * absorbed. So "D y R U' R'" becomes "u R U' R'", and "B U' B'" becomes "f R'
+ * f'".
  *
  * Returns [{ alg, rotation }]: every spelling is physically "alg, then
  * rotation", where rotation is '', y, y2 or y' -- the cross stays on the
@@ -414,7 +409,7 @@ function wideConversions(token) {
         if (WIDE_FACE_RE.test(token) && FACE_TURN_SET.has(token)) {
             for (const rho of WIDE_CONVERT_ROTATIONS) {
                 const w = wideTokenFor(token, rho);
-                // Never a wide B (README "Wide moves"; the bridge drops any).
+                // Never a wide B.
                 if (w && WIDE_UDFB_RE.test(w) && w[0] !== 'b') list.push({ wide: w, rho: ROT_OF_TOKEN[rho] });
             }
         }

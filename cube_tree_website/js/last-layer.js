@@ -1,12 +1,11 @@
 /**
- * last-layer.js -- the last layer on the solving screen (README "Algorithm
- * sets"). Once the F2L is solved, what the user types next is read as
- * last-layer steps by replaying it on the facelet cube (never taken from a
- * claim): a line that moves the cube on to a later stage is a step, named
- * after the case it solved ("oll 27", "pll t", "zbll t 12"). The ghost and
- * the tree-searcher offer the algs of the case on the cube (data/ll/*.json),
- * in the solver's last-layer method; at the last pair, the last-slot sets
- * (ZBLS, OLS) whose case matches.
+ * The last layer on the solving screen. Once the F2L is
+ * solved, what the user types next is read as last-layer steps by replaying it
+ * on the facelet cube (never taken from a claim): a line that moves the cube on
+ * to a later stage is a step, named after the case it solved ("oll 27", "pll
+ * t", "zbll t 12"). The ghost and the suggestions offer the algs of the case
+ * on the cube (data/ll/*.json), in the solver's last-layer method; at the last
+ * pair, the last-slot sets (ZBLS, OLS) whose case matches.
  */
 'use strict';
 
@@ -28,9 +27,8 @@ const LastLayer = (() => {
     return 'f2l';
   }
 
-  // The sets that apply at each stage, and what finishing one leaves.
-  // COLL is the OLL with the corners, from any OLL (developer, 2026-10-14);
-  // 1LLL the whole layer from anywhere.
+  // The sets that apply at each stage, and what finishing one leaves. COLL is
+  // the OLL with the corners, from any OLL; 1LLL the whole layer from anywhere.
   const SETS_AT = {
     f2l: ['1lll', 'coll', 'oll'],
     eo: ['1lll', 'zbll', 'coll', 'oll'],
@@ -69,13 +67,12 @@ const LastLayer = (() => {
   const caseLabel = (setId, data, kase) => AlgSets.caseTitle(data[setId] ? data[setId].data.name : setId, kase.name);
 
   // ---- the solver's preferences (solver-ui.js sets them; algs-ui.js too) ----
-  // style: 'efficiency' ("white collar") or 'tps' ("blue collar"): a small
-  //   cost per move, so white collar solvers see shorter algs a little
-  //   higher and blue collar ones faster-turning ones (developer, 2026-10-13);
-  // main: case id -> the solver's own alg for it (their main), known: case
-  //   id -> true; lastSlot: the last-slot sets switched on ({ zbls, ols, vls,
-  //   hls, wv, sv }); hideAwkward: hide awkward algs where the case's
-  //   community favourite is not awkward itself.
+  // style: 'efficiency' ("white collar") or 'tps' ("blue collar"): a small cost
+  // per move, so white collar solvers see shorter algs a little higher and blue
+  // collar ones faster-turning ones; main: case id -> the solver's own alg for
+  // it (their main), known: case id -> true; lastSlot: the last-slot sets
+  // switched on ({ zbls, ols, vls, hls, wv, sv }); hideAwkward: hide awkward
+  // algs where the case's community favourite is not awkward itself.
   const PREFS = { style: 'tps', main: {}, known: {}, lastSlot: { zbls: true, ols: false, vls: false, hls: false, wv: true, sv: true }, hideAwkward: true };
   const STYLE_PER_MOVE = { efficiency: 1.2, tps: -0.6 };
   function setPrefs(p) { Object.assign(PREFS, p || {}); }

@@ -1,6 +1,4 @@
 /**
- * cross-optimization.js — README "Wide moves and Cross optimisation".
- *
  * Post-hoc, first-step-only transform applied to an ordinary (face-turn
  * only) Cross solution: explores rewriting some subset of its L/L'/L2/
  * R/R'/R2/D/D' moves into their wide-move equivalent, tracking the
@@ -8,17 +6,15 @@
  * only the rewrites that still leave cross on the D (bottom) face.
  *
  * Everything here is derived from, and verified against, facelet-cube.js's
- * already-`magiccube`-verified move permutations — never hand-derived (see
- * PROJECT_STATUS.md's standing rule on this). Two things were specifically
- * checked against `magiccube` before writing this file (not just assumed
- * from the README's prose):
+ * already-`magiccube`-verified move permutations — never hand-derived. Two
+ * things were specifically checked against `magiccube` before writing this
+ * file:
  *
- * 1. The six equivalences themselves (README "Wide moves and Cross
- *    optimisation"): `Rw == L x`, `Rw' == L' x'`, `Rw2 == L2 x2`,
- *    `Lw == R x'`, `Lw' == R' x`, `Lw2 == R2 x2`, `Uw == D y`,
- *    `Uw' == D' y'`, `Uw2 == D2 y2` (magiccube's `Rw`/`Lw`/`Uw` notation
- *    for wide moves) — all confirmed to hold exactly, for 20 random
- *    pre-scrambles each, not just from a solved cube.
+ * 1. The six equivalences themselves: `Rw == L x`, `Rw' == L' x'`, `Rw2 == L2
+ *    x2`, `Lw == R x'`, `Lw' == R' x`, `Lw2 == R2 x2`, `Uw == D y`, `Uw' == D'
+ *    y'`, `Uw2 == D2 y2` (magiccube's `Rw`/`Lw`/`Uw` notation for wide moves) —
+ *    all confirmed to hold exactly, for 20 random pre-scrambles each, not just
+ *    from a solved cube.
  * 2. The move-relabeling rule needed once a rotation has already happened:
  *    for a pending rotation `rho` and an originally-intended move `M`
  *    (meant for the ROTATED-not-yet-happened frame), the move to type
@@ -33,38 +29,32 @@
  *
  * Why this relabeling matters, and why conversions are not just free text
  * substitution: `Rw` is DEFINED as "L then x" — so swapping an `L` in the
- * original algorithm for `r` is not a like-for-like substitution, it
- * SECRETLY also performs the `x` rotation as part of that one wide turn.
- * Every move after that point in the original algorithm was written
- * assuming no such rotation ever happened, so it must be relabeled to
- * keep referring to the same PHYSICAL layer. A short inductive argument
- * (see PROJECT_STATUS.md §4.5 or the implementation history) shows this
- * relabeling scheme makes the whole rewritten sequence exactly equal to
- * "the original algorithm, followed by the final accumulated rotation" —
- * which is exactly why the orientation filter (reject unless the final
- * accumulated rotation leaves D mapped to D) is correct: cross was already
- * solved on D by the original algorithm, and a trailing pure y-rotation
- * can't move it off D, while a trailing rotation with any x/z component
- * can and does.
+ * original algorithm for `r` is not a like-for-like substitution, it SECRETLY
+ * also performs the `x` rotation as part of that one wide turn. Every move
+ * after that point in the original algorithm was written assuming no such
+ * rotation ever happened, so it must be relabeled to keep referring to the same
+ * PHYSICAL layer. A short inductive argument shows this relabeling scheme makes
+ * the whole rewritten sequence exactly equal to "the original algorithm,
+ * followed by the final accumulated rotation" — which is exactly why the
+ * orientation filter (reject unless the final accumulated rotation leaves D
+ * mapped to D) is correct: cross was already solved on D by the original
+ * algorithm, and a trailing pure y-rotation can't move it off D, while a
+ * trailing rotation with any x/z component can and does.
  *
- * `y2` is never used as a conversion's rotation increment (dropping `D2`
- * from the convertible set) per the README's explicit "y2 is forbidden as
- * a mid-algorithm move" rule.
+ * `y2` is never used as a conversion's rotation increment (dropping `D2` from
+ * the convertible set) rule.
  *
- * NOTATION (corrected 2026-10-04, PROJECT_STATUS.md §4.19): the D-layer
- * conversion emits "u"/"u'", exactly as the README says ("u = D + y"). Wide
- * U turns the top two layers, which is the same as turning D and rotating
+ * NOTATION: the D-layer conversion emits "u"/"u'", exactly says ("u = D + y").
+ * Wide U turns the top two layers, which is the same as turning D and rotating
  * the whole cube by y. An earlier version emitted "d"/"d'" on the mistaken
- * belief that the engine's "u" meant something else; the engine, magiccube
- * and facelet-cube.js all read "d" as U + y', so every such result was
- * physically wrong once committed (0 next-step candidates, cross broken).
+ * belief that the engine's "u" meant something else; the engine, magiccube and
+ * facelet-cube.js all read "d" as U + y', so every such result was physically
+ * wrong once committed (0 next-step candidates, cross broken).
  */
 'use strict';
 
-// Each entry: converting this literal (already-relabeled) move emits
-// `wide` and accumulates `rotation` into the running cumulative rotation.
-// D2 is deliberately absent -- its only wide form needs a y2 rotation,
-// which the README forbids mid-algorithm.
+// Each entry: converting this literal (already-relabeled) move emits `wide` and
+// accumulates `rotation` into the running cumulative rotation.
 const WIDE_MOVE_RULES = {
     L: { wide: 'r', rotation: 'x' },
     "L'": { wide: "r'", rotation: "x'" },
@@ -108,16 +98,16 @@ function canonicalFaceName(token) {
 }
 
 /*
- * PROJECT_STATUS.md §4.36 (performance): the original enumerated all 2^n
- * masks over the n moves, composing 54-element permutations and comparing
- * against 18 joined permutation strings per move -- 41% of a root search's
- * time with every option on. A bit only matters at a position whose
- * (relabelled) move has a wide form, so this walks the choices depth-first
- * over those positions only, with the running rotation as an index into
- * facelet-cube.js's orientation tables. Same results, same order: the old
- * loop kept the first (smallest) mask of each distinct output, which is the
- * mask with only the effective bits set, so outputs are sorted by that mask.
- * test/cross-optimization.test.js checks it against the original.
+ * (performance): the original enumerated all 2^n masks over the n moves,
+ * composing 54-element permutations and comparing against 18 joined permutation
+ * strings per move -- 41% of a root search's time with every option on. A bit
+ * only matters at a position whose (relabelled) move has a wide form, so this
+ * walks the choices depth-first over those positions only, with the running
+ * rotation as an index into facelet-cube.js's orientation tables. Same results,
+ * same order: the old loop kept the first (smallest) mask of each distinct
+ * output, which is the mask with only the effective bits set, so outputs are
+ * sorted by that mask. test/cross-optimization.test.js checks it against the
+ * original.
  */
 /**
  * Explores every subset of convertible-move positions in `moves` (a

@@ -1,5 +1,4 @@
-// Random-state scramble generator (README "Results table": "The eventual
-// goal is proper random-state WCA-legal scrambles").
+// Random-state scramble generator.
 //
 // Picks a uniformly random reachable cube state at the cubie level, solves
 // it with a two-phase (Kociemba) search, and returns the inverse of that
@@ -15,8 +14,8 @@
 // of every scramble against the cubie state it was generated from, plus an
 // independent check with the Python `kociemba` package).
 //
-// Wrapped in a function scope: plain <script> tags share one global scope
-// in the browser (PROJECT_STATUS.md §4.14, test/browser-globals.test.js).
+// Wrapped in a function scope: plain <script> tags share one global scope in
+// the browser.
 const RandomStateScramble = (() => {
     const faceletLib = (typeof module !== 'undefined' && module.exports)
         ? require('./facelet-cube.js')

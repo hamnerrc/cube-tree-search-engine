@@ -12,7 +12,6 @@ const path = require('path');
 const js = f => require(path.join(__dirname, '..', 'js', f));
 const { SKILL_LEVELS, LEARNING_GOALS, INSPECTION_OPTIONS, STYLE_OPTIONS, levelFor, goalsFor, goalAllowed, settingsFromAnswers } = js('skill-levels.js');
 const { CAPTIONS, INFO_SECTION_KEYS, caption } = js('captions.js');
-const { SEARCHER_SPRITES } = js('searchers.js');
 
 let failures = 0;
 const test = (name, fn) => {
@@ -81,13 +80,6 @@ test('every caption key named by the onboarding data and the info dialog exists'
   assert.strictEqual(caption('no.such.key'), 'no.such.key');
 });
 
-test('tree-searcher sprites are 16x16 of #, x and .', () => {
-  assert.ok(SEARCHER_SPRITES.length >= 6);
-  for (const s of SEARCHER_SPRITES) {
-    assert.strictEqual(s.rows.length, 16, s.id);
-    for (const r of s.rows) assert.ok(/^[#x.]{16}$/.test(r), `${s.id}: ${r}`);
-  }
-});
 
 if (failures) { console.error(`\n${failures} test(s) failed.`); process.exit(1); }
 console.log('All onboarding tests passed.');

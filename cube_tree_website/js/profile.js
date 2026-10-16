@@ -1,7 +1,7 @@
 /**
- * profile.js — local profiles ("sign-in" without a server).
+ * Local profiles ("sign-in" without a server).
  *
- * README "Profiles": a profile is only a set of preferences kept in this
+ * A profile is only a set of preferences kept in this
  * browser's localStorage, so the site stays fully static (GitHub Pages).
  * Several profiles can share a device; signing in picks one, signing out
  * goes back to the list. Every other saved setting (search criteria, the
@@ -17,12 +17,12 @@
 const PROFILE_STORE_KEY = 'cubetree.profiles';
 const PROFILE_STORE_VERSION = 1;
 // Saved settings from before profiles existed: the first profile created on
-// a device takes them over (README "Profiles").
+// a device takes them over.
 const LEGACY_PROFILE_KEYS = ['cubecrit_search_criteria', 'cubecrit_view_prefs', 'cubecrit_session_state'];
 // Per-profile data an export code carries (the scramble progress is left out:
 // it belongs to this device's scramble list).
 const EXPORTED_PROFILE_KEYS = ['cubecrit_search_criteria', 'cubecrit_view_prefs'];
-const PROFILE_DEFAULT_PREFS = { theme: 'ink', pixelRes: 'chunky', backFaces: true, animSpeed: 1 };
+const PROFILE_DEFAULT_PREFS = { theme: 'light', pixelRes: 'smooth', backFaces: true, animSpeed: 1 };
 
 function memoryStorage() {
   const map = new Map();
@@ -142,7 +142,7 @@ function createProfileStore(storage = defaultProfileStorage()) {
       return true;
     },
     /**
-     * The solver's algs (README "Algorithm sets"): `main` case id -> their
+     * The solver's algs: `main` case id -> their
      * own alg for it, `known` case id -> true (the cases they have learned).
      */
     algs(id) {
@@ -239,13 +239,17 @@ function profileKey(base) {
   return cubeProfiles ? cubeProfiles.key(base) : base;
 }
 
-// README "Look": the four themes (styles.css [data-theme]); the first is the default.
-const PROFILE_THEMES = ['ink', 'violet', 'paper', 'mint'];
+// The four themes (styles.css [data-theme]); the first is the default.
+const PROFILE_THEMES = ['light', 'dark'];
+// themes from before the restyle
+const LEGACY_THEMES = { ink: 'dark', violet: 'dark', paper: 'light', mint: 'light' };
 
 /** Applies a profile's look (theme) to the page; no profile: the default theme. */
 function applyProfileLook(profile) {
   if (typeof document === 'undefined') return;
-  const theme = profile && PROFILE_THEMES.includes(profile.prefs && profile.prefs.theme) ? profile.prefs.theme : PROFILE_THEMES[0];
+  let theme = profile && profile.prefs && profile.prefs.theme;
+  theme = LEGACY_THEMES[theme] || theme;
+  if (!PROFILE_THEMES.includes(theme)) theme = PROFILE_THEMES[0];
   document.documentElement.dataset.theme = theme;
 }
 

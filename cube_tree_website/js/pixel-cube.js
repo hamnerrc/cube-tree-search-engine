@@ -1,11 +1,11 @@
 /**
- * pixel-cube.js — the cube simulator and visualiser (README "Cube").
+ * The cube simulator and visualiser.
  *
- * A small software renderer, no libraries: the 27 cubies and 54 stickers
- * are 3D quads seen through a perspective camera, rasterised into a
- * low-resolution buffer with a z-buffer and scaled up without smoothing, so
- * the cube reads as pixel art (UI_references/cube_image.png). Canvas paths
- * anti-alias their edges and cannot give crisp pixels; this does.
+ * A small software renderer, no libraries: the 27 cubies and 54 stickers are 3D
+ * quads seen through a perspective camera, rasterised into a low-resolution
+ * buffer with a z-buffer and scaled up without smoothing, so the cube reads as
+ * pixel art. Canvas paths anti-alias their edges and cannot give crisp pixels;
+ * this does.
  *
  * The cube's state is a facelet string in facelet-cube.js's layout (U R F D
  * L B, 9 each, row-major); applyAlgorithm there is the only source of truth
@@ -20,9 +20,8 @@
 // ---------------------------------------------------------------------------
 
 // Each face: its outward normal and the 3D directions of its rows (down the
-// face) and columns (across), as the facelet layout reads a face from
-// outside (README of facelet-cube.js: Kociemba's convention). Verified by
-// the move test, not assumed.
+// face) and columns (across), as the facelet layout reads a face from outside.
+// Verified by the move test, not assumed.
 const PC_FACES = [
   { n: [0, 1, 0], row: [0, 0, 1], col: [1, 0, 0] },   // U: rows from the back toward the front
   { n: [1, 0, 0], row: [0, -1, 0], col: [0, 0, -1] }, // R
@@ -111,8 +110,7 @@ const PC_COLOURS = {
 };
 const PC_BODY = ['#3a3a3a', '#1c1c1c', '#0c0c0c'];
 
-// Internal resolution per pixel setting (README "Look": reduce pixel art):
-// art pixels across the stage.
+// Internal resolution per pixel setting: art pixels across the stage.
 const PC_RESOLUTIONS = { chunky: 170, fine: 400, smooth: 0 };
 
 function hexToRgb(hex) {
@@ -273,7 +271,7 @@ class PixelCube {
         }
       }
     }
-    // stickers, and the back-face ghosts (CubeDB's "back faces")
+    // Stickers, and the back-face ghosts
     const viewDir = this._viewDirWorld();
     PC_STICKERS.forEach((s, i) => {
       const half = 0.41;
@@ -296,8 +294,8 @@ class PixelCube {
     const bg = this.theme.bg;
     const line = this.theme.line;
     const N = W * H;
-    // a transparent background lets the page show around the cube; its
-    // shadow is one flat tone cast to the side (UI_references/cube_inspo_art.png)
+    // A transparent background lets the page show around the cube; its shadow
+    // is one flat tone cast to the side
     const bgAlpha = this.theme.clear ? 0 : 255;
     const floor = this._floorMask();
     const shadow = this.theme.shadow || bg.map((v, k) => Math.round(v * 0.8 + line[k] * 0.2));
@@ -471,9 +469,8 @@ function playbackTokens(text) {
     .split(/\s+/).filter(t => t && moveGeometry(t));
 }
 
-// A jump of several moves turns through every one of them in about
-// GLIDE_MS (developer, 2026-10-13: the cube never cuts to a new state); one
-// move takes TURN_MS. The animation speed setting scales both.
+// A jump of several moves turns through every one of them in about GLIDE_MS;
+// one move takes TURN_MS. The animation speed setting scales both.
 const GLIDE_MS = 500;
 const TURN_MS = 150;
 const PLAY_MS = 190;  // a move of the playback

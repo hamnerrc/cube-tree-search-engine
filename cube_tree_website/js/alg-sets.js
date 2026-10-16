@@ -1,6 +1,6 @@
 /**
- * alg-sets.js -- the last-layer and last-slot algorithm sets (README
- * "Algorithm sets"): OLL, PLL, COLL, ZBLL, OLS (VLS + HLS) and ZBLS.
+ * The last-layer and last-slot algorithm sets: OLL, PLL, COLL,
+ * ZBLL, OLS (VLS + HLS) and ZBLS.
  *
  * A case is a class of cube states one algorithm solves: states that differ
  * by a U turn before the alg (pre-AUF) or a U turn of the solved cube before
@@ -129,17 +129,15 @@ const AlgSets = (() => {
     { id: 'pll', name: 'PLL', title: 'Permutation of the last layer', goal: 0,
       accepts: c => f2lSolved(c) && llOriented(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') },
-    // COLL on every OLL (developer, 2026-10-14: "doing corners while solving
-    // any of the 57 OLLs"; also called OLLCP): orients the last layer and
-    // solves its corners. Corners oriented with the edges oriented is a PLL
-    // case, not a COLL one.
+    // COLL on every OLL: orients the last layer and solves its corners. Corners
+    // oriented with the edges oriented is a PLL case, not a COLL one.
     { id: 'coll', name: 'COLL', title: 'The OLL and the corners at once', goal: 2,
       accepts: c => f2lSolved(c) && !(llEO(c) && cornersOriented(c)),
       key: c => c.co.slice(0, 4).join('') + '|' + c.eo.slice(0, 4).join('') + '|' + c.cp.slice(0, 4).join('') },
     { id: 'zbll', name: 'ZBLL', title: 'The whole last layer, edges oriented', goal: 0,
       accepts: c => f2lSolved(c) && llEO(c) && !cornersOriented(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') },
-    // 1LLL: the whole last layer in one alg, from any state (developer, 2026-10-14)
+    // 1LLL: the whole last layer in one alg, from any state
     { id: '1lll', name: '1LLL', title: 'The whole last layer in one alg', goal: 0,
       accepts: c => f2lSolved(c),
       key: c => c.cp.slice(0, 4).join('') + '|' + c.co.slice(0, 4).join('') + '|' + c.ep.slice(0, 4).join('') + '|' + c.eo.slice(0, 4).join('') },
@@ -196,10 +194,10 @@ const AlgSets = (() => {
       }
     }
   }
-  // OLS: the last pair and the orientation of the last layer at once, for
-  // every placement of the pair (developer, 2026-10-13: "full OLS"). VLS (the
-  // pair connected, ready for R U' R') and HLS (split, ready for R U R') come
-  // first, as before; their edge-oriented cases are WV and SV.
+  // OLS: the last pair and the orientation of the last layer at once, for every
+  // placement of the pair. VLS (the pair connected, ready for R U' R') and HLS
+  // (split, ready for R U R') come first, as before; their edge-oriented cases
+  // are WV and SV.
   const OLS_INSERTS = [{ group: 'VLS', insert: "R U' R'" }, { group: 'HLS', insert: "R U R'" }];
   function* olsStates() {
     for (const { group, insert } of OLS_INSERTS) {
@@ -451,32 +449,20 @@ const AlgSets = (() => {
    * most solvers). Without a model the naturalness term is left out (the
    * solving screen then compares on both sides without it).
    *
-   * Fitted on SpeedCubeDB's votes (tools/ll-build.js eval; two folds of
-   * cases; agreement on clearly ordered pairs / the top-voted alg first):
-   * MCC alone 63.0% / 40.4%; the F2L step ranking 68.8 / 48.7; with the
-   * last-layer naturalness model 77.2 / 61.0; these constants 79.4 / 63.4
-   * (folds 80.0 / 65.6 and 78.7 / 61.0; each fold's own fit agreed on no
-   * wide r/l penalty, D about 2 and naturalness 1.25-1.5). The F2L model had
-   * priced slice PLLs far down (M is rare in F2L); on pairs of a slice alg
-   * and a face-turn alg the votes still favour the face turns.
+   * The F2L model had priced slice PLLs far down (M is rare in F2L); on pairs
+   * of a slice alg and a face-turn alg the votes still favour the face turns.
    */
   const LL_LEFT = 2.5;
   const LL_NATURAL = 1.25;
-  // Each set has its own constants (developer, 2026-10-13: separate
-  // rankings for everything in the last layer), fitted on what professionals
-  // execute (tools/ll-tune.js; data/ll/pro_ll.json): `mcc` (script.js's
+  // Each set has its own constants, fitted on what professionals execute
+  // (tools/ll-tune.js; data/ll/pro_ll.json): `mcc` (script.js's
   // ALG_SPEED_DEFAULTS' shape), `pen` (move penalties), `left` (per left-hand
   // turn), `natural` (per bit of last-layer surprise). Sets without fitted
-  // values use the vote-fitted ones above.
-  // PLL: slices cost 0.5 instead of 3.5 (tools/ll-tune.js: Yiheng Wang's
-  // PLLs 2.121 -> 2.075 mean log2 rank, the community's votes 62.8 -> 63.8%;
-  // he turns the M-slice H and Z perms). Full refits of a set's constants
-  // did worse on held-out cases (OLL 0.825 -> 0.847, PLL 2.121 -> 2.459).
-  // OLL and PLL: half the cost per turn (`move` 0.5; below): on these sets'
-  // own pros it beats 1 (Yiheng's PLLs: mean log2 rank 1.910 -> 1.855, first
-  // 30.9% -> 43.5%; his OLLs 0.870 -> 0.845) and keeps the short picks the
-  // developer asked for (H the M-slice perm, OLL 25 in 8 moves); the U perms
-  // go back to the RU algs he turns.
+  // values use the vote-fitted ones above. PLL: slices cost 0.5 instead of 3.5
+  // (tools/ll-tune.js: Yiheng Wang's PLLs 2.121 -> 2.075 mean log2 rank, the
+  // community's votes 62.8 -> 63.8%; he turns the M-slice H and Z perms). Full
+  // refits of a set's constants did worse on held-out cases (OLL 0.825 ->
+  // 0.847, PLL 2.121 -> 2.459).
   const LL_FITTED = { pll: { pen: { wideOther: 0.5 }, move: 0.5 }, oll: { move: 0.5 } };
   let LL_BASE = null;
   /** The ranking constants of a set ({ mcc, pen, left, natural }). */
@@ -492,26 +478,23 @@ const AlgSets = (() => {
     if (!f) return LL_BASE;
     return { mcc: { ...LL_BASE.mcc, ...f.mcc }, pen: { ...LL_BASE.pen, ...f.pen }, left: f.left ?? LL_BASE.left, natural: f.natural ?? LL_BASE.natural, lead: f.lead ?? LL_BASE.lead, move: f.move ?? LL_BASE.move };
   }
-  // Rotations around an alg (developer, 2026-10-14: the A perms' "x ... x'"
-  // are executed like regrips). An alg wrapped in a rotation and its inverse
-  // ("x ... x'", "x' ... x") takes the first while the hands settle on the
-  // cube: it costs `lead` (a regrip), not a rotation. A rotation an alg ends
-  // with is free where the alg finishes the cube (PLL, ZBLL, 1LLL: the timer
-  // stops first). Any other rotation keeps its full price: a lone leading
-  // rotation ("x R2 F R F' ...", a Ja perm) ranked above the professionals'
-  // rotationless algs when it was cheap (tools/ll-tune.js; first-ranked pro
-  // PLLs 42.1% -> 36.2%). Only the community's algs carry rotations (the
-  // generator turns no rotations).
+  // Rotations around an alg. An alg wrapped in a rotation and its inverse
+  // ("x... x'", "x'... x") takes the first while the hands settle on the cube:
+  // it costs `lead` (a regrip), not a rotation. A rotation an alg ends with is
+  // free where the alg finishes the cube (PLL, ZBLL, 1LLL: the timer stops
+  // first). Any other rotation keeps its full price: a lone leading rotation
+  // ("x R2 F R F'...", a Ja perm) ranked above the professionals' rotationless
+  // algs when it was cheap (tools/ll-tune.js; first-ranked pro PLLs 42.1% ->
+  // 36.2%). Only the community's algs carry rotations (the generator turns no
+  // rotations).
   const LL_LEAD_ROTATION = 1.5;
-  // Every turn costs `move` on top (developer, 2026-10-14: the first algs
-  // leaned "blue collar" -- 17-move ZBLLs, a 15-move RU OLL 25 -- where top
-  // solvers turn shorter, odder algs). Checked on every professional's steps
-  // on reco.nz (tools/ll-tune.js; mean log2 rank of the pro's alg, 2-fold CV
-  // over cases): PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 ->
-  // 1.905, OLL unchanged (1.233 -> 1.231); the votes agree a little more
-  // (ZBLL 80.2 -> 80.9%, PLL 68.1 -> 70.2%). 1 is the low end of what each
-  // fold chose (0.5-3); a lower slice penalty did not help anywhere. OLL and
-  // PLL use 0.5 (LL_FITTED).
+  // Every turn costs `move` on top. Checked on every professional's steps on
+  // reco.nz (tools/ll-tune.js; mean log2 rank of the pro's alg, 2-fold CV over
+  // cases): PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 -> 1.905, OLL
+  // unchanged (1.233 -> 1.231); the votes agree a little more (ZBLL 80.2 ->
+  // 80.9%, PLL 68.1 -> 70.2%). 1 is the low end of what each fold chose
+  // (0.5-3); a lower slice penalty did not help anywhere. OLL and PLL use 0.5
+  // (LL_FITTED).
   const LL_PER_MOVE = 1;
   const invRot = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
   function rotationFrame(body, setId = null) {
@@ -540,16 +523,16 @@ const AlgSets = (() => {
     return s;
   }
 
-  // ---- awkward algs (developer, 2026-10-13) --------------------------------------
-  // An alg is awkward when it uses an unusual move type (B, a wide f/b/u/d,
-  // S, E), rotates twice, or turns slowly for its length: MCC time per turn
-  // above the 95th percentile of the community's top-voted algs (1.95; the
-  // move penalties are left out, so a slice alg is not awkward for being one).
-  // Awkward algs are hidden in a case whose community favourite is not
-  // awkward itself. Algs awkward beyond doubt -- three unusual moves, or
-  // above 3.0 per turn (the 99th percentile is 2.4) -- are left out of the
-  // data unless they are the case's favourite (tools/ll-build.js): a 21-move
-  // "l b d' ... S M r u E" T perm with 34 joke votes, for one.
+  // ---- awkward algs -------------------------------------- An alg is awkward
+  // when it uses an unusual move type (B, a wide f/b/u/d, S, E), rotates twice,
+  // or turns slowly for its length: MCC time per turn above the 95th percentile
+  // of the community's top-voted algs (1.95; the move penalties are left out,
+  // so a slice alg is not awkward for being one). Awkward algs are hidden in a
+  // case whose community favourite is not awkward itself. Algs awkward beyond
+  // doubt -- three unusual moves, or above 3.0 per turn (the 99th percentile is
+  // 2.4) -- are left out of the data unless they are the case's favourite
+  // (tools/ll-build.js): a 21-move "l b d'... S M r u E" T perm with 34 joke
+  // votes, for one.
   const AWK_FLOW = 1.95, AWK_DROP_FLOW = 3.0;
   function awkwardness(body0, setId = null) {
     // a wrapping rotation pair counts as a regrip, a final one in a set that
