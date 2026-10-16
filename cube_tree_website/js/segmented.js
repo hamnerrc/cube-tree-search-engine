@@ -1,11 +1,6 @@
 /**
  * A <select data-seg> shown as a strip of joined buttons, the
  * selected one pressed in. Used for the settings with two to four values.
- *
- * The <select> stays the source of truth (hidden, still read and set by the
- * page's code): a click sets its value and sends `change`; a value set by
- * code redraws the strip. An option's `data-short` is its label on the strip;
- * the full text of the chosen option is shown under it when it says more.
  */
 'use strict';
 
@@ -20,13 +15,12 @@
     strip.className = 'seg-strip';
     strip.setAttribute('role', 'radiogroup');
     if (sel.getAttribute('aria-label')) strip.setAttribute('aria-label', sel.getAttribute('aria-label'));
-    const note = document.createElement('span');
-    note.className = 'seg-note';
     const buttons = [...sel.options].map((opt) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('role', 'radio');
       b.textContent = opt.dataset.short || opt.textContent;
+      if (opt.dataset.short && opt.dataset.short !== opt.textContent) b.title = opt.textContent;
       b.addEventListener('click', () => {
         if (sel.value === opt.value) return;
         valueProp.set.call(sel, opt.value);
@@ -42,10 +36,8 @@
         const on = opt.value === v;
         buttons[i].setAttribute('aria-checked', String(on));
         buttons[i].tabIndex = on ? 0 : -1;
-        if (on) note.textContent = opt.dataset.short && opt.dataset.short !== opt.textContent ? opt.textContent : '';
       });
     }
-    // arrow keys move along the strip, as in a radio group
     strip.addEventListener('keydown', (e) => {
       if (!/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
       e.preventDefault();
@@ -54,7 +46,6 @@
       b.click();
       b.focus();
     });
-    // a value set by the page's code redraws the strip
     Object.defineProperty(sel, 'value', {
       configurable: true,
       get() { return valueProp.get.call(this); },
@@ -62,7 +53,7 @@
     });
     sel.addEventListener('change', sync);
     sel.hidden = true;
-    sel.after(strip, note);
+    sel.after(strip);
     sync();
   }
 

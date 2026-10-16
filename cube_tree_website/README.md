@@ -61,21 +61,22 @@ pair at once, a multislot two pairs at once).
 
 ### Look
 
-Restyled on 2026-10-15 to drop the 1-bit pixel skin. The look is an
-old-school web utility, closest to Pokémon Showdown's client: Verdana at
-13px, bevelled buttons, folder tabs, a Georgia italic wordmark, native
-checkboxes and selects, a light grey-blue page with white panels (plus a
-dark theme). No web fonts.
+Restyled on 2026-10-15/16 (see "Design review"). A plain tool look: the
+system UI font, move notation in a monospace face (scramble, solution,
+suggestions, alg lists), flat buttons with one filled primary action, folder
+tabs, native checkboxes and selects. A warm light theme and a dark one; green
+for the primary action and solved stages, blue for links, green for the
+`// comments`. The logo is "cube", a small SVG fork, "tree". No web fonts.
 
-- **Solve screen**: the cube on the left, filling the window's height, with
-  the stage bar (cross, four pairs, last layer) and playback under it. On
-  the right: the scramble (prev / next / new, and "Edit list" for a list of
-  scrambles), the **Next step** panel, then the solution. Both columns run
-  to the bottom of the window. On phones it stacks: scramble, cube,
-  suggestions, solution.
-- **Suggestions** are one row each: the moves, the move count, the reason,
-  and the step kind (cross, xcross, pair, multislot, pseudo, a last-slot
-  set, OLL, PLL...), with a coloured stripe per kind. Last-layer
+- **Solve screen**: the scramble across the top in large monospace (prev /
+  next / new, and "Edit list" for a list of scrambles). Below it, the cube
+  on the left (a square sized to the window), with the stage bar (Cross,
+  1-4, OLL, PLL) and playback under it; on the right the **Next step** list
+  and the solution editor. On phones it stacks: scramble, cube, suggestions,
+  solution.
+- **Suggestions** are one row each: the moves followed by the comment Tab
+  would write (`// cross`, `// 2nd pair`, `// OLL 27`), the move count, and
+  a short reason ("fastest", "free pair after", "keeps EO"). Last-layer
   suggestions carry a star that makes the alg your main one.
 - **Critique**: shown in the same panel, a bar per step with a word after
   it -- *best*, *slower*, *beats the search* (a step the search doesn't
@@ -83,19 +84,23 @@ dark theme). No web fonts.
   it. The same word appears after the step's line in the solution.
 - **Options** is a popup under its button with tabs: Display (theme, cube
   rendering, animation, hidden faces), Steps, Last layer, Search.
-- **Profiles**: a plain initial badge, no avatars. Setup is one form (name,
-  average, goals, inspection, style, last layer, last slot, cross colours);
-  the profile list has Edit / Export / Delete per profile.
+- **Profiles**: a plain initial badge, no avatars. A new profile asks for a
+  name and an ao12; goals, inspection, style, last layer, last slot and
+  cross colours are folded under "More" (open when editing). The profile
+  list has Edit / Export / Delete per profile.
 - **Algs page**: the sets as tabs down the left of the panel; subsets as
   flat toggles; cases as tiles with the community nickname where there is
-  one (Sune, Antisune, H, Pi, Headlights, Chameleon, Bowtie); a case's
-  algs as a ranked list with an #/Alg/STM header.
+  one (Sune, Antisune, H, Pi, Headlights, Chameleon, Bowtie); ZBLL, COLL and
+  1LLL shown whole get a heading per corner case. A case's algs are a ranked
+  list (#, Alg, STM) with the first source and a count (all sources on
+  hover); the star and Copy show on hover.
 - **The cube** is smooth by default (pixel art is an option) with dark
   plastic outlines in both themes.
 
-Case names are written the standard way on screen (OLL 27, PLL Ja); the
-labels written into the solution text stay lowercase like the other step
-comments (`// oll 27`, `// cross`).
+Case names are written the standard way everywhere, including the comments
+written into the solution (`// OLL 27`, `// PLL Ja`); the F2L comments stay
+lowercase (`// cross`, `// 1st pair`). Saved settings live under
+`cubetree.*` keys (older `cubecrit_*` keys are moved over on load).
 
 ### Captions
 
@@ -218,10 +223,12 @@ meant to replace an alg database: **OLL** (57 cases), **PLL** (21),
 
 ## Design review
 
-On 2026-10-15 the interface was restyled in a loop: change the site, have a
-fresh AI agent (no memory of earlier rounds) score it from 0 to 10, act on
-its feedback, repeat. The target was 8; the loop stopped after four rounds.
-Scores: 3.5 before any change, then 4.6, 5.6, 6.2 and **6.4**.
+On 2026-10-15/16 the interface was restyled in a loop: change the site, have
+a fresh AI agent (no memory of earlier rounds) score it from 0 to 10, act on
+its feedback, repeat, eight rounds in two runs of four. The target, 8, was
+not reached. Scores: 3.5 before any change; 4.6, 5.6, 6.2, 6.4 (first run);
+6.2, 6.4, 5.5, **6.3** (second run). Reviewers vary by about half a point
+from run to run, and each one weighs layout, type and source differently.
 
 ### The reviewer prompt
 
@@ -397,6 +404,73 @@ File and line numbers are as of the commit that added this section.
    one place for the theme; flat buttons for secondary actions, the bevel
    only for the primary ones (Critique, Start solving); "XCross/XXCross"
    everywhere; fix "Dot Case"; label the gauge segments properly.
+
+### The eighth review (6.3 / 10)
+
+The latest review, for the next round. Line numbers are as of the commit
+that added it.
+
+**Strongest AI tells, most damaging first**
+
+1. **Dead space on the solve screen.** At 1440×900 the right column ends
+   around y≈500, leaving about 400 px of empty background beside the cube,
+   and the page ends about 150 px above the fold. Let the editor (or the
+   critique / move history) grow to the cube's height, or size the cube to
+   the viewport.
+2. **Monospace for prose, gappy notation.** The editor and algs-search
+   placeholders are sentences set in monospace; primes take a full cell
+   (`R '`), and the scramble adds `word-spacing: 4px`. Keep prose in the
+   sans; give notation a face with narrow primes; drop the word spacing.
+3. **One folder-tab motif three times** (header tabs, the algs set menu,
+   the Options tabs), and "Profiles | Algs" tabs on the sign-in page. Use
+   one navigation idiom.
+4. **Leftover CSS**: `.panel` is unused; `.panel-head` is overridden back to
+   nothing everywhere it's used; the `best`/`beyond` mark colours are nearly
+   the same green and don't change in the dark theme.
+5. **A claim the code doesn't check**: the critique said "Every step was
+   the top suggestion" when the check only confirms each step was one of
+   the suggestions (reworded in the same commit).
+6. **A generic centred form card** for sign-in and profiles that says
+   nothing about the tool. Show a live scramble and cube, or go straight to
+   the solver with defaults and a one-line "set your average" prompt.
+7. **The algs grid hides the algs**: tiles show only "OLL n" (plus a few
+   nicknames); cubing alg sites print the main alg under the diagram. The
+   ZBLS labels wrap awkwardly.
+8. **A default palette**: system-ui, warm grey, one green accent, green
+   avatar square. Nothing from cube culture, e.g. the sticker colours as a
+   restrained accent system, or timer-style type.
+9. **The pixel-art cube option** reads as a gimmick on a utility tool, and
+   even "Smooth" shows stair-stepped sticker edges (`image-rendering:
+   pixelated` on every canvas).
+10. Minor: a gap between the alg and the STM column in the Next-step rows;
+    the Help dialog is six headed paragraphs; the algs page header has no
+    Options button.
+
+**What works and should be kept**
+
+- The cubing conventions: `// inspection`, `// cross`, `// 1st pair`
+  comments; STM/ETM; terse pick reasons ("fastest", "free pair after",
+  "keeps EO"); the Cross/1/2/3/4/OLL/PLL gauge; ao12 and inspection levels
+  in setup; last-slot sets described by insert type.
+- The keyboard-first solution bar (tab / ↑↓ / esc, ghost text, step
+  numbers, the lit current row).
+- Short, plain microcopy; clean source with terse comments and no
+  narration; CSS tokens with a real dark theme; the segmented-control
+  enhancer that keeps the native `<select>`.
+- The cube with its hidden faces drawn beside it; the case dialog's alg
+  list with source counts and STM.
+
+**The 3 changes that would raise the score most**
+
+1. Recompose the solve screen around the work: editor and suggestions
+   stretched to the cube's height (or a viewport-sized cube), with the
+   scramble bar, gauge and playback in tighter bands.
+2. Fix the typography: sans for all prose and placeholders, notation with
+   narrow primes, no scramble word spacing; one cubing-specific visual idea
+   such as sticker colours in place of the generic green.
+3. Cut the leftovers and make the claims true: dead CSS, one tab idiom, the
+   main alg printed on every algs tile, a sign-in screen that shows the
+   tool.
 
 ## Out of scope (for now)
 

@@ -1,27 +1,10 @@
 /**
  * The cube simulator and visualiser.
- *
- * A small software renderer, no libraries: the 27 cubies and 54 stickers are 3D
- * quads seen through a perspective camera, rasterised into a low-resolution
- * buffer with a z-buffer and scaled up without smoothing, so the cube reads as
- * pixel art. Canvas paths anti-alias their edges and cannot give crisp pixels;
- * this does.
- *
- * The cube's state is a facelet string in facelet-cube.js's layout (U R F D
- * L B, 9 each, row-major); applyAlgorithm there is the only source of truth
- * for what a move does. The geometry here only animates a turn: which
- * stickers a move carries and in which direction is checked against
- * MOVE_TABLE for every token (test/pixel-cube.test.js), never hand-trusted.
  */
 'use strict';
 
-// ---------------------------------------------------------------------------
-// Geometry: sticker positions and turns
-// ---------------------------------------------------------------------------
-
 // Each face: its outward normal and the 3D directions of its rows (down the
 // face) and columns (across), as the facelet layout reads a face from outside.
-// Verified by the move test, not assumed.
 const PC_FACES = [
   { n: [0, 1, 0], row: [0, 0, 1], col: [1, 0, 0] },   // U: rows from the back toward the front
   { n: [1, 0, 0], row: [0, -1, 0], col: [0, 0, -1] }, // R
@@ -31,7 +14,6 @@ const PC_FACES = [
   { n: [0, 0, -1], row: [0, -1, 0], col: [-1, 0, 0] }, // B
 ];
 
-/** For each facelet: { face, n, cubie: [x,y,z] in -1..1, pos: sticker centre (cubie + n/2), row, col }. */
 function stickerLayout() {
   const out = [];
   PC_FACES.forEach((f, face) => {
@@ -46,16 +28,12 @@ function stickerLayout() {
 }
 const PC_STICKERS = stickerLayout();
 
-// A move: rotation axis (0 x, 1 y, 2 z), the layers it turns (coordinates on
-// that axis), and its quarter turns about the axis's positive direction
-// (right-handed). The signs are fixed by the move test against MOVE_TABLE.
 const PC_MOVE_BASE = {
   R: [0, [1], -1], L: [0, [-1], 1], M: [0, [0], 1], x: [0, [-1, 0, 1], -1], r: [0, [0, 1], -1], l: [0, [-1, 0], 1],
   U: [1, [1], -1], D: [1, [-1], 1], E: [1, [0], 1], y: [1, [-1, 0, 1], -1], u: [1, [0, 1], -1], d: [1, [-1, 0], 1],
   F: [2, [1], -1], B: [2, [-1], 1], S: [2, [0], -1], z: [2, [-1, 0, 1], -1], f: [2, [0, 1], -1], b: [2, [-1, 0], 1],
 };
 
-/** { axis, layers, quarters } of a move token (quarters in -2..2), or null. */
 function moveGeometry(token) {
   const m = /^([URFDLBMESxyzurfdlb])(2'|2|'|)$/.exec(token || '');
   if (!m) return null;
@@ -64,7 +42,6 @@ function moveGeometry(token) {
   return { axis, layers, quarters: q };
 }
 
-/** v rotated by `angle` radians about axis 0/1/2 (right-handed). */
 function rotateVec(v, axis, angle) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
@@ -77,10 +54,6 @@ function rotateVec(v, axis, angle) {
 const posKey = p => p.map(v => Math.round(v * 2)).join(',');
 const PC_INDEX_BY_POS = new Map(PC_STICKERS.map((s, i) => [posKey(s.pos), i]));
 
-/**
- * The facelet permutation the geometry gives for a token, in MOVE_TABLE's
- * form: after[i] = before[perm[i]].
- */
 function geometryPerm(token) {
   const g = moveGeometry(token);
   if (!g) return null;
@@ -94,11 +67,6 @@ function geometryPerm(token) {
   return perm;
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
-
-// Sticker colours by facelet letter: [light, base, dark] shades.
 const PC_COLOURS = {
   W: ['#ffffff', '#e9e9e4', '#b9b9b2'],
   Y: ['#fff27a', '#ffd500', '#c9a200'],
@@ -110,7 +78,6 @@ const PC_COLOURS = {
 };
 const PC_BODY = ['#3a3a3a', '#1c1c1c', '#0c0c0c'];
 
-// Internal resolution per pixel setting: art pixels across the stage.
 const PC_RESOLUTIONS = { chunky: 170, fine: 400, smooth: 0 };
 
 function hexToRgb(hex) {
@@ -153,7 +120,6 @@ class PixelCube {
     this.draw();
   }
   resetView() { this.yaw = PixelCube.DEFAULT_YAW; this.pitch = PixelCube.DEFAULT_PITCH; this.zoom = 1; this.draw(); }
-  /** Zooms by a factor (pinch, wheel, the +/- buttons), within PC_ZOOM. */
   zoomBy(factor) {
     if (!Number.isFinite(factor) || factor <= 0) return;
     this.zoom = Math.max(PC_ZOOM[0], Math.min(PC_ZOOM[1], this.zoom * factor));
@@ -165,7 +131,6 @@ class PixelCube {
     this.draw();
   }
 
-  /** Matches the internal buffer to the canvas's on-screen size and the pixel setting. */
   resize() {
     const rect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : { width: 300, height: 270 };
     const cssW = Math.max(60, rect.width || 300);
@@ -188,7 +153,6 @@ class PixelCube {
     this.draw();
   }
 
-  /** Animates one move token; resolves when done (the caller then sets the new facelets). */
   animateMove(token, ms = 160) {
     const g = moveGeometry(token);
     if (!g || ms <= 0 || typeof requestAnimationFrame === 'undefined') return Promise.resolve();
@@ -210,9 +174,7 @@ class PixelCube {
 
   stop() { if (this._raf) cancelAnimationFrame(this._raf); this.anim = null; }
 
-  // --- camera ---
   _view(p) {
-    // world -> view: yaw about y, then pitch about x; camera on +z at distance D
     const [x0, y0, z0] = p;
     const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
     const x1 = x0 * cy + z0 * sy;
@@ -223,15 +185,12 @@ class PixelCube {
     return [x1, y2, z2];
   }
   _project(v) {
-    // perspective; the scale fits the cube and its back-face panels in the
-    // smaller of the stage's two sides
     const D = 11;
     const f = Math.min(this.W, this.H) * 1.32 * this.zoom;
     const depth = D - v[2];
     return [this.W / 2 + v[0] * f / depth, this.H * 0.5 - v[1] * f / depth, depth];
   }
 
-  /** The 3D point after the running turn (if its cubie is in the turning layers). */
   _animated(p, cubie) {
     const a = this.anim;
     if (!a || !a.layers.includes(Math.round(cubie[a.axis]))) return p;
@@ -249,10 +208,6 @@ class PixelCube {
     ib.fill(-1);
     sb.fill(0);
     const quads = [];
-    // cubie bodies: a quad per outward face of each cubie (inner faces only
-    // show while a layer turns, so every face is drawn; the z-buffer sorts)
-    // Only faces that can show: the cube's outer faces, and while a layer
-    // turns, the faces on the planes it slides along.
     const body = 0.5; // no gaps between cubies: the background must not show through
     const a = this.anim;
     const turning = c => !!a && a.layers.includes(c[a.axis]);
@@ -271,7 +226,6 @@ class PixelCube {
         }
       }
     }
-    // Stickers, and the back-face ghosts
     const viewDir = this._viewDirWorld();
     PC_STICKERS.forEach((s, i) => {
       const half = 0.41;
@@ -280,8 +234,6 @@ class PixelCube {
       const colour = this.facelets[i];
       quads.push({ c, n: s.n, u: s.col.map(v => v * half), v: s.row.map(v => v * half), cubie: s.cubie, kind: 1, colour, id: i });
       if (this.backFaces) {
-        // a face turned away from the camera is shown as a panel floating
-        // beyond it (seen from behind, so it reads as a mirror)
         const facing = s.n[0] * viewDir[0] + s.n[1] * viewDir[1] + s.n[2] * viewDir[2];
         if (facing > 0.2) {
           const g = s.cubie.map((v, k) => v * 0.92 + s.n[k] * 2.35);
@@ -290,12 +242,9 @@ class PixelCube {
       }
     });
     quads.forEach((q, qi) => this._raster(q, qi));
-    // shade (sticker bevels: top/left edge pixels light, bottom/right dark)
     const bg = this.theme.bg;
     const line = this.theme.line;
     const N = W * H;
-    // A transparent background lets the page show around the cube; its shadow
-    // is one flat tone cast to the side
     const bgAlpha = this.theme.clear ? 0 : 255;
     const floor = this._floorMask();
     const shadow = this.theme.shadow || bg.map((v, k) => Math.round(v * 0.8 + line[k] * 0.2));
@@ -326,7 +275,6 @@ class PixelCube {
       } else { data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2]; }
       data[o + 3] = 255;
     }
-    // a one-pixel outline around the cube's silhouette in the theme's line colour
     const solid = (k) => { const qi = ib[k]; return qi >= 0 && kinds[qi] !== 2; };
     for (let p = 0; p < N; p++) {
       if (ib[p] >= 0 && kinds[ib[p]] !== 2) continue;
@@ -339,20 +287,13 @@ class PixelCube {
     this.ctx.putImageData(this.img, 0, 0);
   }
 
-  /**
-   * Pixels of the floor shadow, or null: the cube's footprint and its copy
-   * pushed away from a light behind the cube's left (a fixed direction on
-   * the floor, so the shadow turns with the cube), filled as one convex
-   * shape, seen from above only.
-   */
   _floorMask() {
     if (!this.theme.floorShadow || this.pitch <= 0.05) return null;
     const { W, H } = this;
     const foot = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
-    const cast = [2.9, -1.1]; // the light's direction on the floor (x, z)
+    const cast = [1.7, -0.7]; // the light's direction on the floor (x, z)
     const flat = [...foot, ...foot.map(([x, z]) => [x + cast[0], z + cast[1]])]
       .map(([x, z]) => this._project(this._view([x, -1.52, z])));
-    // convex hull (monotone chain), in drawing order
     flat.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
     const lower = [], upper = [];
@@ -366,7 +307,6 @@ class PixelCube {
     minX = Math.max(0, Math.floor(minX)); maxX = Math.min(W - 1, Math.ceil(maxX));
     minY = Math.max(0, Math.floor(minY)); maxY = Math.min(H - 1, Math.ceil(maxY));
     for (let y = minY; y <= maxY; y++) {
-      // the disc's row span: crossings of the polygon's edges with this row
       const py = y + 0.5;
       let lo = Infinity, hi = -Infinity;
       for (let i = 0; i < pts.length; i++) {
@@ -381,11 +321,8 @@ class PixelCube {
   }
 
   _viewDirWorld() {
-    // the direction from the cube toward... away from the camera, in world space
     const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
-    // camera looks along -z in view space; view = Rx(pitch) * Ry(yaw) * world
-    // away-from-camera direction in view space is (0,0,-1); invert the rotation
     const vx = 0, vy = 0, vz = -1;
     const y1 = vy * cp + vz * sp;
     const z1 = -vy * sp + vz * cp;
@@ -399,7 +336,6 @@ class PixelCube {
       const p = [0, 1, 2].map(k => q.c[k] + a * q.u[k] + b * q.v[k]);
       return this._project(this._view(this._animated(p, q.cubie)));
     });
-    // light: the normal after the turn, in view space
     let shade = 1;
     if (q.kind !== 0) {
       const n = this._view(this._animated(q.n, q.cubie));
@@ -407,7 +343,6 @@ class PixelCube {
       shade = lit > 0.55 ? 0 : lit > 0.05 ? 1 : 2;
     }
     if (q.kind !== 2) {
-      // facing away (screen-space winding): hidden behind the cube's other faces
       const [p0, p1, p2] = corners;
       const cross = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
       if (cross * this._winding(q) > 0) return;
@@ -416,9 +351,7 @@ class PixelCube {
     this._tri(corners[0], corners[2], corners[3], qi, shade, q.kind === 2);
   }
 
-  /** +1 or -1: the screen winding of a quad (u, v) that faces the camera, by its corner order. */
   _winding(q) {
-    // corners go -u-v, +u-v, +u+v: n = u x v points out or in depending on the face
     const u = q.u, v = q.v;
     const cx = u[1] * v[2] - u[2] * v[1];
     const cy = u[2] * v[0] - u[0] * v[2];
@@ -459,18 +392,11 @@ class PixelCube {
 PixelCube.DEFAULT_YAW = -0.62;
 PixelCube.DEFAULT_PITCH = 0.5;
 
-// ---------------------------------------------------------------------------
-// Playback: a sequence of moves from a start state (the scrambled cube) and a position
-// ---------------------------------------------------------------------------
-
-/** Move tokens of an alg text ('//' comments and unknown tokens dropped). */
 function playbackTokens(text) {
   return String(text || '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join(' ')
     .split(/\s+/).filter(t => t && moveGeometry(t));
 }
 
-// A jump of several moves turns through every one of them in about GLIDE_MS;
-// one move takes TURN_MS. The animation speed setting scales both.
 const GLIDE_MS = 500;
 const TURN_MS = 150;
 const PLAY_MS = 190;  // a move of the playback
@@ -495,11 +421,6 @@ class CubePlayer {
     this._run = 0;
   }
 
-  /**
-   * A new sequence from `start` (default: solved), then position `pos`
-   * (default: the end). The cube glides there from what it shows, unless
-   * the start changed (another scrambled cube) or `instant`.
-   */
   setSequence(tokens, marks = [], pos = tokens.length, start = SOLVED_FACELETS, { instant = false } = {}) {
     let keep = 0;
     if (start === this.start) {
@@ -529,7 +450,6 @@ class CubePlayer {
 
   get length() { return this.tokens.length; }
 
-  /** The moves from the path `path` to position k: back to the shared prefix, then forward. */
   _route(path, k) {
     const n = Math.min(path.length, k);
     let c = 0;
@@ -540,14 +460,12 @@ class CubePlayer {
     return { route, shared: c };
   }
 
-  /** Applies one route move to the shown path. */
   _apply(m) {
     if (m.back) this.at.pop(); else this.at.push(m.tok);
     this.atState = this.at.length <= this.tokens.length && this.at.every((t, i) => t === this.tokens[i])
       ? this.stateAt(this.at.length) : applyAlgorithm(this.atState, m.tok);
   }
 
-  /** The cube at once at position k (no animation). */
   _settle(k) {
     this._stopGlide();
     this.at = this.tokens.slice(0, k);
@@ -566,14 +484,9 @@ class CubePlayer {
     g.resolve();
   }
 
-  /**
-   * Glides to position k; resolves when it is there (or another glide took
-   * over). `ms`: the duration for one move (default TURN_MS).
-   */
   goTo(k, { instant = false, ms = 0 } = {}) {
     k = Math.max(0, Math.min(this.tokens.length, k));
     if (instant || !this.animated || typeof requestAnimationFrame === 'undefined') { this._settle(k); return Promise.resolve(); }
-    // a glide under way: continue from its turn in progress where possible
     let carry = 0;
     const g = this.glide;
     if (g && g.frac > 0 && g.done < g.route.length) {
@@ -627,7 +540,6 @@ class CubePlayer {
     });
   }
 
-  /** Goes to position k (gliding unless `animate` is false); stops the playback. */
   seek(k, animate = true) {
     this._stopPlay();
     return this.goTo(k, { instant: !animate });
@@ -635,7 +547,6 @@ class CubePlayer {
 
   step(d) { return this.seek(this.pos + d, true); }
 
-  /** Animates forward from the current position to `k`, move by move. */
   async playTo(k) {
     const run = ++this._run;
     k = Math.min(k, this.tokens.length);
@@ -663,7 +574,6 @@ class CubePlayer {
 
   _stopPlay() { this.playing = false; this._run++; }
 
-  /** Stops the playback; the move under way finishes. */
   pause() { this._stopPlay(); this.onChange(this); }
 }
 

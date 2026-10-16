@@ -1,11 +1,6 @@
 /**
  * solver.html: the solution bar (solve-editor.js), the
  * suggestions (suggest.js), the critique (critique.js), the cube and Options.
- *
- * One SolveSession per scramble, kept while you switch between scrambles.
- * Every scramble starts searching as soon as the tree is ready; the one on
- * screen goes first (search-scheduler.js). Committed steps are saved to
- * localStorage and replayed through SolveSession.commit() on reload.
  */
 'use strict';
 
@@ -14,17 +9,12 @@
 // .wasm files, so a browser can never keep running a cached older engine
 // (which would silently lack e.g. setNoopMoves).
 const ENGINE_VERSION = '20261006b';
-// The engine worker's JS glue (crossSolver/worker-persistent.js) can change
-// without the engine: its own URL parameter, so the prune-table cache
-// (keyed by ENGINE_VERSION) stays valid.
-const ENGINE_GLUE_VERSION = 'batch1';
+const ENGINE_GLUE_VERSION = '2';
 
 // The cache-buster this script was loaded with (solver.html's ?v=...), passed
 // on to the post-processing workers so they load the same script versions.
 const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src)
   ? new URL(document.currentScript.src).search : '';
-
-// SESSION_STATE_KEY comes from script.js (shared global scope).
 
 (function () {
   let helper = null;
@@ -44,21 +34,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return (colors && colors.length) ? colors : ['white'];
   }
 
-  // A pool of engine workers: each search starts all
-  // of its solver calls at once and the scheduler runs one per worker, so the
-  // calls of a search (one per DAG edge and colour) run in parallel. One core
-  // is left for the page itself; each worker holds its own tables (~100 MB).
-  // The complete search's engine calls are face turns only and quick (a first
-  // step's are all done in ~5 s on a 2-core machine); ranking every spelling
-  // of their solutions (post-processing pool, below) is most of a search's
-  // time, so the engines get one worker, two from 8 threads up.
   const HARDWARE_THREADS = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
   const ENGINE_POOL_SIZE = HARDWARE_THREADS >= 8 ? 2 : 1;
 
-  // Prune tables: a table one worker builds is handed to the others and kept
-  // in IndexedDB (per ENGINE_VERSION). A table depends only on its key (the
-  // engine checks key and size); if anything here fails, the workers just
-  // build their own.
   const TABLE_DB = 'cubetree-engine-tables';
   const knownTables = new Set();
   function tableDb() {
@@ -102,7 +80,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       db.close();
     } catch (err) { /* storage unavailable or full: tables are rebuilt next time */ }
   }
-  // After a worker finishes a call: tables it built that the others lack.
   const tableSyncs = new Map();
   function syncTablesFrom(h, pool) {
     if (typeof h.tableKeys !== 'function') return;
@@ -123,8 +100,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       .finally(() => tableSyncs.delete(h));
   }
 
-  // A fresh worker for a pool member whose engine failed, with the stored
-  // prune tables (it starts without the ones its predecessor had built).
   async function restartEngine(h) {
     if (!h._restarting) {
       h._restarting = (async () => {
@@ -164,9 +139,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         for (const h of pool) {
           for (const m of ['solveCross', 'solveXcross', 'solveXxcross', 'solveXxxcross', 'solveXxxxcross']) {
             const solve = h[m].bind(h);
-            // A fatal engine failure (an abort; see worker-persistent.js)
-            // replaces the worker before its pool slot is free again, so the
-            // next call runs on a working engine; this call still fails.
             h[m] = (...args) => Promise.resolve()
               .then(() => solve(...args))
               .catch(async (err) => {
@@ -183,17 +155,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return helper;
   }
 
-  // The pseudo engine is only needed when the pruned tree actually contains
-  // pseudo (mismatched) nodes, i.e. the "full pseudo" option is on. A load
-  // failure degrades to matched-only search rather than breaking the page.
   async function ensurePseudoHelper() {
     const needed = prunedTree && typeof isPseudoState === 'function'
       && prunedTree.nodes.some(n => isPseudoState(n.state));
     if (!needed || typeof PseudoSolverHelper === 'undefined') return null;
     if (!pseudoHelper) {
       try {
-        // A pool like the matched engine's: with full pseudo on, most of a root
-        // search's calls are pseudo ones (48 of 63 per colour).
         const started = Array.from({ length: ENGINE_POOL_SIZE }, async () => {
           const h = new PseudoSolverHelper(`pseudoCrossSolver/worker3.js?v=${ENGINE_VERSION}`);
           await h.init();
@@ -211,10 +178,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return pseudoHelper;
   }
 
-  // Post-processing (luck filter, spellings, TPP) runs on a worker pool, off
-  // the main thread; if a worker fails, that call is post-processed here.
-  // Sized to the threads the engine pool leaves, two to twelve. No thread is
-  // kept back for the page: it's idle while the workers rank.
   const POST_POOL_SIZE = Math.max(2, Math.min(12, HARDWARE_THREADS - ENGINE_POOL_SIZE));
   let postPool = null;
   function postProcessor() {
@@ -230,7 +193,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           w.onmessage = (e) => {
             const { id, candidates, error, stopped, report } = e.data;
             const job = jobs.get(id);
-            // a live job's kept candidates (solver-bridge.js liveHooks)
             if (report) { if (job && job.live) job.live.report(report); return; }
             if (stopped && candidates) candidates.stopped = true; // the time budget cut it (postProcessCall)
             if (!job) return;
@@ -249,12 +211,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           };
           return w;
         });
-        // Calls wait here, not in a worker's message queue, so the lowest
-        // look-ahead rank (the best candidates' follow-ups; the step's own
-        // calls have none) is processed first, like the engine calls
-        // (search-scheduler.js), and of equal ranks the biggest first. One
-        // call per worker: with two, both chunks of a big call could queue
-        // behind each other on one worker while another one idles.
         const waiting = [];
         const pump = () => {
           if (!workers.some(w => !w.broken)) {
@@ -273,19 +229,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
               const c = compareSearchRanks(x.rank, b.rank);
               if (c < 0 || (c === 0 && x.cores.length > b.cores.length)) best = i;
             }
-            // A seed job (a big call's first, quick job: its type's limits
-            // for every other job) may share a worker with a running job,
-            // which waits at its next pause (solver-bridge.js liveHooks).
             const seed = !!waiting[best].job.seedOnly;
             const w = workers.find(x => !x.broken && x.pending.size < 1)
               || (seed ? workers.find(x => !x.broken && x.pending.size < 2 && !x.seeding) : null);
             if (!w) return;
             const { ctx, job: queued, cores, prepare, live, resolve, reject } = waiting.splice(best, 1)[0];
-            // prepare: the caller's last word on the job when it starts
-            // (solver-bridge.js: its type's current limits)
             const job = prepare ? prepare(queued) : queued;
             const id = nextId++;
-            // window.CUBETREE_TRACE = [] records ranking jobs (dev timing)
             const trace = typeof window !== 'undefined' && Array.isArray(window.CUBETREE_TRACE) ? window.CUBETREE_TRACE : null;
             if (trace) trace.push([performance.now(), 'start', id, job.pairCount, cores.length, job.seedOnly ? 'seed' : '']);
             jobs.set(id, { resolve: trace ? (c) => { trace.push([performance.now(), 'end', id, c ? c.length : 0]); resolve(c); } : resolve, reject, live, seed });
@@ -310,7 +260,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
           const f = (ctx, job, cores, rank, prepare, live) => send(ctx, job, cores, rank, prepare, owner, live)
             .catch(() => postProcessCall(ctx, job, cores, { lastYield: performance.now() }));
           f.workers = workers.length; // solver-bridge.js completeChunks
-          // the same pool, its jobs tagged with a search job (stale: yields)
           f.forJob = make;
           return f;
         };
@@ -344,12 +293,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   const answers = () => (profile() && profile().answers) || {};
   const prefs = () => ({ ...(typeof PROFILE_DEFAULT_PREFS !== 'undefined' ? PROFILE_DEFAULT_PREFS : {}), ...((profile() && profile().prefs) || {}) });
 
-  // ---------------------------------------------------------------------
-  // The solution as text: committed steps written back (rowsText), copy,
-  // copy all, move count.
-  // ---------------------------------------------------------------------
-
-  /** The committed steps as editor text, one per line (as found: the editor keeps steps uncancelled). */
   function rowsText(session) {
     const out = [];
     let pairs = 0;
@@ -363,10 +306,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return out.length ? out.join('\n') + '\n' : '';
   }
 
-  /**
-   * What follows the F2L steps: the last-layer steps, one per line with their
-   * labels, then any unfinished moves (as typed).
-   */
   function tailText() {
     if (!reading || !reading.tail.tokens.length) return '';
     if (!llRead) return reading.tail.tokens.join(' ');
@@ -375,7 +314,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return lines.join('\n');
   }
 
-  /** STM / ETM of the solution and its last-layer steps. */
   function solutionCounts(session) {
     const c = moveCounts(session);
     let stm = c.stm, etm = c.etm;
@@ -383,7 +321,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return `${stm} STM · ${etm} ETM`;
   }
 
-  /** What copy writes: the scramble, the solution as a reconstruction (cancellations merged), then any unfinished moves. */
   function copyText(session, tail = '') {
     return solutionText(session) + (tail ? `\n${tail}` : '');
   }
@@ -403,7 +340,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const session = sessions.get(idx);
       if (!session) return cleanScramble(raw || '');
       if (idx === activeIndex) return copyText(session, tailText());
-      // another scramble: its finished last-layer steps, read from its text
       let ll = '';
       if (session.isComplete && session._text) {
         const r = readLastLayerOf(session, readSolution(session, session._text, []), session._text);
@@ -454,7 +390,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (btn) btn.disabled = !session.canUndo && !tailText();
   }
 
-  const STATUS_LABELS = { pending: 'queued', searching: 'searching…', done: 'ready', error: 'failed' };
+  const STATUS_LABELS = { pending: 'queued', searching: 'searching…', done: '', error: 'search failed' };
   const PAGE_TITLE = typeof document !== 'undefined' ? document.title : '';
 
   function renderScrambleStatus() {
@@ -465,7 +401,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       el.textContent = STATUS_LABELS[status] || '';
       el.className = 'scramble-status ' + status;
     }
-    // Also in the tab title: a search keeps running in a background tab.
     const prefix = status === 'searching' ? 'searching… · ' : status === 'error' ? 'failed · ' : '';
     document.title = prefix + PAGE_TITLE;
   }
@@ -474,25 +409,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (sessions.get(activeIndex) === session) renderScrambleStatus();
   }
 
-  // ---------------------------------------------------------------------
-  // Per-step settings (filters, pair planning, look-ahead), remembered per
-  // profile. Look-ahead and pair planning re-search the step (reusing the
-  // depth-1 search behind it); filters only hide.
-  // ---------------------------------------------------------------------
   const view = {
     lookaheadDepth: 1, multislot: false, wideMoves: true,
     hideUnorthodox: false, simplePseudo: false, planning: true,
     llMethod: 'oll', // oll | coll | zbll | 1lll
-    // the last-slot sets, each on its own; when any
-    // is on, the last two pairs are never solved at once
-    lsSets: null,
+    lsSets: null, // last-slot sets; with any on, the last two pairs are solved one at a time
     hideAwkwardAlgs: true,
   };
   const LS_SET_IDS = ['zbls', 'wv', 'sv', 'vls', 'hls', 'ols'];
   const lastSlotOn = () => !!view.lsSets && LS_SET_IDS.some(k => view.lsSets[k]);
   let shownResults = null; // the current step's list (complete or partial)
-  // The scramble and step the list belongs to: a pick from a list that is no
-  // longer current must never be committed at another node.
+  // the scramble and step the list belongs to, so a stale pick can't be committed elsewhere
   let shownOwner = null;
   let shownPartial = false;
   let shownFinal = false; // the list on screen will not change any more (what is still searched is hidden)
@@ -507,16 +434,17 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     try { saved = JSON.parse(localStorage.getItem(scopedKey(VIEW_PREFS_KEY)) || 'null'); } catch (err) { saved = null; }
     Object.assign(view, (crit && crit.legacyView) || {}, saved || {});
     view.lookaheadDepth = Math.max(1, Math.min(LOOKAHEAD_MAX_DEPTH, parseInt(view.lookaheadDepth, 10) || 1));
-    delete view.lookaheadBreadth; // the look-ahead's breadth grows by itself now
+    // keys saved by older versions
+    delete view.lookaheadBreadth;
+    delete view.noR2L2;
+    delete view.pageSize;
     view.simplePseudo = !!view.simplePseudo;
     view.multislot = !!view.multislot;
-    delete view.noR2L2; // a removed option, maybe still saved
-    delete view.pageSize; // the results table is gone
     view.wideMoves = view.wideMoves !== false;
     view.hideUnorthodox = !!view.hideUnorthodox;
     view.planning = view.planning !== false;
     view.llMethod = ['oll', 'coll', 'zbll', '1lll'].includes(view.llMethod) ? view.llMethod : 'oll';
-    // the last-slot sets: saved, else the setup answer, else ZBLS + VLS/HLS
+    // the last-slot sets: saved, else the setup answer, else WV and SV (plus ZBLS with ZBLL)
     const a = answers();
     if (!view.lsSets || typeof view.lsSets !== 'object') {
       const fromAnswers = Array.isArray(a.lastSlot) ? a.lastSlot : null;
@@ -530,12 +458,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     syncLastLayerPrefs();
   }
 
-  /** The solver's last-layer preferences (style, main and known algs, last-slot sets) for last-layer.js. */
   function syncLastLayerPrefs() {
     if (typeof LastLayer === 'undefined') return;
     const p = profile();
     const algs = p && cubeProfiles ? cubeProfiles.algs(p.id) : { main: {}, known: {} };
     LastLayer.setPrefs({
+      method: view.llMethod,
       style: answers().style === 'efficiency' ? 'efficiency' : 'tps',
       main: algs.main, known: algs.known, knownSets: answers().knownSets || [],
       lastSlot: { ...(view.lsSets || {}) }, hideAwkward: view.hideAwkwardAlgs !== false,
@@ -572,10 +500,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     on('hide-unorthodox', 'change', (e) => { view.hideUnorthodox = e.target.checked; refine(); });
     on('wide-moves', 'change', (e) => { view.wideMoves = e.target.checked; refine(); });
     on('multislot', 'change', (e) => { view.multislot = e.target.checked; refine(); });
-    // Pair planning changes the ranking itself: the step is searched again
-    // (or taken from the memo, if it was searched with that setting before).
     on('pair-planning', 'change', (e) => { view.planning = e.target.checked; research(); });
-    // the last layer's settings only change what is suggested
     const relist = () => { saveViewPrefs(); syncViewControls(); syncLastLayerPrefs(); lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); };
     on('ll-method', 'change', (e) => {
       view.llMethod = e.target.value;
@@ -583,19 +508,16 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       relist();
     });
     on('hide-awkward-algs', 'change', (e) => { view.hideAwkwardAlgs = e.target.checked; relist(); });
-    // a last-slot set changes the results too: the last two pairs at once are hidden while one is on
     for (const k of LS_SET_IDS) {
       on(`ls-${k}`, 'change', (e) => {
         view.lsSets[k] = e.target.checked;
         syncLastLayerPrefs();
         lastSlotMemo.clear();
-        // full OLS: its other ~7,600 cases load now
         if (k === 'ols' && e.target.checked && llAvailable()) LastLayer.loadOlsMore().then(() => { lastSlotMemo.clear(); renderSuggestions(); renderSearcher(); });
         refine();
       });
     }
   }
-
 
   function setStatus(msg, kind = 'busy') {
     const el = $('search-status');
@@ -608,12 +530,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function renderActiveResults(results, partial = false) {
-    // dev timing hook (window.CUBETREE_TRACE): the list on screen
     if (Array.isArray(window.CUBETREE_TRACE)) window.CUBETREE_SHOWN = results;
     shownResults = results;
     shownOwner = activeStepKey();
     shownPartial = partial;
-    // the status line only speaks for a failure or an empty result
     const final = !partial || results.lookaheadPending === 0
       || (results.onlyMultislotPending && !view.multislot && !results.lookaheadPending);
     shownFinal = final;
@@ -625,14 +545,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (final) maybeContinuationSearch();
   }
 
-  // ---------------------------------------------------------------------
-  // Searching: one search per session, path and settings; background
-  // scrambles one at a time.
-  // ---------------------------------------------------------------------
   const scheduler = createSearchScheduler();
   const { ACTIVE, BACKGROUND } = SEARCH_PRIORITY;
 
-  // nodes of the tree by id (the finishing check of the last-slot rule)
   let nodeById = null;
   function finishesF2l(r) {
     if (!prunedTree) return false;
@@ -646,8 +561,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const orthodox = view.hideUnorthodox;
     const single = !view.multislot;
     const noWide = !view.wideMoves;
-    // a last-slot set on: the last pair is always one pair on its own, so the
-    // last two pairs are never solved at once, multislot or not
+    // with a last-slot set on, the last pair goes in on its own
     const lastTwo = !single && lastSlotOn();
     if (!simple && !orthodox && !single && !noWide && !lastTwo) return { fn: null, key: '' };
     return {
@@ -682,7 +596,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const cache = { key, live: null, bests: new Map() };
       session.resultsCache = cache;
       const isShown = () => sessions.get(activeIndex) === session && session.resultsCache === cache;
-      // the engine's progress messages are technical: only 'busy' reaches the screen
       const onStatus = () => { if (isShown() && !cache.live) setStatus('', 'busy'); };
       onStatus();
       const onUpdate = (list) => {
@@ -715,11 +628,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return session.resultsCache.promise;
   }
 
-  /**
-   * The step's search with look-ahead as a scheduler job. The look-ahead's
-   * breadth grows while this is the step on screen, the page is visible and
-   * no other search needs the engines.
-   */
   function submitLookahead(session, cache, h, ph, opts, priority, { onUpdate, onStatus, isCancelled, isShown }, stepResults = null) {
     let job = null;
     const grow = () => isShown() && !isCancelled() && !document.hidden && !!job && !scheduler.busyBesides(job)
@@ -732,7 +640,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return job;
   }
 
-  /** A look-ahead that stopped growing for another search goes on once the engines are free. */
   function growLater(session, cache, h, ph, opts, hooks) {
     const stepResults = session.resultsCache === cache ? cache.stepResults : null;
     scheduler.whenIdle(() => {
@@ -824,10 +731,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderActiveResults(results);
   }
 
-  // ---------------------------------------------------------------------
-  // The solution bar (solve-editor.js): the text is the truth; committed
-  // steps follow it.
-  // ---------------------------------------------------------------------
   let editor = null;
   let editorSession = null; // the session whose text the editor holds
   let reading = null;      // readSolution of the active session's text
@@ -866,19 +769,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     maybeContinuationSearch();
   }
 
-  /**
-   * After the F2L: the tail's finished lines read
-   * as last-layer steps (last-layer.js, by replay), their lines drawn as
-   * steps; what follows the last of them is the last layer's tail.
-   */
   function readLastLayer(session) {
     return reading && editor ? readLastLayerOf(session, reading, editor.value) : null;
   }
-  /** readLastLayer for any session's reading of its text (copy all reads the other scrambles' texts). */
   function readLastLayerOf(session, reading, text) {
     if (!session.isComplete || !reading || !llAvailable()) return null;
     ensureLastLayerData();
-    // the lines after the F2L's last step (it may end the text: no newline after it)
     let lastF2l = -1;
     reading.lines.forEach((x, li) => { if (x.kind === 'step' || x.kind === 'merged') lastF2l = li; });
     const first = reading.tail.tokens.length ? reading.tail.line : lastF2l + 1;
@@ -886,8 +782,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const lineToks = l => l.tokens.filter(t => t.valid).map(t => normTok(t.tok));
     const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
     const readLines = n => LastLayer.readSteps(start, parsed.slice(0, n).map(l => ({ tokens: lineToks(l) })), LastLayer.LOADED);
-    // the last line is still being typed unless the text ends with a newline,
-    // or it solves the cube (a finished solution has no empty line under it)
     let done = text.endsWith('\n') ? parsed.length : Math.max(0, parsed.length - 1);
     let r = readLines(done);
     if (done < parsed.length) {
@@ -902,14 +796,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const open = done < parsed.length ? lineToks(parsed[done]) : [];
     const tailTokens = [...r.tail.tokens, ...open];
     const tailLine = first + (r.tail.tokens.length ? r.tail.firstLine : done);
-    // the tail as a finished stage (its comment is suggested, as for a pair)
     let finished = null;
     if (tailTokens.length && done < parsed.length) {
       try {
         const after = applyAlgorithm(r.cube, tailTokens.join(' '));
         const next = LastLayer.stageOf(after);
         if (next && r.stage && LastLayer.STAGE_RANK[next] > LastLayer.STAGE_RANK[r.stage]) {
-          // a pll (or zbll) that leaves only the auf: tab writes the auf too
           const auf = next === 'auf' ? (LastLayer.suggestions(after, LastLayer.LOADED)[0] || {}).toks || [] : [];
           finished = { label: LastLayer.stepLabel(r.cube, r.stage, next, LastLayer.LOADED), stage: auf.length ? 'done' : next, auf };
         }
@@ -918,13 +810,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return { steps: r.steps, base: first, cube: r.cube, stage: r.stage, tailTokens, tailLine, finished };
   }
 
-  // the last layer needs both scripts; if they failed to load, F2L still works
   const llAvailable = () => typeof LastLayer !== 'undefined' && typeof AlgSets !== 'undefined';
   let llLoading = null;
-  /** Loads every alg set once (data/ll/*.json); re-renders when they arrive. */
   function ensureLastLayerData() {
     if (llLoading || !llAvailable()) return llLoading;
-    // 1LLL (~3,900 cases) only for a solver who uses it
     llLoading = Promise.all(AlgSets.SETS.filter(s => s.id !== '1lll' || view.llMethod === '1lll').map(s => LastLayer.load(s.id, AlgSets.dataUrl(s.id)).catch(() => null)))
       .then(() => (view.lsSets && view.lsSets.ols ? LastLayer.loadOlsMore() : null))
       .then(() => {
@@ -939,7 +828,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return llLoading;
   }
 
-  /** The moves typed after the last finished step: the F2L tail, or the last layer's. */
   function typedTail() {
     if (llRead) {
       const partial = reading.tail.partial && llRead.tailTokens.length ? reading.tail.partial : '';
@@ -955,7 +843,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  /** The coloured copy of the text under the transparent textarea, plus the ghost of the top suggestion. */
   function renderEditor() {
     if (!editor || !reading) return;
     const text = editor.value;
@@ -966,7 +853,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const kind = reading.lines[li].kind;
       let pos = line.start;
       html += '<span class="ln">';
-      // a tail that already finishes a step reads as one (it commits at the line end)
       const cls = kind === 'tail' && !tailStep ? 'tok-pending' : 'tok-step';
       for (const t of line.tokens) {
         html += esc(text.slice(pos, t.start));
@@ -977,7 +863,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         html += esc(text.slice(pos, line.commentStart));
         html += `<span class="tok-comment">${esc(text.slice(line.commentStart, line.end))}</span>`;
       } else html += esc(text.slice(pos, line.end));
-      // an empty line still has a box to measure (the gutter's rows)
       html += line.start === line.end ? '\u200b</span>' : '</span>';
       if (li < reading.parsed.length - 1) html += '\n';
     });
@@ -991,11 +876,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     layoutGutter();
   }
 
-  /**
-   * The solution's steps as line ranges: [{ first, last, label, from, to }] where from..to are the moves
-   * (playback positions) the step covers. The inspection line goes with the
-   * cross; the unfinished tail is no step.
-   */
   function stepGroups() {
     const out = [];
     if (!reading) return out;
@@ -1005,7 +885,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     startMove.push(n);
     let first = -1;
     reading.lines.forEach((info, li) => {
-      // a committed step's lines all read as 'step' with its row: all but the last join the next
       const next = reading.lines[li + 1];
       const joins = info.kind === 'step' && info.row !== undefined && next && next.kind === 'step' && next.row === info.row;
       if (info.kind === 'merged' || joins) { if (first < 0) first = li; return; }
@@ -1018,15 +897,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return out;
   }
 
-  // critique marks by the playback position of the step they judge ({ key, at: Map(move -> glyph) })
   let critiqueMarks = null;
-  const MARKS = { '!!': ['beyond', 'beats the search'], '!': ['best', 'best'], '?!': ['slower', 'slower'], '?': ['off', 'slower, unusual'] };
-  const markHtml = (glyph, style = '') => `<b class="mark" data-mark="${MARKS[glyph][0]}"${style}>${MARKS[glyph][1]}</b>`;
+  const MARKS = { beyond: 'beats the search', best: 'best', slower: 'slower', off: 'slower, unusual' };
+  const markHtml = (mark, style = '') => `<b class="mark" data-mark="${mark}"${style}>${MARKS[mark]}</b>`;
 
-  /**
-   * The gutter: each step's number beside its labelled line, the step the
-   * cube is showing lit, and after a critique its mark after the line.
-   */
   function layoutGutter() {
     const gutter = $('editor-gutter');
     const shadow = $('editor-shadow');
@@ -1051,14 +925,13 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const on = pos > g.from && pos <= g.to;
       if (on) { lit = true; html += `<i class="row-lit" style="top:${top}px;height:${bottom - top}px"></i>`; }
       html += `<b class="step-no${on ? ' on' : ''}" style="top:${labelTop}px">${i + 1}</b>`;
-      const glyph = marks && marks.get(g.from);
-      if (glyph) {
+      const mark = marks && marks.get(g.from);
+      if (mark) {
         const end = b[b.length - 1];
         const left = Math.min(end.right - box.left + 8, box.width - 34);
-        html += markHtml(glyph, ` style="top:${end.top - box.top}px;left:${left}px"`);
+        html += markHtml(mark, ` style="top:${end.top - box.top}px;left:${left}px"`);
       }
     });
-    // the typed moves after the last step: their line lit while the cube shows them
     if (!lit && pos > 0 && reading.tail.tokens.length) {
       const r = rectsOf(reading.tail.line);
       if (r.length) html += `<i class="row-lit tail" style="top:${r[0].top - box.top}px;height:${r[r.length - 1].bottom - r[0].top}px"></i>`;
@@ -1066,7 +939,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     gutter.innerHTML = html;
   }
 
-  /** The rest of the top (or chosen) suggestion after what is typed (shown greyed after the caret). */
   function ghostText() {
     const top = suggestions[activeIdx >= 0 ? activeIdx : 0];
     if (!top || !reading) return '';
@@ -1075,7 +947,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const { tokens: typed, partial } = typedTail();
     const rest = top.toks.slice(typed.length - (partial ? 1 : 0));
     if (!rest.length) return '';
-    // the next step always starts its own line
     if (!typed.length && text && !text.endsWith('\n')) return '\n' + rest.join(' ');
     if (partial) {
       const first = rest[0].slice(partial.length);
@@ -1084,7 +955,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return (text && !/\s$/.test(text) ? ' ' : '') + rest.join(' ');
   }
 
-  /** The label a candidate's step gets in the solution. */
   function labelFor(session, r) {
     const before = session.isAtRoot ? 0 : (session.currentNode.state.corners || []).length;
     const node = session.nodeMap.get(r.targetNodeId);
@@ -1092,7 +962,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return stepLabel(session.isAtRoot, before, after, /pseudo/i.test(r.type || ''));
   }
 
-  /** Text before the tail (the committed steps' lines), ending at a line start. */
   function textBeforeTail() {
     const text = editor.value;
     const tail = reading ? typedTail() : null;
@@ -1111,15 +980,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     syncEditor();
   }
 
-  /** A candidate the solution bar may commit: from the step's list or the continuation search. */
   const committable = r => !!r && ((currentList() || []).includes(r) || !!(continuation && continuation.list && continuation.list.includes(r))
     || lastSlotRows().includes(r));
 
-  /** Writes candidate `r` as the next step (with its label) and commits it. */
   function commitSuggestion(r) {
     const session = getOrCreateSession(activeIndex);
     if (!committable(r)) return;
-    // steps taken from the suggestions (the critique notices a solve made only of them)
     (session._followed = session._followed || new Set()).add(rowTokens(r, session.isAtRoot).join(' '));
     const label = labelFor(session, r) + (r.lastSlot ? ` (${r.lastSlot.name})` : '');
     const node = session.nodeMap.get(r.targetNodeId);
@@ -1132,16 +998,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     editor.focus();
   }
 
-  /**
-   * Tab: commit the top (or chosen) suggestion with its label, or write the
-   * label of a typed step that is finished; either way the caret goes to the
-   * next line, which commits the step.
-   */
   function acceptSuggestion() {
     const s = suggestions[activeIdx >= 0 ? activeIdx : 0];
     if (!s) {
-      // a finished step whose line already has its comment (the newline was
-      // deleted): tab only goes to the next line
       if (finishedTailCommented()) { setEditorText(`${editor.value.replace(/[ \t]+$/, '')}\n`); return true; }
       return false;
     }
@@ -1156,7 +1015,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return true;
   }
 
-  /** Writes a last-layer alg (with its AUFs) and its label as the next line. */
   function commitLastLayer(s) {
     const before = textBeforeTail();
     let solved = false;
@@ -1166,9 +1024,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     editor.focus();
   }
 
-  /** The suggestions after what is typed (the ghost, Tab and ↑/↓ use them; nothing is listed on screen). */
   const lastLineOf = text => text.slice(text.lastIndexOf('\n') + 1);
-  /** The text ends in a finished step's line that already has a comment (and no newline). */
   function finishedTailCommented() {
     const text = editor.value;
     if (!reading || text.endsWith('\n') || !lastLineOf(text).includes('//')) return false;
@@ -1182,14 +1038,10 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const text = editor ? editor.value : '';
     const lastLine = reading ? reading.parsed[reading.parsed.length - 1] : null;
     const lastInfo = reading ? reading.lines[reading.parsed.length - 1] : null;
-    // nothing is offered to the right of a comment
     const commented = !!lastLine && lastLine.commentStart >= 0 && !text.endsWith('\n');
-    // the last step of the solution ends the text: its comment first
     if (lastLine && !commented && !text.endsWith('\n') && lastInfo && lastInfo.kind === 'step' && lastInfo.label && lastLine.tokens.length) {
       suggestions.push({ kind: 'comment', text: `// ${lastInfo.label}`, final: isLastStepFinal(session) });
     }
-    // the last layer: the algs of the case on the cube, in the solver's method
-    // (an alg that starts a new line may follow a comment)
     const llTail = session && reading && session.isComplete && llRead && llRead.stage && llRead.stage !== 'done' ? typedTail() : null;
     if (llTail && (!commented || !llTail.tokens.length)) {
       const { tokens, partial } = llTail;
@@ -1208,7 +1060,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (session && reading && !session.isComplete) {
       const tail = reading.tail;
       const list = currentList();
-      // a tail that finishes a step: suggest its comment
       const done = tail.tokens.length && !tail.onNewLine ? stepFromTail(session, tail.tokens, list) : null;
       tailStep = done;
       if (done && !commented) suggestions.push({ kind: 'comment', text: `// ${done.label}`, final: false });
@@ -1227,18 +1078,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderEditor();
   }
 
-  /** Is the text's last step the end of the solution (the F2L with nothing after it, or the solved cube)? */
   function isLastStepFinal(session) {
     if (!session || !session.isComplete) return false;
     if (!llRead || !llRead.steps.length) return true; // the f2l's last pair
     return llRead.stage === 'done';
   }
 
-  /**
-   * The last-slot pick, when there is a fact for it: a ZBLS alg for a ZBLL
-   * solver whose other picks leave edges to orient ("leaves the edges
-   * oriented"), or an OLS alg ("skips the oll"). None otherwise.
-   */
   function lastSlotPick(session, picks) {
     const rows = lastSlotRows();
     if (!rows.length) return null;
@@ -1248,7 +1093,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return LastLayer.stageOf(f);
       } catch (e) { return null; }
     };
-    // the solver's own alg for the case first
     const ofSet = setId => rows.find(r => r.lastSlot.setId === setId && r.lastSlot.main) || rows.find(r => r.lastSlot.setId === setId);
     const ols = ofSet('ols');
     const pickStages = picks.map(p => leaves(p.r));
@@ -1262,7 +1106,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return null;
   }
 
-  /** Items ({ toks }) whose tokens start with the typed ones (the strict prefix of prefixMatches). */
   function tokenPrefixMatches(items, typed, partial) {
     typed = typed.map(normTok);
     const done = partial ? typed.slice(0, -1) : typed;
@@ -1274,12 +1117,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     });
   }
 
-  /**
-   * At the last pair: the ZBLS and OLS algs of the
-   * cube's last-slot case, the slot turned to the front right by a y, each
-   * replayed and scored as a step the user wrote (userStepRow), so they rank
-   * like any step. Memoised per node.
-   */
   const lastSlotMemo = new Map();
   const LS_PER_SET = 4; // algs per set and case
   function lastSlotRows() {
@@ -1304,7 +1141,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return rows;
   }
 
-  /** The tail as a finished step: { label, row, last } (a listed candidate or the user's own), or null. */
   function stepFromTail(session, tokens, list) {
     const cand = (list || []).find((c) => {
       const want = rowTokens(c, session.isAtRoot);
@@ -1316,25 +1152,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return { label: labelFor(session, row), row, last: !!node && (node.state.corners || []).length >= 4 };
   }
 
-  // ---------------------------------------------------------------------
-  // The continuation search: moves typed that start
-  // no listed step are searched onward -- the step's search again from the
-  // cube after those moves -- so the ghost can still finish the step the
-  // solver has in mind. Each continuation is the typed moves plus a found
-  // rest, scored as a step the user wrote (userStepRow: replayed on the
-  // real cube, so a wrong frame can only drop rows, never mis-score them).
-  // ---------------------------------------------------------------------
   let continuation = null; // { key, list (null while searching), job }
   let continuationTimer = 0;
   const CONTINUATION_DELAY = 350; // ms after the last keystroke
   const CONTINUATION_ROWS = 400;  // rescored found rests (best first)
   const COLOUR_OF_FACELET = { W: 'white', Y: 'yellow', G: 'green', B: 'blue', R: 'red', O: 'orange' };
 
-  /** The complete typed moves a continuation is searched for (the token still being typed filters it). */
   const continuationTyped = tail => (tail.partial ? tail.tokens.slice(0, -1) : tail.tokens).map(normTok);
   const continuationKey = typed => `${activeStepKey()}|${typed.join(' ')}`;
 
-  /** The continuation list for this tail, if it was searched. */
   function continuationFor(tail) {
     if (!continuation || !continuation.list) return null;
     return continuation.key === continuationKey(continuationTyped(tail)) ? continuation.list : null;
@@ -1373,8 +1199,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     let algToks = typed;
     let wantRotation = -1;
     if (isRoot) {
-      // the typed rotation and moves, moved into the scramble: "scramble F'"
-      // then the rotation Q is the cube as typed (Q F == rotation + moves)
       let k = 0;
       while (k < typed.length && SE_ROTATION.test(typed[k])) k++;
       rotToks = typed.slice(0, k);
@@ -1409,7 +1233,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (out.length >= CONTINUATION_ROWS) break;
       if (isRoot && rotationIndex(r.rotation || '') !== wantRotation) continue;
       const rest = String(r.coreAlg || '').split(/\s+/).filter(Boolean);
-      // a rest that cancels into the typed moves is another spelling of what was typed: skip it
       if (cancelBoundary(algToks, rest).merged) continue;
       const toks = [...typed, ...rest];
       const k = toks.join(' ');
@@ -1425,14 +1248,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     renderSearcher();
   }
 
-  /** The keys of the solution bar, under it. */
   function renderKeyLegend() {
     const el = $('key-legend');
     if (!el) return;
     const keys = k => k.split(' ').map(x => `<kbd>${esc(x)}</kbd>`).join('');
     el.innerHTML = [['tab', 'keys.tab'], ['↑ ↓', 'keys.arrows'], ['esc', 'keys.esc']]
       .map(([k, c]) => `<span>${keys(k)} ${esc(caption(c))}</span>`).join('');
-    // the rows of the gutter move with the text's wrapping
     let t = 0;
     window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(layoutGutter, 60); });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutGutter);
@@ -1463,13 +1284,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (e.key === 'Escape') { activeIdx = -1; renderEditor(); }
     });
     for (const ev of ['click', 'keyup', 'focus', 'blur']) editor.addEventListener(ev, () => renderEditor());
-    // the cube follows the caret while the solution bar has it, and goes
-    // back to the end of the solution when it leaves (unless the playback
-    // controls or the cube took it)
     for (const ev of ['click', 'keyup', 'focus', 'select']) editor.addEventListener(ev, followCaret);
     document.addEventListener('selectionchange', () => { if (document.activeElement === editor) followCaret(); });
     editor.addEventListener('focus', () => { manualPlayback = false; });
-    // typing shows the typed moves, whatever was being previewed
     editor.addEventListener('input', endPreview);
     editor.addEventListener('blur', () => {
       if (manualPlayback || !player || previewing) return;
@@ -1477,10 +1294,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     });
   }
 
-  // ---------------------------------------------------------------------
-  // The cube (pixel-cube.js) and playback of the solution and the typed
-  // moves, from the scrambled cube (the scramble itself is not played)
-  // ---------------------------------------------------------------------
   let pixelCube = null;
   let player = null;
   let previewing = false;
@@ -1504,7 +1317,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return toks;
   }
 
-  /** Moves of the text before the caret (the playback position the caret stands for). */
   function caretMoveIndex() {
     if (!reading || !editor) return Infinity;
     const caret = editor.selectionEnd;
@@ -1520,7 +1332,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (k !== player.pos) player.goTo(k);
   }
 
-  /** The cube glides to the solution's end, or to the caret while the bar has it. */
   function updatePlayer() {
     if (!player || previewing) return;
     const session = sessions.get(activeIndex);
@@ -1540,7 +1351,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     const label = $('cube-step');
     if (label && player) {
-      // the step the cube is in, then the move
       const g = previewing ? null : stepGroups().find(x => player.pos > x.from && player.pos <= x.to);
       const name = previewing ? caption('stage.preview') : g ? g.label : player.pos ? caption('stage.typing') : caption('stage.scrambled');
       const shown = caseName(name);
@@ -1552,10 +1362,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     layoutGutter();
   }
 
-  /**
-   * One cell per stage (the cross, four pairs, the oriented and the solved
-   * last layer), filled as far as the cube on screen has got.
-   */
   function renderGauge() {
     const gauge = $('gauge');
     if (!gauge || !player) return;
@@ -1573,7 +1379,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     gauge.classList.toggle('done', solved);
   }
 
-  /** Hovering a pick: the cube glides through its moves (and back when the pointer leaves). */
   function previewCandidate(r, el = null) {
     if (!player || !pixelCube || matchMedia('(hover: none)').matches) return;
     const session = sessions.get(activeIndex);
@@ -1606,9 +1411,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     player.animated = p.animSpeed > 0;
     const stage = $('cube-stage');
     const panel = stage.closest('.cube-panel') || stage;
-    // using the cube or its controls keeps the playback where the user put it
     panel.addEventListener('pointerdown', () => { manualPlayback = true; });
-    // drag to orbit; two fingers pinch to zoom; the wheel zooms
     const pointers = new Map();
     let pinch = 0;
     const spread = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
@@ -1653,9 +1456,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => pixelCube.resize(), 80); });
   }
 
-  // ---------------------------------------------------------------------
-  // Suggestions (suggest.js) with their reasons, or the critique
-  // ---------------------------------------------------------------------
   let critiqueShown = null; // { key, items } while the critique is on screen
   const viewMemo = new Map();
 
@@ -1698,11 +1498,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (searcher) searcher.classList.toggle('thinking', !!on);
   }
 
-  // A preview whose button goes away ends with it: a removed button sends no
-  // mouseleave, so the cube stayed on the preview and stopped following the
-  // solution after tab or a click on a pick. The
-  // same pick drawn again (the list re-ranked) keeps it.
-  /** A step label as shown on screen: "oll 47" -> "OLL 47", "pll ja" -> "PLL Ja", "cross" -> "Cross". */
   const SET_PREFIX = /^(oll|pll|epll|coll|zbll|1lll|ols|zbls|vls|hls|wv|sv)( |$)/i;
   function caseName(label) {
     const s = String(label || '');
@@ -1710,21 +1505,8 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return s.replace(SET_PREFIX, (m, set, sp) => set.toUpperCase() + sp).replace(/ ([a-z])/, (m, c) => ' ' + c.toUpperCase());
   }
 
-  /** The kind of step a pick is, for its corner label and tint (styles.css [data-kind]). */
-  const LL_KINDS = { oll: 'oll', pll: 'pll', epll: 'pll', coll: 'coll', zbll: 'zbll', '1lll': 'zbll' };
-  function stepKind(label, lastSlot = null) {
-    const l = String(label || '').toLowerCase();
-    if (lastSlot && lastSlot.name) return { text: lastSlot.name, type: 'ls' };
-    if (/pseudo/.test(l)) return { text: 'pseudo', type: 'pseudo' };
-    if (/^x+cross/.test(l)) return { text: l.split(' ')[0], type: 'xcross' };
-    if (/cross/.test(l)) return { text: 'cross', type: 'cross' };
-    if (/pairs/.test(l)) return { text: 'multislot', type: 'multi' };
-    if (/pair/.test(l)) return { text: 'pair', type: 'pair' };
-    return { text: l.split(' ')[0] || 'step', type: 'cross' };
-  }
-  const typeBadge = kind => `<span class="kind">${esc(kind.text)}</span>`;
+  const comment = label => (label ? `<span class="kind"> // ${esc(label)}</span>` : '');
 
-  /** Slice turn metric of a move string: every turn but rotations. */
   const turnCount = moves => String(moves).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
 
   function renderSearcher() {
@@ -1757,12 +1539,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
     if (session.isComplete) {
       say.textContent = caption(llRead && llRead.stage === 'auf' ? 'suggest.ll.auf' : 'suggest.solved');
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn primary';
-      b.textContent = caption('critique.button');
-      b.addEventListener('click', runCritique);
-      actions.appendChild(b);
       return;
     }
     let pickList = list;
@@ -1775,15 +1551,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         say.textContent = caption(continuationPending() || !shownFinal ? 'suggest.following' : 'suggest.offNode');
         return;
       }
-      // picks that carry on what is typed, when only the continuation has it
       const cont = continuationFor(reading.tail);
       if (cont && list && !prefixMatches(list, reading.tail.tokens, reading.tail.partial, session.isAtRoot).length) pickList = cont;
     }
     if (!pickList || !pickList.length) { say.textContent = caption(list ? 'solve.noResults' : 'suggest.thinking'); return; }
-    // a new step, new words (the same step keeps saying the same)
     let picks = searcherPicks(pickList, pickContext(session));
     if (reading && reading.tail.tokens.length) {
-      // only picks that start like what is typed
       picks = picks.filter(p => prefixMatches([p.r], reading.tail.tokens, reading.tail.partial, session.isAtRoot).length);
     }
     const ls = lastSlotPick(session, picks);
@@ -1795,14 +1568,11 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       b.className = 'pick';
       const why = p.reasons.slice(0, 1).map(x => caption(`reason.${x.key}`, x.vars)).join(' ');
       const tokens = rowTokens(p.r, session.isAtRoot).join(' ');
-      const kind = stepKind(labelFor(session, p.r), p.r.lastSlot);
-      b.dataset.kind = kind.type;
-      b.innerHTML = `<span class="alg">${esc(tokens)}</span><span class="why">${esc(why)}</span>${typeBadge(kind)}<span class="cnt">${turnCount(tokens)} STM</span>`;
+      b.innerHTML = `<span class="alg">${esc(tokens)}${comment(labelFor(session, p.r))}</span><span class="cnt">${turnCount(tokens)} STM</span><span class="why">${esc(why)}</span>`;
       b.addEventListener('click', () => commitSuggestion(p.r));
       b.dataset.preview = `${activeIndex}|${session.committedRows.length}|${tokens}`;
       b.addEventListener('mouseenter', () => previewCandidate(p.r, b));
       b.addEventListener('mouseleave', endPreview);
-      // a last-slot alg can become the solver's own for its case
       const ls = p.r.lastSlot;
       if (ls && ls.caseId && ls.alg && !ls.main) {
         const row = document.createElement('div');
@@ -1820,15 +1590,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     });
   }
 
-  /**
-   * After the F2L: the case on the cube and its algs. The solver's main alg
-   * for the case is the only pick ("your alg for this case"); otherwise two
-   * to four picks -- the fastest of the method's set (for this solver's
-   * style), the community's favourite when it is another one, the fastest of
-   * the other set that applies -- each with a star that uses it and makes it
-   * the solver's main alg, and "neither" for more.
-   */
-  // "neither": page 0 is the usual picks (or the main alg), pages 1.. the case's other algs, three at a time
   let llMore = { caseId: null, page: 0 };
   const LL_PAGE = 3;
   function renderLastLayerPicks(session, say, picksEl, title, actions) {
@@ -1846,7 +1607,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const picks = [];
     const add = (m, role, why) => { if (m && picks.length < 4 && !picks.some(p => p.m.alg === m.alg && p.m.setId === m.setId)) picks.push({ m, role, why }); };
     const main = own.find(m => m.main);
-    // the picks of page 0 (computed always: later pages leave them out)
     const first = [];
     if (main) first.push(main);
     else {
@@ -1862,7 +1622,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (main && !llMore.page) {
       add(main, 'll.main', 'll.main');
     } else if (llMore.page) {
-      // each with a fact: shorter than the fastest, or the community's
       const stm0 = LastLayer.stmOf(own[0].alg.alg);
       others.slice((llMore.page - 1) * LL_PAGE, llMore.page * LL_PAGE).forEach((m) => {
         const d = stm0 - LastLayer.stmOf(m.alg.alg);
@@ -1875,7 +1634,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       if (fav && fav !== own[0]) add(fav, 'll.favourite', 'll.favourite');
       const other = fits.find(m => m.setId !== firstSet);
       if (other) add(other, `ll.set.${other.setId}`, other.setId === 'zbll' ? 'll.whole' : other.setId === 'oll' ? 'll.twoLook' : 'll.other');
-      // never fewer than two
+      // at least two
       for (const m of own) { if (picks.length >= 2) break; add(m, 'll.next', 'll.next'); }
     }
     title.textContent = caseName(fits[0].label);
@@ -1886,9 +1645,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick';
-      const kind = { text: p.m.setId, type: LL_KINDS[p.m.setId] || 'oll' };
-      b.dataset.kind = kind.type;
-      b.innerHTML = `<span class="alg">${esc(p.m.toks.join(' '))}</span><span class="why">${esc(caption(`reason.${p.why}`, { label: caseName(p.m.label) }))}</span>${typeBadge(kind)}<span class="cnt">${turnCount(p.m.toks.join(' '))} STM</span>`;
+      b.innerHTML = `<span class="alg">${esc(p.m.toks.join(' '))}${comment(p.m.label)}</span><span class="cnt">${turnCount(p.m.toks.join(' '))} STM</span><span class="why">${esc(caption(`reason.${p.why}`, { label: caseName(p.m.label) }))}</span>`;
       b.addEventListener('click', () => commitLastLayer({ toks: p.m.toks, label: p.m.label }));
       row.appendChild(b);
       if (!p.m.main) {
@@ -1903,7 +1660,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       }
       picksEl.appendChild(row);
     });
-    // "neither of these": more algs of the case (from the start again at the end)
     if (pages > 1) {
       const neither = document.createElement('button');
       neither.type = 'button';
@@ -1912,7 +1668,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       neither.addEventListener('click', () => { llMore.page = (llMore.page + 1) % pages; renderSearcher(); });
       actions.appendChild(neither);
     }
-    // every alg of the case, on the algs page
     const more = document.createElement('a');
     more.className = 'btn quiet';
     more.href = `algs.html#${fits[0].setId}/${String(fits[0].caseName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
@@ -1922,7 +1677,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     actions.appendChild(more);
   }
 
-  /** Makes an alg the solver's main alg for a case (profile), and re-ranks. */
   function setMainAlg(caseId, alg) {
     const p = profile();
     if (!p || !cubeProfiles) return;
@@ -1931,14 +1685,9 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     lastSlotMemo.clear();
   }
 
-  /**
-   * Last-layer steps the solver typed themselves (not taken with tab or a
-   * pick): they know that case, so it is marked known.
-   */
   const tabbedLL = new Set(); // alg texts written by tab or a pick
   function markTypedKnown(session) {
     if (!llRead || !cubeProfiles || !profile()) return;
-    // the steps already there when the text was loaded (a reload) are not new typing
     if (!session._llBaseline) { session._llBaseline = new Set(llRead.steps.map(st => st.toks.join(' '))); return; }
     if (!llRead.steps.length) return;
     let cube = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
@@ -1963,10 +1712,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     drawProfileChip();
   }
 
-
-  // ---------------------------------------------------------------------
-  // The critique (critique.js)
-  // ---------------------------------------------------------------------
   async function runCritique() {
     const session = getOrCreateSession(activeIndex);
     const say = $('suggest-note');
@@ -1979,7 +1724,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     actions.innerHTML = '';
     critiqueShown = { key: `${activeIndex}|${session.scoredPath}`, items: null };
     if (!session.committedRows.length) { say.textContent = caption('critique.needSolve'); return; }
-    // every step was a top suggestion: nothing to critique
     const followed = session._followed || new Set();
     const allFollowed = session.committedRows.length >= 2
       && session.committedRows.every((row, i) => followed.has(rowTokens(row, i === 0).join(' ')))
@@ -2002,7 +1746,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const myKey = critiqueShown.key;
     const report = await critiqueSolve(session, {
       search: (fork, { multislot }) => {
-        // through the scheduler; unfiltered: the step is ranked among every result for its goal
         const opts = searchOptions(ACTIVE);
         const job = scheduler.submit(wrap => searchWithLookahead(fork, wrap(h), () => {}, wrap(ph), {
           ...opts, depth: 1, filter: null, filterKey: '', multislot, lookaheadMultislot: multislot,
@@ -2010,7 +1753,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
         return job.promise;
       },
       answers: answers(),
-      // only what the solver has switched on, and their level allows, is suggested
       allow: (r) => {
         const f = resultFilter().fn;
         return (!f || f(r)) && !(r.multislot && typeof goalAllowed === 'function' && !goalAllowed('multislot', answers()));
@@ -2019,35 +1761,33 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     setThinking(false);
     if (!critiqueShown || critiqueShown.key !== myKey) return;
     say.textContent = caption('critique.intro');
-    for (const item of report.items) item.glyph = critiqueGlyph(item);
+    for (const item of report.items) item.mark = critiqueMark(item);
     creditLastSlot(session, report);
     const marks = new Map();
     const ol = document.createElement('ol');
     ol.className = 'critique-list';
     for (const item of report.items) {
       const li = document.createElement('li');
-      if (item.glyph) marks.set(item.startMove, item.glyph);
-      li.innerHTML = logEntry(item.label, item.glyph, item.text, item.alt, item.altRow ? rowTokens(item.altRow, item.stepIndex === 0).join(' ') : '');
+      if (item.mark) marks.set(item.startMove, item.mark);
+      li.innerHTML = logEntry(item.label, item.mark, item.text, item.alt, item.altRow ? rowTokens(item.altRow, item.stepIndex === 0).join(' ') : '');
       li.addEventListener('click', () => {
         if (!player) return;
         manualPlayback = true;
-        // the cube glides to the alternative, or (no alternative) to where the step starts
         if (item.altRow) { previewCandidateAt(session, item.stepIndex, item.altRow, li); return; }
         endPreview();
         player.seek(item.startMove);
       });
       ol.appendChild(li);
     }
-    // the last layer (last-layer.js): each step against its case's algs
     if (llRead && llRead.steps.length && llAvailable()) {
       const start = applyAlgorithm(scrambledState(session.scramble), solutionTokens(session).join(' '));
       const f2lMoves = solutionTokens(session).length;
       for (const item of LastLayer.critique(start, llRead.steps, LastLayer.LOADED, view.llMethod)) {
         const li = document.createElement('li');
         const alt = item.alt ? caption(item.alt.key, item.alt.vars) : '';
-        const glyph = LL_GLYPHS[item.key] || '';
-        if (glyph) marks.set(f2lMoves + item.at, glyph);
-        li.innerHTML = logEntry(item.vars && item.vars.label, glyph, caption(item.key, item.vars), alt, item.alt && item.alt.vars ? item.alt.vars.alg : '');
+        const mark = LL_MARKS[item.key] || '';
+        if (mark) marks.set(f2lMoves + item.at, mark);
+        li.innerHTML = logEntry(item.vars && item.vars.label, mark, caption(item.key, item.vars), alt, item.alt && item.alt.vars ? item.alt.vars.alg : '');
         li.addEventListener('click', () => {
           if (!player) return;
           manualPlayback = true;
@@ -2072,38 +1812,22 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     actions.appendChild(close);
   }
 
-  /**
-   * A step's verdict: '!!' outside what the search looks for, and nothing it
-   * found beats it; '!' its best; '?!' slower, or a slower kind of step; '?'
-   * slower and of a kind it never suggests; '' close enough to the best.
-   */
-  function critiqueGlyph(item) {
-    if (item.why && item.why.length) return item.outside ? '?' : '?!';
+  function critiqueMark(item) {
+    if (item.why && item.why.length) return item.outside ? 'off' : 'slower';
     if (item.fine) return '';
-    if (item.altRow) return '?!';
-    return item.outside ? '!!' : '!';
+    if (item.altRow) return 'slower';
+    return item.outside ? 'beyond' : 'best';
   }
-  const LL_GLYPHS = { 'critique.ll.best': '!', 'critique.ll.main': '!', 'critique.ll.slower': '?!', 'critique.ll.notMain': '?!' };
+  const LL_MARKS = { 'critique.ll.best': 'best', 'critique.ll.main': 'best', 'critique.ll.slower': 'slower', 'critique.ll.notMain': 'slower' };
 
-  /**
-   * One step of the critique: a bar with the step (and its mark), the
-   * verdict, and the alternative in smaller type with its moves in bold.
-   */
-  function logEntry(label, glyph, text, alt, altAlg) {
-    const g = glyph ? ` ${markHtml(glyph)}` : '';
-    // the bar names the step: the verdict need not start with it again
+  function logEntry(label, mark, text, alt, altAlg) {
+    const g = mark ? ` ${markHtml(mark)}` : '';
     if (label && String(text).startsWith(`${label}: `)) text = String(text).slice(label.length + 2).replace(/^./, c => c.toUpperCase());
     let altHtml = esc(alt || '');
     if (altAlg && alt && alt.includes(altAlg)) altHtml = altHtml.replace(esc(altAlg), `<b class="moves">${esc(altAlg)}</b>`);
     return `<h4 class="turn">${esc(caseName(label))}${g}</h4><div>${esc(text)}</div>${alt ? `<div class="alt">${altHtml}</div>` : ''}`;
   }
 
-  /**
-   * The last pair. Done with a last-slot alg of a set the solver has on,
-   * it is judged against that set's algs for the
-   * case, not against a plain insert. Otherwise, when it still leaves the last
-   * layer further on than the quicker alternative, the critique says so.
-   */
   function creditLastSlot(session, report) {
     if (!llAvailable() || !session.isComplete) return;
     const k = session.committedRows.length - 1;
@@ -2124,12 +1848,12 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       const at = algs.findIndex(a => a.toks.join(' ') === mine.join(' '));
       const first = algs[0];
       let body = mine.join(' ');
-      const myScore = at >= 0 ? LastLayer.styledScore(algs[at].alg) : AlgSets.llScore(body, null, setId) + 0;
-      if (at === 0) { item.text = caption(first.main ? 'critique.ls.yours' : 'critique.ls.best', { label, set }); item.glyph = '!'; }
-      else if (at > 0 && myScore <= LastLayer.styledScore(first.alg) + 3) { item.text = caption('critique.ls.good', { label, set }); item.glyph = ''; }
+      const myScore = at >= 0 ? LastLayer.styledScore(algs[at].alg) : AlgSets.llScore(body, null, setId);
+      if (at === 0) { item.text = caption(first.main ? 'critique.ls.yours' : 'critique.ls.best', { label, set }); item.mark = 'best'; }
+      else if (at > 0 && myScore <= LastLayer.styledScore(first.alg) + 3) { item.text = caption('critique.ls.good', { label, set }); item.mark = ''; }
       else {
         item.text = caption('critique.ls.slower', { label, set });
-        item.glyph = '?!';
+        item.mark = 'slower';
         item.alt = caption('critique.ls.alt', { alg: first.toks.join(' ') });
         item.altRow = { coreAlg: first.toks.join(' '), rotation: '' };
         return;
@@ -2147,7 +1871,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     item.text = `${item.text} ${caption(key)}`;
   }
 
-  /** The cube glides to the critique's alternative for step `k` (instead of the user's step). */
   function previewCandidateAt(session, k, row, el = null) {
     if (!player) return;
     const toks = [];
@@ -2161,20 +1884,15 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (note) note.textContent = 'my alternative';
   }
 
-  // ---------------------------------------------------------------------
-  // Undo, settings drawer, new scramble
-  // ---------------------------------------------------------------------
   async function handleUndo() {
     const session = getOrCreateSession(activeIndex);
     if (!editor || !reading) return;
     if (llRead && !llRead.tailTokens.length && llRead.steps.length) {
-      // a last-layer step: its lines go
       const st = llRead.steps[llRead.steps.length - 1];
       setEditorText(editor.value.slice(0, reading.parsed[llRead.base + st.firstLine].start));
       return;
     }
     if (reading.tail.tokens.length) {
-      // first the unfinished moves
       setEditorText(textBeforeTail());
       return;
     }
@@ -2183,7 +1901,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     const first = reading.lines.findIndex(l => l.row === last);
     if (first < 0) { session.undo(); setEditorText(rowsText(session)); return; }
     let start = reading.parsed[first].start;
-    // the inspection line belongs to the first step
     if (last === 0) start = 0;
     setEditorText(editor.value.slice(0, start));
   }
@@ -2202,7 +1919,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
   }
 
   function bindSettings() {
-    // hint sentences in the page come from captions.js
     document.querySelectorAll('[data-caption]').forEach((el) => { el.textContent = caption(el.dataset.caption); });
     const dialog = $('settings');
     const btn = $('settings-btn');
@@ -2229,7 +1945,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     if (signOut) signOut.addEventListener('click', () => { cubeProfiles.signOut(); location.href = 'index.html'; });
     const apply = $('apply-search');
     if (apply) apply.addEventListener('click', () => persistAndNavigate());
-    // the algs page's settings button comes here (solver.html#settings)
     if (location.hash === '#settings') {
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file: */ }
       setTimeout(() => { syncLookControls(); if (!dialog.open) dialog.showModal(); }, 0);
@@ -2287,9 +2002,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     });
   }
 
-  // ---------------------------------------------------------------------
-  // Persistence: committed rows and the solution text of every scramble
-  // ---------------------------------------------------------------------
   function sameList(a, b) {
     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
   }
@@ -2315,8 +2027,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     }
   }
 
-  // A saved blob is only trusted when it matches the CURRENT search criteria
-  // exactly: progress is never replayed onto a tree it was not made on.
+  // saved progress only loads onto the tree it was made on (same criteria)
   function loadPersistedState(crit) {
     let raw;
     try { raw = localStorage.getItem(scopedKey(SESSION_STATE_KEY)); } catch (err) { return null; }
@@ -2352,9 +2063,7 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
     return Math.max(0, Math.min(idx, length - 1));
   }
 
-  // Hooks called by script.js (DOMContentLoaded and scrambleController.render()).
   window.onPrunedTreeReady = function (tree, crit) {
-    // the alg sets load once the solver is up (the last pair and the last layer use them)
     setTimeout(ensureLastLayerData, 1500);
     prunedTree = tree;
     criteria = crit;
@@ -2382,7 +2091,6 @@ const UI_SCRIPT_QUERY = (typeof document !== 'undefined' && document.currentScri
       setSessionPriority(activeIndex, BACKGROUND);
       critiqueShown = null;
     }
-    // the editor's text belongs to the session it was loaded for
     if (editorSession && editor) editorSession._text = editor.value;
     activeIndex = index;
     if (!prunedTree) return;

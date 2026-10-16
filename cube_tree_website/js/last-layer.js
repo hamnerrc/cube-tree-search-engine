@@ -10,12 +10,9 @@
 'use strict';
 
 const LastLayer = (() => {
-  // stages of the last layer, in order (F2L solved in all); epll (the
-  // corners solved, the edges oriented) is an oriented layer too
   const STAGE_RANK = { f2l: 0, eo: 1, oriented: 2, epll: 2, auf: 3, done: 4 };
   const isEpll = c => AlgSets.llEO(c) && AlgSets.uPowers().some(u => [0, 1, 2, 3].every(i => c.cp[i] === u.cp[i] && c.co[i] === 0));
 
-  /** The stage of a cube (facelets, any colours), or null when its F2L is not solved. */
   function stageOf(facelets) {
     const c = AlgSets.faceletCubie(facelets);
     if (!c || !AlgSets.f2lSolved(c)) return null;
@@ -27,15 +24,12 @@ const LastLayer = (() => {
     return 'f2l';
   }
 
-  // The sets that apply at each stage, and what finishing one leaves. COLL is
-  // the OLL with the corners, from any OLL; 1LLL the whole layer from anywhere.
   const SETS_AT = {
     f2l: ['1lll', 'coll', 'oll'],
     eo: ['1lll', 'zbll', 'coll', 'oll'],
     oriented: ['pll'],
     epll: ['pll'],
   };
-  /** The sets a solver's method uses at a stage, best first. */
   function setsFor(stage, method = 'oll') {
     const all = SETS_AT[stage] || [];
     if (stage !== 'eo' && stage !== 'f2l') return all;
@@ -45,10 +39,6 @@ const LastLayer = (() => {
     return ['oll'];
   }
 
-  /**
-   * The cases of a cube in the loaded sets: [{ setId, case, hit }] for every
-   * set that applies at its stage. `data`: set id -> { data, index }.
-   */
   function casesOf(facelets, data) {
     const stage = stageOf(facelets);
     if (!stage) return [];
@@ -63,29 +53,14 @@ const LastLayer = (() => {
     return out;
   }
 
-  /** The label of a case: "oll 27", "pll t", "zbll t 12". */
   const caseLabel = (setId, data, kase) => AlgSets.caseTitle(data[setId] ? data[setId].data.name : setId, kase.name);
 
-  // ---- the solver's preferences (solver-ui.js sets them; algs-ui.js too) ----
-  // style: 'efficiency' ("white collar") or 'tps' ("blue collar"): a small cost
-  // per move, so white collar solvers see shorter algs a little higher and blue
-  // collar ones faster-turning ones; main: case id -> the solver's own alg for
-  // it (their main), known: case id -> true; lastSlot: the last-slot sets
-  // switched on ({ zbls, ols, vls, hls, wv, sv }); hideAwkward: hide awkward
-  // algs where the case's community favourite is not awkward itself.
-  const PREFS = { style: 'tps', main: {}, known: {}, lastSlot: { zbls: true, ols: false, vls: false, hls: false, wv: true, sv: true }, hideAwkward: true };
+  const PREFS = { method: 'oll', style: 'tps', main: {}, known: {}, lastSlot: { zbls: true, ols: false, vls: false, hls: false, wv: true, sv: true }, hideAwkward: true };
   const STYLE_PER_MOVE = { efficiency: 1.2, tps: -0.6 };
   function setPrefs(p) { Object.assign(PREFS, p || {}); }
-  /** A case's id for the solver's main and known algs: "oll/oll-27". */
   const caseId = (setId, kase) => `${setId}/${String(kase.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
   const stmOf = alg => String(alg).split(' ').filter(t => t && !/^[xyz]/.test(t)).length;
-  /** An alg's score as this solver sees it: the ranking plus the style's cost per move. */
   const styledScore = a => a.score + (STYLE_PER_MOVE[PREFS.style] || 0) * stmOf(a.alg);
-  /**
-   * A case's algs in the order this solver sees them: their main alg first,
-   * then by the styled score; awkward ones (data flag `awk`) left out when
-   * hidden and the case's community favourite is not awkward (`awkOk`).
-   */
   function orderedAlgs(setId, kase) {
     const main = PREFS.main[caseId(setId, kase)];
     let algs = kase.algs.slice();
@@ -93,7 +68,6 @@ const LastLayer = (() => {
     algs.sort((a, b) => (b.alg === main) - (a.alg === main) || styledScore(a) - styledScore(b));
     return algs;
   }
-  /** Is a last-slot case allowed by the sets switched on (its OLS subsets or ZBLS)? */
   function lastSlotAllowed(setId, kase) {
     const on = PREFS.lastSlot || {};
     if (setId === 'zbls') return !!on.zbls;
@@ -101,11 +75,6 @@ const LastLayer = (() => {
     return (kase.tags || []).some(t => on[t]);
   }
 
-  /**
-   * The algs to offer on a cube: [{ setId, label, toks, score, src, alg }],
-   * the method's first set first, each set by its ranking. AUFs included:
-   * the tokens solve this cube as it stands.
-   */
   function suggestions(facelets, data, method = 'oll') {
     const stage = stageOf(facelets);
     if (!stage) return [];
@@ -134,13 +103,6 @@ const LastLayer = (() => {
     return out;
   }
 
-  /**
-   * Reads the lines after the F2L (`lines`: [{ tokens: [tok...] }], from the
-   * cube `start`): { steps: [{ firstLine, lastLine, label, toks }], tail:
-   * { firstLine, tokens } }. A line is a step when, replayed, the cube is at
-   * a later stage than before; a line that moves nothing on is merged into
-   * the next.
-   */
   function readSteps(start, lines, data) {
     const steps = [];
     let cube = start;
@@ -164,12 +126,11 @@ const LastLayer = (() => {
     return { steps, tail: { firstLine: pending.length ? from : lines.length, tokens: pending }, cube, stage };
   }
 
-  /** What a step that took the cube from one stage to another did, with its case when known. */
   function stepLabel(before, from, to, data) {
     const found = data ? casesOf(before, data) : [];
     const named = setId => {
       const f = found.find(x => x.setId === setId);
-      return f ? caseLabel(setId, data, f.case) : setId;
+      return f ? caseLabel(setId, data, f.case) : setId.toUpperCase();
     };
     if (to === 'done' || to === 'auf') {
       if (from === 'auf') return 'auf';
@@ -178,19 +139,12 @@ const LastLayer = (() => {
       return named('1lll');
     }
     if (to === 'oriented') return named('oll');
-    // the corners solved with the orientation: a COLL (also from an OLL with flipped edges)
-    if (to === 'epll') return named('coll');
+    // an OLL that happens to solve the corners keeps its OLL name unless COLL is the method
+    if (to === 'epll') return PREFS.method !== 'coll' && found.some(x => x.setId === 'oll') ? named('oll') : named('coll');
     if (to === 'eo') return 'eo';
     return 'last layer';
   }
 
-  /**
-   * The last-slot algs (ZBLS, OLS) for a cube whose F2L lacks one pair:
-   * [{ setId, name, toks }], `toks` solving the cube as it stands. The sets
-   * are for the front-right slot: a y brings the slot there, or the mirror
-   * image does (left-hand algs for a left slot, mirrored back). `perCase`
-   * algs per set and case.
-   */
   const LS_ROTATIONS = ['', 'y', 'y2', "y'"];
   function lastSlotAlgs(facelets, data, perCase = 4) {
     const here = AlgSets.labelsOf(facelets);
@@ -221,8 +175,6 @@ const LastLayer = (() => {
     return out;
   }
 
-  // A step's alg as the sets store it: no AUF before or after (a leading y
-  // on a last-layer case is an AUF too).
   const AUF_TOKEN = /^[Uy](2|'|)$/;
   function bodyOf(toks) {
     let a = 0, b = toks.length;
@@ -232,13 +184,6 @@ const LastLayer = (() => {
   }
   const CRITIQUE_MARGIN = 3; // llScore units: less is noise (Sune ~ 37)
 
-  /**
-   * The critique of the last-layer steps (critique.js does the F2L): each
-   * step against the algs of the case it solved, by the same ranking, in
-   * words: my favourite, a great alg, or a quicker one to try.
-   * [{ key, vars, alt, at }]: caption keys, `at` = the step's first move
-   * (counted from the start of the last layer).
-   */
   function critique(start, steps, data, method = 'oll') {
     const items = [];
     let cube = start;
@@ -274,7 +219,6 @@ const LastLayer = (() => {
     return items;
   }
 
-  /** Every set's data and recognition index, loaded once: set id -> { data, index }. */
   const LOADED = {};
   const PENDING = {};
   function load(setId, url = AlgSets.dataUrl(setId)) {
@@ -286,10 +230,6 @@ const LastLayer = (() => {
     return PENDING[setId];
   }
 
-  /**
-   * OLS beyond VLS and HLS (data/ll/ols-more.json, ~7,600 cases), merged into
-   * the loaded OLS: only for solvers who switch full OLS on.
-   */
   let MORE = null;
   function loadOlsMore(url = AlgSets.dataUrl('ols-more')) {
     if (MORE) return MORE;

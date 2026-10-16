@@ -1,25 +1,6 @@
 // A pure-JS 54-facelet 3x3 cube simulator, used for luck filtering (verifying
 // which pieces a candidate algorithm *actually* solves, independent of what
 // its DAG edge claims).
-//
-// Facelet layout matches the standard Kociemba convention: 54 facelets in
-// face order U,R,F,D,L,B (9 each, row-major), e.g. "WWWWWWWWWRRRRRRRRR..."
-// for a solved cube. This exact convention (including which color goes on
-// which face) was cross-checked against the `magiccube` Python package
-// (the same ground-truth tool this project's other rotation-algebra fixes
-// used) rather than assumed - see test/facelet-cube.test.js.
-//
-// The 9 base-generator permutations below (one quarter turn CW of each of
-// U/D/R/L/F/B, plus whole-cube x/y/z) were derived empirically against
-// `magiccube`, not hand-derived: each one was solved for by running many random
-// scrambles through both a "before" and "after" state and intersecting, per
-// output position, the set of input positions whose color was consistent with
-// that transformation across all trials - this project has a standing rule
-// against hand-deriving rotation algebra after past bugs from doing exactly
-// that. Every base permutation was then independently re-verified (not just
-// derived) against 30 more random trials. ', 2 and -axis-rotation combinations
-// are all computed mechanically from these 9 tables (permutation
-// composition/inversion), not typed by hand.
 
 const FACE_ORDER = 'URFDLB';
 const SOLVED_FACELETS = 'WWWWWWWWWRRRRRRRRRGGGGGGGGGYYYYYYYYYOOOOOOOOOBBBBBBBBB';
@@ -63,12 +44,6 @@ function buildMoveTable() {
 
 const MOVE_TABLE = buildMoveTable();
 
-// Wide and slice moves, as compositions of the verified tables above. Each
-// decomposition was FOUND by exhaustive search over 1-3 token sequences of the
-// 27 base tokens against magiccube's Rw/Lw/Uw/Dw/Fw/Bw/M/E/S on 60 random
-// states each (the first, shortest hit is used), not written from memory;
-// test/facelet-fixture.json re-verifies them against magiccube directly.
-// Lowercase is WCA wide notation (r == Rw).
 const DERIVED_MOVES = {
     r: ['L', 'x'], l: ['R', "x'"], u: ['D', 'y'], d: ['U', "y'"], f: ['B', 'z'], b: ['F', "z'"],
     M: ['R', "L'", "x'"], E: ['U', "D'", "y'"], S: ["F'", 'B', 'z'],
@@ -91,12 +66,6 @@ function isMoveToken(token) {
     return MOVE_PERMS.has(token);
 }
 
-// Applies a space-separated algorithm string (standard face turns plus
-// whole-cube x/y/z rotations, plus lowercase wide and M/E/S slice moves) to a
-// 54-char facelet string and returns the resulting facelet string. Throws on
-// any unrecognized token so a typo fails loudly instead of silently no-opping.
-// The tokens are applied to two char-code buffers in turn and the string is
-// built once at the end.
 const ALG_BUF_A = new Uint16Array(54);
 const ALG_BUF_B = new Uint16Array(54);
 function applyAlgorithm(facelets, algorithm) {
@@ -121,27 +90,10 @@ function applyAlgorithm(facelets, algorithm) {
     return cur === null ? facelets : String.fromCharCode.apply(null, cur);
 }
 
-// ---------------------------------------------------------------------------
-// Frame canonicalisation.
-//
-// The solver engines take a whole-cube `rotation` option plus a `postAlg`, and
-// require the centres to end where the rotation put them -- so a committed
-// path containing wide moves, slices or mid-solve rotations cannot be passed
-// as postAlg verbatim. canonicalizeForEngine(prefix, alg) returns
-// { rotation, moves } with
-//     state(prefix, alg) == state(rotation, moves)
-// where `moves` uses only the 18 face turns. Everything is done with the
-// verified permutations above (rotations are pushed to the front by
-// conjugation and each conjugated face move is identified by perm equality),
-// so no relabelling table is written by hand; test/facelet-cube.test.js
-// checks the identity on random mixed-notation sequences.
 const FACE_TURNS = [...'UDRLFB'].flatMap(f => [f, `${f}'`, `${f}2`]);
 const ROTATION_TOKENS = [...'xyz'].flatMap(a => [a, `${a}'`, `${a}2`]);
 const permKey = perm => perm.join(',');
 const FACE_TURN_BY_PERM = new Map(FACE_TURNS.map(t => [permKey(MOVE_TABLE[t]), t]));
-// Shortest rotation string for each of the 24 orientations; y-only and
-// x/z-then-y spellings are preferred so results read like this project's
-// usual "z2 y" style.
 const ROTATION_BY_PERM = new Map();
 {
     const singles = ['', 'y', "y'", 'y2', 'z2', 'x', "x'", 'z', "z'", 'x2'];
@@ -162,7 +114,6 @@ const ROTATION_BY_PERM = new Map();
 
 const invertToken = t => t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`;
 
-/** Expands a token into face turns and rotations only. */
 function primitiveTokens(token) {
     const t = token.replace(/2'$/, '2');
     const base = t.replace(/['2]$/, '');
@@ -179,14 +130,6 @@ for (const t of [...FACE_TURNS, ...ROTATION_TOKENS, ...Object.keys(DERIVED_MOVES
     if (!TOKEN_BY_PERM.has(permKey(MOVE_TABLE[t]))) TOKEN_BY_PERM.set(permKey(MOVE_TABLE[t]), t);
 }
 
-// ---------------------------------------------------------------------------
-// Orientation tables. The 24 whole-cube orientations are indexed once, so the
-// hot paths below (canonicalizeForEngine, relabelAlgForRotation,
-// rotationSpellings -- called for every candidate) compose rotations by table
-// lookup and conjugate tokens through a cache instead of building and
-// string-keying 54-element permutations per token. Everything is still derived
-// from the verified permutations above, and test/facelet-cube.test.js checks
-// the results against the plain permutation implementations on random inputs.
 const ROT_PERMS = [];
 const ROT_INDEX_BY_KEY = new Map();
 for (const [key] of ROTATION_BY_PERM) {
@@ -213,7 +156,6 @@ function conjugateToken(rotIndex, token) {
     }
     return name;
 }
-/** Orientation index of a rotation string ('' = identity). */
 function rotationIndex(rotation) {
     let q = ROT_IDENTITY;
     for (const t of String(rotation || '').split(/\s+/)) {
@@ -225,7 +167,6 @@ function rotationIndex(rotation) {
     return q;
 }
 const FACE_TURN_SET = new Set(FACE_TURNS);
-/** Orientation index of composePerm(ROT_PERMS[a], ROT_PERMS[b]). */
 function composeRotationIndex(a, b) {
     return ROT_MUL[a][b];
 }
@@ -256,12 +197,6 @@ function canonicalizeForEngine(prefixRotation, alg) {
     return { rotation: ROT_NAMES[q], moves: moves.join(' ') };
 }
 
-/**
- * Rewrites `alg` so that "rotation + result" has the same physical effect as
- * "alg + rotation" (each token conjugated by the rotation and identified by
- * permutation equality) -- the mechanical form of script.js's altAlgs
- * relabelling, valid for wide moves, slices and rotations too.
- */
 function relabelAlgForRotation(alg, rotation) {
     const r = rotationIndex(rotation);
     return String(alg).split(/\s+/).filter(Boolean).map(t => {
@@ -271,9 +206,6 @@ function relabelAlgForRotation(alg, rotation) {
     }).join(' ');
 }
 
-// Every move about one axis commutes (faces, wide moves, slices and the
-// rotation about that axis), so runs of same-axis tokens can be put in a
-// fixed order to compare spellings of the same algorithm.
 const AXIS_RANK = {};
 [['U', 'D', 'u', 'd', 'E', 'y'], ['R', 'L', 'r', 'l', 'M', 'x'], ['F', 'B', 'f', 'b', 'S', 'z']]
     .forEach((group, axis) => group.forEach((m, rank) => { AXIS_RANK[m] = { axis, rank }; }));
@@ -292,20 +224,10 @@ function commuteNormalize(alg) {
     return t.join(' ');
 }
 
-/**
- * Rotation spellings of `alg`: for each split point, insert y or y' and relabel
- * the rest so the result is physically "alg, then that rotation". Skips a
- * trailing rotation (pointless) and, unless allowLeading, a leading one.
- */
 function rotationSpellings(alg, allowLeading = true) {
     return rotationSpellingParts(alg, allowLeading).map(s => s.alg);
 }
 
-/**
- * rotationSpellings with the inserted rotation of each: [{ alg, rotation }],
- * same order. Strings are built from cached prefix/suffix joins (this runs for
- * every candidate of a pro-move-set search).
- */
 function rotationSpellingParts(alg, allowLeading = true) {
     const t = String(alg).split(/\s+/).filter(Boolean);
     const start = allowLeading ? 0 : 1;
@@ -334,20 +256,6 @@ function rotationSpellingParts(alg, allowLeading = true) {
     return out;
 }
 
-/**
- * Inspection-absorbed wide-move variants: converting an L/R-family turn into
- * its wide form ("L" -> "r", which is "L x") makes the alg physically "alg,
- * then rho" for an x-family rho, so the cross would end off the bottom. Undoing
- * rho in the (free) inspection instead keeps the result physically identical to
- * the original: returns [{ alg, inspection }] where `inspection` is the
- * rotation to append to the original inspection and `alg` the rewritten
- * algorithm. Only the first `maxPos` turns are converted -- that is where
- * solvers use this ("inspect with the cross on a side, bring it down with a
- * wide move").
- */
-// The single token equal to "token, then rho" (or undefined), cached: it only
-// depends on the pair, and inspectionWideVariants runs for every root
-// candidate.
 const WIDE_TOKEN_CACHE = new Map();
 function wideTokenFor(token, rho) {
     const key = `${token} ${rho}`;
@@ -374,28 +282,6 @@ function inspectionWideVariants(alg, maxPos = 2) {
     return out;
 }
 
-/**
- * Wide-move spellings of `alg`: a D, U, B or F turn can be done as the opposite
- * wide turn, which turns the same pieces and also rotates the cube -- D = "u
- * y'", U = "d y", B = "f z'", F = "b z" (each found by permutation below, not
- * written by hand). The rest of the alg is relabelled for that rotation, and an
- * explicit rotation of `alg` that the new frame makes redundant can be
- * absorbed. So "D y R U' R'" becomes "u R U' R'", and "B U' B'" becomes "f R'
- * f'".
- *
- * Returns [{ alg, rotation }]: every spelling is physically "alg, then
- * rotation", where rotation is '', y, y2 or y' -- the cross stays on the
- * bottom, so an f/b only appears in pairs that undo each other's z. At most
- * `maxWide` turns are converted, never more explicit rotations than `alg`
- * has, and every spelling has at least one u/d/f/b. Order is fixed.
- *
- * Only spellings that make the alg easier to turn are kept: fewer awkward
- * tokens (D, F and B turns and rotations) than `alg`, and no more F/B turns.
- * Converting a U into d just to turn the rest on F/B (e.g. "R U R' d' F U F'"
- * for "R U R' U' R U R'") is never kept; "U y' L' U L" as "d L' U L" is.
- * Spellings mixing two of u, d, f, b are not kept either: on real searches
- * none ranked better than ~300th, and they doubled the candidates to score.
- */
 const WIDE_CONVERT_ROTATIONS = ['y', "y'", 'y2', 'z', "z'", 'z2'];
 const WIDE_FACE_RE = /^[UDFB]/;
 const WIDE_UDFB_RE = /^[udfb]/;
@@ -460,17 +346,14 @@ function wideSpellingParts(alg, maxWide = 2) {
     return out;
 }
 
-/** Shortest name for the net rotation of a rotation string. */
 function rotationName(rotation) {
     return canonicalizeForEngine('', rotation).rotation;
 }
 
-/** The rotation string that undoes `rotation` ('' for none). */
 function inverseRotation(rotation) {
     return ROT_NAMES[ROT_INV[rotationIndex(rotation)]];
 }
 
-/** Net whole-cube rotation of an alg (as a rotation string, '' for none). */
 // Per token: the product of its primitives' rotations (what
 // canonicalizeForEngine accumulates), cached; this is called for every candidate.
 const TOKEN_NET_ROT = new Map();
@@ -490,13 +373,6 @@ function netRotation(alg) {
     return ROT_NAMES[q];
 }
 
-/**
- * `alg` with every y-family rotation that comes after nothing but U/D-layer
- * turns moved to the front (merged with a leading y-family rotation):
- * "U y R U' R'" -> "y U R U' R'". Physically the same (y commutes with U, D,
- * u, d); solvers rotate first. Unchanged when there is no such rotation or a
- * leading rotation is not in the y family.
- */
 function rotationFirst(alg) {
     const t = String(alg).split(' ').filter(Boolean);
     let lead = 0;

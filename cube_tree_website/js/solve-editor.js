@@ -1,20 +1,5 @@
 /**
  * The solution bar's logic.
- *
- * The text the user types is the source of truth. It is read as lines of
- * moves with optional `// comments`; the steps are found by replaying it on
- * the facelet cube, never taken from a claim:
- *
- * - committed steps the text still starts with are kept (a clicked or
- *   tab-filled suggestion keeps its row: pseudo pairs, its TPP);
- * - after them, at each line end, the moves so far are replayed; once the
- *   cross is solved and the solved pairs are a strict superset of the
- *   current ones, they form a new step (a line that finishes nothing is
- *   merged into the next, the way pro reconstructions are segmented);
- * - whatever follows the last step is the tail: the step being typed.
- *
- * Nothing typed is ever refused: text that finishes no step just stays the
- * tail, and the suggestions wait until it does.
  */
 'use strict';
 
@@ -42,29 +27,19 @@ function editorLines(text) {
 }
 
 const SE_ROTATION = /^[xyz](2'|2|'|)$/;
-// "U2'" is "U2": typed half turns are compared and committed in the
-// search's spelling (the engine path only knows X2).
 const normTok = t => (t.length > 2 && t.endsWith("2'") ? t.slice(0, -1) : t);
 
-/** A committed row's tokens as typed: the first step's inspection rotation, then its alg. */
 function rowTokens(row, first) {
   const alg = String(row.coreAlg || '').split(/\s+/).filter(Boolean);
   if (!first) return alg;
   return [...String(row.rotation || '').split(/\s+/).filter(Boolean), ...alg];
 }
 
-/** Solved pairs (slot names) of a cube, or null when its cross is not solved. */
 function solvedPairsOf(facelets) {
   const f = solvedFlags(facelets);
   return f.cross ? F2L_SLOTS.filter(s => f[s]) : null;
 }
 
-/**
- * The row for a step the user wrote (`tokens`, after the committed steps of
- * `session`), scored exactly as a search scores a corpus step; null when it
- * does not finish a step: the cross unsolved, a solved pair broken, nothing new
- * solved, or a node outside the tree.
- */
 function userStepRow(session, tokens) {
   const isRoot = session.isAtRoot;
   let k = 0;
@@ -75,8 +50,6 @@ function userStepRow(session, tokens) {
   const held = replayFacelets(session.scramble, rotation, isRoot ? '' : session.scoredPath, alg);
   const pairs = solvedPairsOf(held); // named in the frame the step ends in (the node's labels)
   if (!pairs) return null;
-  // kept and new pairs are compared in the frame the step starts in: a y
-  // inside the step renames every slot
   const stepRotation = netRotation(alg);
   const unrotated = stepRotation ? applyAlgorithm(held, inverseRotation(stepRotation)) : held;
   const pairsStart = isRoot ? pairs : (solvedPairsOf(unrotated) || []);
@@ -85,7 +58,6 @@ function userStepRow(session, tokens) {
   const targetNodeId = nodeByLabels(session, pairs, pairs);
   if (!targetNodeId || targetNodeId === session.currentNodeId) return null;
   const target = session.nodeMap.get(targetNodeId);
-  // the pair-choice term of the cube it leaves, as the search adds it
   const probe = isRoot ? Object.assign(Object.create(SolveSession.prototype), session, { rotation, stepAlgs: [], committedRows: [] }) : session;
   let look = 0;
   const lw = lookWeightsFor(probe);
@@ -114,7 +86,6 @@ function userStepRow(session, tokens) {
   };
 }
 
-/** The label a reconstruction gives a step (solutionLines' wording): "cross", "2nd pair", "3rd/4th pairs". */
 function stepLabel(isFirst, pairsBefore, pairsAfter, pseudo = false) {
   const ordinal = n => ['1st', '2nd', '3rd', '4th'][n - 1] || `${n}th`;
   let label;
@@ -124,28 +95,16 @@ function stepLabel(isFirst, pairsBefore, pairsAfter, pseudo = false) {
   return pseudo ? `${label} (pseudo)` : label;
 }
 
-/** A candidate's row as committed (look-ahead annotations describe the ranking, not the step). */
 function committableRow(candidate) {
   const { lookaheadPending, lookaheadTpp, lookaheadAlgs, lookaheadTruncated, unorthodox, multislot, key, ...row } = candidate;
   return row;
 }
 
-/**
- * Reads `text` against `session`: { keep, steps, tail, lines } where `keep`
- * is how many committed rows the text still starts with, `steps` the new
- * rows after them ({ row, firstLine, lastLine }), `tail` the tokens after the
- * last step ({ tokens, partial, line }: `partial` is the token the caret is
- * still typing, when the text does not end in white space), and `lines` per
- * line: { kind: 'step'|'tail'|'merged'|'empty', label }.
- * `candidates`: the current step's list; a step that equals one of them
- * commits that row. The session is not changed (a fork is used).
- */
 function readSolution(session, text, candidates = []) {
   const lines = editorLines(text);
   const info = lines.map(() => ({ kind: 'empty', label: null }));
   const flat = [];
   lines.forEach((l, li) => l.tokens.forEach(t => flat.push({ ...t, line: li })));
-  // committed rows the text still starts with
   let pos = 0;
   let keep = 0;
   const rows = session.committedRows;
@@ -167,18 +126,13 @@ function readSolution(session, text, candidates = []) {
   const steps = [];
   let from = pos;
   const lineEnds = new Set();
-  // a token is the last of its line when the next token is on a later line,
-  // or it is the last token and the text goes on to a new line after it
   for (let i = from; i < flat.length; i++) {
     const nx = flat[i + 1];
     if (nx ? nx.line > flat[i].line : String(text).slice(flat[i].end).includes('\n')) lineEnds.add(i);
   }
-  // a step: the tokens flat[from..i] read as one, committed when they finish
-  // one (`final`: only when they finish the whole F2L)
   const tryStep = (i, final) => {
     const toks = flat.slice(from, i + 1).map(t => normTok(t.tok));
     let row = null;
-    // the list belongs to the session's current step: only for the first new step right after it
     const cand = candidates.length && steps.length === 0 && keep === rows.length ? candidates.find(c => {
       const want = rowTokens(c, s.isAtRoot);
       return want.length === toks.length && want.every((t, j) => t === toks[j]);
@@ -208,7 +162,6 @@ function readSolution(session, text, candidates = []) {
     if (s.isComplete) break;
     tryStep(i, false);
   }
-  // The step that finishes the F2L needs no line end after it
   if (from < flat.length && !s.isComplete && !lineEnds.has(flat.length - 1)) tryStep(flat.length - 1, true);
   const tailTokens = flat.slice(from);
   const endsInSpace = /\s$/.test(String(text)) || !String(text).length;
@@ -219,7 +172,6 @@ function readSolution(session, text, candidates = []) {
     line: tailTokens.length ? tailTokens[0].line : lines.length - 1,
     onNewLine: !tailTokens.length,
   };
-  // labels for kept steps: the solution's own wording
   let pairsSoFar = 0;
   rows.slice(0, keep).forEach((row, k) => {
     const node = session.nodeMap.get(row.targetNodeId);
@@ -231,12 +183,6 @@ function readSolution(session, text, candidates = []) {
   return { keep, steps, tail, lines: info, parsed: lines };
 }
 
-/**
- * Results whose tokens start with what is typed: every complete token must
- * match, and the token still being typed must start the next one ("R" matches
- * R, R' and R2). At the first step a result reads as its inspection rotation,
- * then its alg.
- */
 function prefixMatches(results, typed, partial, isRoot) {
   typed = typed.map(normTok);
   const done = partial ? typed.slice(0, -1) : typed;

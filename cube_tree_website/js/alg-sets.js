@@ -1,22 +1,6 @@
 /**
  * The last-layer and last-slot algorithm sets: OLL, PLL, COLL,
  * ZBLL, OLS (VLS + HLS) and ZBLS.
- *
- * A case is a class of cube states one algorithm solves: states that differ
- * by a U turn before the alg (pre-AUF) or a U turn of the solved cube before
- * the case was made (post-AUF) are the same case. Each set says which pieces
- * and which orientations it looks at (`key`), and its cases are enumerated
- * here from every state the set allows, so the case lists are complete by
- * construction (counts checked in test/alg-sets.test.js against the known
- * numbers: OLL 57, PLL 21, COLL 42, ZBLL 472, VLS 216, ZBLS 302).
- *
- * States are cubies (Kociemba numbering: corners URF UFL ULB UBR DFR DLF DBL
- * DRB, edges UR UF UL UB DR DF DL DB FR FL BL BR; cp[i] = the piece at
- * position i). The cubie of a move is read off the facelet simulator
- * (facelet-cube.js, verified against magiccube) by converting the facelets
- * after the move, so no move is typed here. Facelets are first relabelled by
- * the centres (`labelsOf`), so whole-cube rotations, wide and slice turns all
- * reduce to the cube as seen from its centres.
  */
 'use strict';
 
@@ -33,7 +17,6 @@ const AlgSets = (() => {
   const DATA_VERSION = '20261017d';
   const dataUrl = setId => `data/ll/${setId}.json?v=${DATA_VERSION}`;
 
-  /** Facelets (any colours) -> the same cube in face letters, by its centres. */
   function labelsOf(facelets) {
     const map = {};
     for (let f = 0; f < 6; f++) map[facelets[9 * f + 4]] = 'URFDLB'[f];
@@ -42,7 +25,6 @@ const AlgSets = (() => {
     return out;
   }
 
-  /** Face-letter facelets -> cubie, or null when they are not a valid cube. */
   function toCubie(labels) {
     const c = { cp: [], co: [], ep: [], eo: [] };
     for (let i = 0; i < 8; i++) {
@@ -68,7 +50,6 @@ const AlgSets = (() => {
     return c;
   }
 
-  /** Cubie -> face-letter facelets (centres in place). */
   function fromCubie(c) {
     const out = SOLVED_LABELS.split('');
     for (let i = 0; i < 8; i++) {
@@ -83,7 +64,6 @@ const AlgSets = (() => {
   }
 
   const identity = () => ({ cp: [0, 1, 2, 3, 4, 5, 6, 7], co: [0, 0, 0, 0, 0, 0, 0, 0], ep: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], eo: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
-  /** a, then b. */
   function mul(a, b) {
     const c = { cp: [], co: [], ep: [], eo: [] };
     for (let i = 0; i < 8; i++) { c.cp.push(a.cp[b.cp[i]]); c.co.push((a.co[b.cp[i]] + b.co[i]) % 3); }
@@ -92,11 +72,9 @@ const AlgSets = (() => {
   }
   const sameCubie = (a, b) => a.cp.every((v, i) => v === b.cp[i]) && a.co.every((v, i) => v === b.co[i]) && a.ep.every((v, i) => v === b.ep[i]) && a.eo.every((v, i) => v === b.eo[i]);
 
-  /** The state an alg leaves a solved cube in, seen from its centres (any notation applyAlgorithm reads). */
   function algCubie(alg, from = SOLVED_FACELETS) {
     return toCubie(labelsOf(applyAlgorithm(from, alg || '')));
   }
-  /** The cubie of a cube given as facelets (any colours). */
   const faceletCubie = facelets => toCubie(labelsOf(facelets));
 
   let UPOW = null; // U^0..U^3
@@ -105,7 +83,6 @@ const AlgSets = (() => {
     return UPOW;
   }
 
-  // ---- what each set looks at -------------------------------------------------
   const f2lSolved = c => [4, 5, 6, 7].every(i => c.cp[i] === i && c.co[i] === 0) && [4, 5, 6, 7, 8, 9, 10, 11].every(i => c.ep[i] === i && c.eo[i] === 0);
   // the last slot is FR: everything else of the F2L solved, its pair in the U layer or the slot
   const lsReady = c => [5, 6, 7].every(i => c.cp[i] === i && c.co[i] === 0) && [4, 5, 6, 7, 9, 10, 11].every(i => c.ep[i] === i && c.eo[i] === 0);
@@ -117,11 +94,6 @@ const AlgSets = (() => {
   const lsKey = (c, twists) => LS_CORNERS.map(p => (c.cp[p] === 4 ? `C${c.co[p]}` : twists ? `c${c.co[p]}` : 'c')).join('')
     + '|' + LS_EDGES.map(p => (c.ep[p] === 8 ? `E${c.eo[p]}` : `e${c.eo[p]}`)).join('');
 
-  /**
-   * The sets. `goal` is llgen.cpp's goal (0 LL solved, 1 LL oriented, 2 LL
-   * corners solved + edges oriented, 3 LL edges oriented; F2L solved in all),
-   * `accepts` the states the set's cases come from, `key` what it looks at.
-   */
   const SETS = [
     { id: 'oll', name: 'OLL', title: 'Orientation of the last layer', goal: 1,
       accepts: c => f2lSolved(c),
@@ -152,7 +124,6 @@ const AlgSets = (() => {
   ];
   const SET_BY_ID = Object.fromEntries(SETS.map(s => [s.id, s]));
 
-  // ---- enumeration ------------------------------------------------------------
   const PERMS4 = (() => {
     const out = [];
     const rec = (p, rest) => { if (!rest.length) out.push(p); else rest.forEach((x, i) => rec([...p, x], rest.filter((_, j) => j !== i))); };
@@ -194,10 +165,6 @@ const AlgSets = (() => {
       }
     }
   }
-  // OLS: the last pair and the orientation of the last layer at once, for every
-  // placement of the pair. VLS (the pair connected, ready for R U' R') and HLS
-  // (split, ready for R U R') come first, as before; their edge-oriented cases
-  // are WV and SV.
   const OLS_INSERTS = [{ group: 'VLS', insert: "R U' R'" }, { group: 'HLS', insert: "R U R'" }];
   function* olsStates() {
     for (const { group, insert } of OLS_INSERTS) {
@@ -234,7 +201,6 @@ const AlgSets = (() => {
     ].map(s => ({ ...s, placeOf: place }));
     return LS_SUBSETS;
   }
-  /** ['vls', 'wv'], ['hls'], ... : the named OLS subsets a last-slot state is in ([] for the rest of OLS). */
   function olsSubsets(c) {
     const out = [];
     for (const s of lsSubsetTables()) {
@@ -253,7 +219,6 @@ const AlgSets = (() => {
       .map(t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`)).join(' ');
   }
 
-  /** The 16 (pre-AUF a, post-AUF b) variants of a state: U^b, then the state, then U^a. */
   function aufVariants(c) {
     const U = uPowers();
     const out = [];
@@ -261,11 +226,6 @@ const AlgSets = (() => {
     return out;
   }
 
-  /**
-   * Every case of a set: [{ key, rep (cubie), members: Map key -> { a, b } }],
-   * the solved class (nothing to do) left out. `a`, `b`: the state with that
-   * key is U^b, then the representative, then U^a.
-   */
   function enumerateCases(setId) {
     const set = SET_BY_ID[setId];
     const states = setId === 'zbls' ? zblsStates() : setId === 'ols' ? olsStates() : llStates();
@@ -288,14 +248,12 @@ const AlgSets = (() => {
     return cases;
   }
 
-  /** The class key of a state in a set (null: not one of the set's states). */
   function caseKeyOf(setId, state) {
     const set = SET_BY_ID[setId];
     if (!state || !set.accepts(state)) return null;
     return set.key(state);
   }
 
-  /** Is the state solved as far as a goal asks (llgen.cpp's goals; up to a U turn)? */
   function reachesGoal(goal, c) {
     if (!c || !f2lSolved(c)) return false;
     if (goal === 1) return llOriented(c);
@@ -305,14 +263,12 @@ const AlgSets = (() => {
     return U.some(u => sameCubie(c, u));
   }
 
-  /** Does `alg` take the cube `state` (a cubie) to the set's goal? Replayed on the facelet cube. */
   function solves(setId, state, alg) {
     let after;
     try { after = algCubie(alg, fromCubie(state)); } catch (e) { return false; }
     return reachesGoal(SET_BY_ID[setId].goal, after);
   }
 
-  /** Database notation -> facelet-cube.js tokens: no brackets, Rw -> r, R3 -> R'. */
   function normalizeAlg(text) {
     return String(text).replace(/[()\[\]]/g, ' ').trim().split(/\s+/).filter(Boolean).map((t) => {
       let m = t.match(/^([URFDLB])w(.*)$/);
@@ -324,15 +280,7 @@ const AlgSets = (() => {
     }).join(' ');
   }
 
-  // ---- what a case diagram shows ----------------------------------------------
-  // per set: show the last layer's pieces in full ('full'), only their U
-  // stickers ('top'), or not at all ('none'); corners, edges
-  // ('pair': only the last pair shows, for a picture of the pair's placement)
   const MASKS = { '1lll': ['full', 'full'], oll: ['top', 'top'], ols: ['top', 'top'], zbls: ['none', 'top'], coll: ['full', 'top'], pll: ['full', 'full'], zbll: ['full', 'full'], pair: ['none', 'none'] };
-  /**
-   * The facelets of a case as its set sees them: face letters, '.' where a
-   * sticker does not matter (an LL piece's side the set ignores).
-   */
   function maskedLabels(setId, c) {
     const [cm, em] = MASKS[setId] || ['full', 'full'];
     const out = SOLVED_LABELS.split('');
@@ -348,13 +296,6 @@ const AlgSets = (() => {
     return out.join('');
   }
 
-  // ---- mirror (left <-> right, through the M slice) -----------------------------
-  // The facelet reflection is read off the position names (a sticker on face
-  // X of a piece goes to face X', R and L swapped, of the piece whose faces
-  // are the swapped set); the stickers' R and L swap too, so the result is a
-  // cube of the usual colour scheme. Each token's mirror is then FOUND on the
-  // facelet cube (the token whose result equals the mirrored result), so no
-  // turn direction is assumed; test/alg-sets.test.js checks random algs.
   const SWAP_RL = { R: 'L', L: 'R' };
   let MIRROR = null;
   function mirrorTables() {
@@ -386,9 +327,7 @@ const AlgSets = (() => {
     MIRROR = { perm, mirrorLabels, tok };
     return MIRROR;
   }
-  /** The mirror image of a cube given as face letters (a valid cube again). */
   const mirrorLabels = labels => mirrorTables().mirrorLabels(labels);
-  /** The mirror image of an alg, token by token. */
   const mirrorAlg = alg => String(alg).trim().split(/\s+/).filter(Boolean).map((t) => {
     const n = t.length > 2 && t.endsWith("2'") ? t.slice(0, -1) : t;
     const m = mirrorTables().tok.get(n);
@@ -396,19 +335,14 @@ const AlgSets = (() => {
     return m;
   }).join(' ');
 
-  /** A case's full name, lowercase: "oll 27", "pll t", "zbll t 12", "vls 83", "zbls f2l 5". */
   function caseTitle(setName, caseName) {
     const n = String(caseName), set = String(setName);
-    const own = n.toLowerCase().startsWith(`${set.toLowerCase()} `) || /^(WV|VLS|SV|HLS) /.test(n);
-    return (own ? n : `${set} ${n}`).toLowerCase();
+    // 1LLL lists the ZBLL, OLL and PLL cases under their own names
+    const own = n.toLowerCase().startsWith(`${set.toLowerCase()} `) || /^(WV|VLS|SV|HLS) /.test(n) || (set === '1LLL' && /^(ZBLL|OLL|PLL|COLL) /.test(n));
+    return own ? n : `${set} ${n}`;
   }
 
-  // ---- recognition --------------------------------------------------------------
   const AUF = ['', 'U', 'U2', "U'"];
-  /**
-   * Index of a set's data (data/ll/<set>.json): class key -> { i, a, b } for
-   * every AUF variant of every case (U^b, then case i's state, then U^a).
-   */
   function indexSet(setId, data) {
     const set = SET_BY_ID[setId];
     const map = new Map();
@@ -422,50 +356,20 @@ const AlgSets = (() => {
     });
     return map;
   }
-  /** The case of an indexed set a state is in ({ i, a, b }), or null. */
   function recognize(setId, index, state) {
     const k = caseKeyOf(setId, state);
     return k === null ? null : index.get(k) || null;
   }
-  /**
-   * A stored alg ({ alg, pre, post }) written for a state recognised as
-   * { a, b }: its pre-AUF, the moves, its post-AUF (only sets that solve the
-   * whole layer have one).
-   */
   function algFor(stored, hit, setId) {
     const pre = AUF[(stored.pre - hit.a + 8) % 4];
     const post = SET_BY_ID[setId].goal === 0 ? AUF[(stored.post - hit.b + 8) % 4] : '';
     return { pre, alg: stored.alg, post, text: [pre, stored.alg, post].filter(Boolean).join(' ') };
   }
 
-  /**
-   * How fast an alg is to execute: the solver's own step ranking, the same
-   * formula as a step's (script.js: MCC alg speed + move penalties +
-   * naturalness) without the AUFs, with its constants fitted for the last
-   * layer: the naturalness model is one trained on the community's last-layer
-   * algs (`model`; tools/ll-build.js builds it leaving out the case being
-   * ranked), the move penalties are LL_PENALTIES, and each left-hand turn
-   * costs LL_LEFT (MCC prices both hands alike; mirror algs are slower for
-   * most solvers). Without a model the naturalness term is left out (the
-   * solving screen then compares on both sides without it).
-   *
-   * The F2L model had priced slice PLLs far down (M is rare in F2L); on pairs
-   * of a slice alg and a face-turn alg the votes still favour the face turns.
-   */
   const LL_LEFT = 2.5;
   const LL_NATURAL = 1.25;
-  // Each set has its own constants, fitted on what professionals execute
-  // (tools/ll-tune.js; data/ll/pro_ll.json): `mcc` (script.js's
-  // ALG_SPEED_DEFAULTS' shape), `pen` (move penalties), `left` (per left-hand
-  // turn), `natural` (per bit of last-layer surprise). Sets without fitted
-  // values use the vote-fitted ones above. PLL: slices cost 0.5 instead of 3.5
-  // (tools/ll-tune.js: Yiheng Wang's PLLs 2.121 -> 2.075 mean log2 rank, the
-  // community's votes 62.8 -> 63.8%; he turns the M-slice H and Z perms). Full
-  // refits of a set's constants did worse on held-out cases (OLL 0.825 ->
-  // 0.847, PLL 2.121 -> 2.459).
   const LL_FITTED = { pll: { pen: { wideOther: 0.5 }, move: 0.5 }, oll: { move: 0.5 } };
   let LL_BASE = null;
-  /** The ranking constants of a set ({ mcc, pen, left, natural }). */
   function llParams(setId) {
     if (!LL_BASE) {
       LL_BASE = {
@@ -478,23 +382,7 @@ const AlgSets = (() => {
     if (!f) return LL_BASE;
     return { mcc: { ...LL_BASE.mcc, ...f.mcc }, pen: { ...LL_BASE.pen, ...f.pen }, left: f.left ?? LL_BASE.left, natural: f.natural ?? LL_BASE.natural, lead: f.lead ?? LL_BASE.lead, move: f.move ?? LL_BASE.move };
   }
-  // Rotations around an alg. An alg wrapped in a rotation and its inverse
-  // ("x... x'", "x'... x") takes the first while the hands settle on the cube:
-  // it costs `lead` (a regrip), not a rotation. A rotation an alg ends with is
-  // free where the alg finishes the cube (PLL, ZBLL, 1LLL: the timer stops
-  // first). Any other rotation keeps its full price: a lone leading rotation
-  // ("x R2 F R F'...", a Ja perm) ranked above the professionals' rotationless
-  // algs when it was cheap (tools/ll-tune.js; first-ranked pro PLLs 42.1% ->
-  // 36.2%). Only the community's algs carry rotations (the generator turns no
-  // rotations).
   const LL_LEAD_ROTATION = 1.5;
-  // Every turn costs `move` on top. Checked on every professional's steps on
-  // reco.nz (tools/ll-tune.js; mean log2 rank of the pro's alg, 2-fold CV over
-  // cases): PLL 2.530 -> 2.383, ZBLL 1.370 -> 1.330, ZBLS 2.018 -> 1.905, OLL
-  // unchanged (1.233 -> 1.231); the votes agree a little more (ZBLL 80.2 ->
-  // 80.9%, PLL 68.1 -> 70.2%). 1 is the low end of what each fold chose
-  // (0.5-3); a lower slice penalty did not help anywhere. OLL and PLL use 0.5
-  // (LL_FITTED).
   const LL_PER_MOVE = 1;
   const invRot = t => (t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : `${t}'`);
   function rotationFrame(body, setId = null) {
@@ -523,16 +411,6 @@ const AlgSets = (() => {
     return s;
   }
 
-  // ---- awkward algs -------------------------------------- An alg is awkward
-  // when it uses an unusual move type (B, a wide f/b/u/d, S, E), rotates twice,
-  // or turns slowly for its length: MCC time per turn above the 95th percentile
-  // of the community's top-voted algs (1.95; the move penalties are left out,
-  // so a slice alg is not awkward for being one). Awkward algs are hidden in a
-  // case whose community favourite is not awkward itself. Algs awkward beyond
-  // doubt -- three unusual moves, or above 3.0 per turn (the 99th percentile is
-  // 2.4) -- are left out of the data unless they are the case's favourite
-  // (tools/ll-build.js): a 21-move "l b d'... S M r u E" T perm with 34 joke
-  // votes, for one.
   const AWK_FLOW = 1.95, AWK_DROP_FLOW = 3.0;
   function awkwardness(body0, setId = null) {
     // a wrapping rotation pair counts as a regrip, a final one in a set that

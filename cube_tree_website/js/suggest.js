@@ -1,29 +1,11 @@
 /**
  * Which suggestions to show, and why.
- *
- * The picks come from the step's ranked list; the ranking itself is never
- * changed. Every pick has to be justified by a fact, never by taste:
- * 1. the fastest (best TPP);
- * 2. only when one is quantifiably different: a TPS solver gets a
- *    **smoother** step -- one of the top three that is more than two moves
- *    longer than the move-optimal step for the same goal (and longer than
- *    the fastest), so its turns must flow; an efficiency solver a step
- *    within PICK_MARGIN with fewer moves per piece than the fastest (two
- *    moves' worth for the pieces it solves; movesSaved);
- * 3. the **free pair setup**: the fastest step within SETUP_MARGIN that
- *    leaves more free pairs than there are now (or the look-ahead's best
- *    when look-ahead is on).
- * 4. When only one of those exists, the next fastest of another family. Picks
- *    differ in family (not the same moves after an AUF or rotation), and
- *    nothing above the solver's level is suggested unless they chose to learn
- *    it.
  */
 'use strict';
 
 const PICK_MARGIN = 0.10;   // the efficiency pick: within 10% of the best TPP
 const SMOOTH_TOP = 3;       // the smoother pick: among the top three
 const SMOOTH_EXTRA = 2;     // ... more than this many moves above the move-optimal step
-// Which facts a pick leads with, by its role (and pick 2 by style).
 const ROLE_REASONS = {
   best: ['fastest', 'multislot', 'cancels', 'free_pair', 'no_rotation'],
   efficiency: ['shorter', 'efficient', 'multislot', 'no_rotation', 'cancels'],
@@ -35,16 +17,10 @@ const SETUP_MARGIN = 0.16;
 
 const isRotTok = t => /^[xyz]/.test(t);
 const stmOf = alg => String(alg || '').split(/\s+/).filter(t => t && !isRotTok(t)).length;
-/** Pieces a step solves: the cross's four edges at the first step, then its new corners and edges. */
 const piecesOf = (r, isRoot) => {
   const corners = (r.corners || []).length;
   return (isRoot ? 4 : 0) + corners + (r.edges ? r.edges.length : corners);
 };
-/**
- * How many moves `r` saves against `best` for the pieces `r` solves: best's
- * moves per piece times r's pieces, minus r's moves. The same pieces: the plain
- * difference in moves.
- */
 function movesSaved(r, best, isRoot) {
   const pr = piecesOf(r, isRoot), pb = piecesOf(best, isRoot);
   if (!pr || !pb) return 0;
@@ -52,7 +28,6 @@ function movesSaved(r, best, isRoot) {
 }
 const rotationsIn = alg => String(alg || '').split(/\s+/).filter(t => t && isRotTok(t)).length;
 
-/** The moves a step is "really" made of: without leading AUFs and rotations. */
 function pickFamily(r) {
   const toks = String(r.coreAlg || '').split(/\s+/).filter(Boolean);
   let i = 0;
@@ -60,7 +35,6 @@ function pickFamily(r) {
   return `${r.targetNodeId}|${toks.slice(i).join(' ')}`;
 }
 
-/** Look and plan features of the cube a candidate leaves (and the cube before), as numbers by name. */
 function cubeView(facelets) {
   const look = pairLookFeatures(facelets);
   const plan = planFeatures(facelets);
@@ -70,31 +44,20 @@ function cubeView(facelets) {
   return v;
 }
 
-/** Pair-choice value of a view (lower is better), with the app's planning weights. */
 function setupValue(v) {
   const w = typeof PAIR_PLANNING !== 'undefined' ? PAIR_PLANNING : { look: [0, 0, 0, 0, 0], plan: [0, 0, 0, 0] };
   return LOOK_FEATURES.reduce((s, k, i) => s + w.look[i] * v[k], 0) + PLAN_FEATURES.reduce((s, k, i) => s + w.plan[i] * v[k], 0);
 }
 
-/** More free (connected) pairs after the step than before it; the first step starts with none. */
 function leavesFreePair(before, after) {
   return !!after && after.connected > (before ? before.connected : 0);
 }
 
-/**
- * The quantified "smoother": among the top three, more than SMOOTH_EXTRA moves
- * above the move-optimal step for the same goal, and longer than the fastest --
- * it ranks that high only because its turns flow.
- */
 function isSmoother(r, rank, best, optimal) {
   const n = stmOf(r.coreAlg);
   return rank > 0 && rank < SMOOTH_TOP && Number.isFinite(optimal) && n > optimal + SMOOTH_EXTRA && n > stmOf(best.coreAlg);
 }
 
-/**
- * The reasons for candidate `r`: [{ key, vars }] (most telling first).
- * ctx: { best, before (cubeView), after (cubeView), stepAlgs, rank, answers, lookahead }.
- */
 function reasonsFor(r, ctx) {
   const out = [];
   const allowed = id => typeof goalAllowed !== 'function' || goalAllowed(id, ctx.answers);
@@ -126,11 +89,6 @@ function reasonsFor(r, ctx) {
   return out;
 }
 
-/**
- * The picks from `results` (ranked, filtered): up to 3 of
- * { r, role, reasons }. ctx: { style, answers, isRoot, stepAlgs, viewOf(r) ->
- * cubeView after r, before: cubeView now, lookahead: depth > 1 }.
- */
 function searcherPicks(results, ctx = {}) {
   const list = (results || []).filter(r => Number.isFinite(r.tpp));
   if (!list.length) return [];
@@ -140,17 +98,14 @@ function searcherPicks(results, ctx = {}) {
   const picks = [{ r: best, role: 'best' }];
   const families = new Set([pickFamily(best)]);
   const fresh = r => usable(r) && !families.has(pickFamily(r));
-  // the move-optimal step for each goal in the list
   const optimal = new Map();
   for (const r of list) {
     const n = stmOf(r.coreAlg);
     if (!(optimal.get(r.targetNodeId) <= n)) optimal.set(r.targetNodeId, n);
   }
   const optimalStm = r => optimal.get(r.targetNodeId);
-  // pick 2: only when quantifiably different, by style
   let second = null;
   if (ctx.style === 'efficiency') {
-    // fewer moves per piece than the fastest, by two moves' worth at least
     const isRoot = !!ctx.isRoot;
     const mpp = r => stmOf(r.coreAlg) / Math.max(1, piecesOf(r, isRoot));
     second = list.filter(r => r.tpp <= best.tpp * (1 + PICK_MARGIN) && fresh(r) && movesSaved(r, best, isRoot) >= 2 - 1e-9)
@@ -159,7 +114,6 @@ function searcherPicks(results, ctx = {}) {
     second = list.slice(1, SMOOTH_TOP).find((r, i) => fresh(r) && isSmoother(r, i + 1, best, optimalStm(r))) || null;
   }
   if (second) { picks.push({ r: second, role: `style.${ctx.style === 'efficiency' ? 'efficiency' : 'tps'}` }); families.add(pickFamily(second)); }
-  // pick 3: the free pair setup (or the look-ahead's best)
   let third = null;
   let lookaheadBest = false;
   if (ctx.lookahead) {
@@ -167,7 +121,6 @@ function searcherPicks(results, ctx = {}) {
     const top = done.slice().sort((a, b) => a.lookaheadTpp - b.lookaheadTpp)[0];
     if (top && !families.has(pickFamily(top))) { third = top; lookaheadBest = true; }
   }
-  // (none when the fastest already leaves a free pair: it is that setup)
   if (!third && ctx.viewOf && !ctx.finishing && !leavesFreePair(ctx.before, ctx.viewOf(best))) {
     third = list.filter(r => r.tpp <= best.tpp * (1 + SETUP_MARGIN) && fresh(r)).slice(0, 60)
       .find(r => leavesFreePair(ctx.before, ctx.viewOf(r))) || null;
@@ -178,8 +131,6 @@ function searcherPicks(results, ctx = {}) {
     const next = list.slice(1, 60).find(r => fresh(r) && !picks.some(p => p.r === r));
     if (next) { picks.push({ r: next, role: 'next' }); families.add(pickFamily(next)); }
   }
-  // reasons, led by what the pick is for; a reason another pick already
-  // leads with goes to the back
   const used = new Set();
   return picks.map((p) => {
     const rank = list.indexOf(p.r);

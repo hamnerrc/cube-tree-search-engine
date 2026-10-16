@@ -1,42 +1,5 @@
 /**
  * Every spelling of every face-turn solution, best first.
- *
- * The engine lists every face-turn solution of a goal up to the move limit
- * (uncapped). A human may write each of them in many ways: a free leading
- * rotation (the inspection at the first step; y, y' or y2 at a later one),
- * at most one mid-step y, y', x or x' (later steps only: a first step never
- * rotates inside its alg; a y or y' never right after only U/D turns, where
- * it is written first), any turn as a wide turn (r l, and at
- * most SPELLING_MAX_UDF of u d f; never a wide b), as long as the cross ends
- * on the bottom. Every spelling is physically "the face-turn solution, then
- * a y-family rotation", so it solves the same pieces.
- *
- * Scoring every spelling is far too slow (hundreds per solution, up to
- * hundreds of thousands of solutions), so this is a branch and bound that
- * finds exactly the best N of them (by TPP) without scoring the rest:
- *
- *   cost(spelling) = MCC(path + spelling) + penalties + natural * bits + look
- *                 >= C0 + sum over tokens of [penalty + natural * bits + minMCC(token)] + look
- *
- * - penalties and naturalness bits (stepPenalty) are sums over tokens, each
- *   >= 0, computed exactly as the spelling is written;
- * - MCC (script.js algSpeed) never lowers its running time below a test's
- *   start except where noted in mccMinimum, so every token adds at least its
- *   case's smallest increment (minMCC) and the path's MCC is at least the
- *   checkpoint's least start time (C0; SpellingSearch.mccFloor);
- * - the moves still to write are bounded by a DP over (move, frame,
- *   previous tokens known) with the least bits of each token in any context
- *   compatible with the state (boundTable, cheap); at first steps, whose
- *   spellings never rotate inside the alg, also by an exact-context DP over
- *   (move, frame, last two written tokens) (exactTable: every token's bits
- *   are the exact trigram; ~25 units tighter, ~3x the cost per row);
- * - a cheap estimate picks solutions likely to be best to walk first (a
- *   tight N-th best early); every other solution's bound table is computed
- *   (rows shared by solutions that end alike) and it is walked only if its
- *   bound fits under the N-th best so far.
- * Every spelling that could be in the top N is scored with the real
- * function (the caller's leaf), so the result is exact; tests compare it
- * with brute force (test/spelling-search.test.js).
  */
 'use strict';
 
@@ -102,9 +65,6 @@ const SpellingSearch = (() => {
     T = { NR, YF, YIDX, ROT_NAME, MUL, TOK, TID, NT, IS_ROT, IS_RL, FACE_UD, R_QUARTER, UD_QUARTER, AXIS, CONJ, WIDES, MIDS, QUARTERS, LEAD_LATER, LEAD_ROOT, FACE_T };
     return T;
   }
-  // facelet-cube.js keeps orientation names internal; rotationName of a
-  // rotation string is public, so name each orientation by searching the
-  // short rotation strings once.
   let NAME_CACHE = null;
   function ROT_NAMES_BY_INDEX(index) {
     if (!NAME_CACHE) {
@@ -118,16 +78,6 @@ const SpellingSearch = (() => {
     return NAME_CACHE.get(index);
   }
 
-  /**
-   * The least MCC increment of each token (script.js algSpeed, one case per
-   * move; wide turns use their face's case): R/r quarter turns wristMult, of
-   * which MCC takes back 0.5 (or 0.3) when the same R comes two moves after
-   * itself across a U/D turn (applied only where that pattern is written);
-   * the rest the smallest constant of any branch of their case. The other
-   * place MCC lowers its time is a U followed by D (or D by U): the second
-   * restarts from before the first, so the first may add nothing -- the
-   * caller counts a token only once the next one is known not to pair with it.
-   */
   const MCC = new Map(); // JSON of the constants -> min
   function mccMinimum(A = ALG_SPEED_DEFAULTS) {
     const t = tables();
@@ -154,11 +104,6 @@ const SpellingSearch = (() => {
     return min;
   }
 
-  /**
-   * stepPenalty's per-token penalties (a token at index 0 pays none of them
-   * for a rotation), then (at index NT) the naturalness weight; `P` another
-   * setting's penalties (script.js scoringFor).
-   */
   function penalties(P = STEP_PENALTIES) {
     const t = tables();
     return Float64Array.from([...t.TOK, null], (tok) => {
@@ -216,12 +161,6 @@ const SpellingSearch = (() => {
       const ib = b === t.NT ? lm.START : id[b];
       for (let w = 0; w < NT1; w++) TRI[(a * NT1 + b) * NT1 + w] = lm.trigramBits(ia, ib, ids[w]);
     }
-    // AFTER[((prev * NR + d) * 19 + move) * 2 + r]: the least extra bits
-    // (over MIN1) of the first token written for face move `move` (face
-    // token id < 18) in frame d right after token `prev`, over every way to
-    // start writing it (plain, wide, a split's first token, a mid rotation
-    // when r = 0); move 18 = the end. boundTable adds it after a
-    // written non-plain token instead of the exact context.
     const NR = t.NR;
     const AFTER = new Float64Array(NT1 * NR * 19 * 2);
     for (let prev = 0; prev < t.NT; prev++) {
@@ -247,10 +186,6 @@ const SpellingSearch = (() => {
         }
       }
     }
-    // TRIL: TRI for later steps, where a step may start with a written y,
-    // y' or y2 (naturalness scores it like any token): a context that
-    // reaches back to the start covers that lead token too (the least over
-    // start and the three), so the bounds hold whichever lead a spelling has.
     const TRIL = Float64Array.from(TRI);
     const LEADS = ['y', "y'", 'y2'].map(x => t.TID.get(x));
     for (let w = 0; w < NT1; w++) {
@@ -269,34 +204,6 @@ const SpellingSearch = (() => {
     return LMT;
   }
 
-  /**
-   * Bound table of one face-turn solution (token ids), into H. Rows are
-   * indexed by the moves still to write, j = n - i:
-   * H[(j * NR + d) * FLAGS + f] = least (penalty + natural * bits + minMCC)
-   * that moves i.. can still add when the cube is in frame d and the tokens
-   * before are known: f = 2 when the last two are the plain spellings of
-   * moves i-2 and i-1 in frame d (their trigram is then exact), f = 1 when
-   * only the last one is (bits conditioned on it), f = 4 when the last is
-   * the wide turn that writes move i-1 and lands in frame d (wideLanding:
-   * one per move and frame), f = 3 when the last is the plain spelling of
-   * move i-1 and the one before that wide turn of move i-2 (exact trigram),
-   * f = 0 otherwise (a split or a rotation: the writer adds AFTER). Infinity
-   * when the cross can no longer end on D. Relaxations that keep it cheap
-   * (each only lowers it): a rotation may be written before any move, as
-   * often as the bound likes; after a written non-plain token (wide,
-   * rotation, a split's second token; a wide turn is followed exactly for
-   * two tokens by flags 4 and 3) the next token's bits are its least after
-   * anything (MIN1) plus AFTER, the least extra any first token of the next
-   * move has after that token. (Flags 3 and 4, thirty-first pass: the bound
-   * had used wide turns to forget the context; a later step's solutions
-   * under the limit fell from 42% to 7%.) (An exact-context version, memoised per
-   * written token, was ~4x tighter in rows ruled out but ~8x the cost per row;
-   * walking with this one is faster overall.) Row j depends only on the last
-   * j moves and the two before them, so rows below `fromJ` are kept from the
-   * previous solution when it ends the same way (enumerate sorts for that).
-   * Stops early (boundRows < n) once the last moves alone cost more than
-   * stopAbove. Tested <= the real cost (test/spelling-search.test.js).
-   */
   const FLAGS = 5;
   let OWN_FIRST = null;
   // boundTable's last complete row (n when the whole table was computed).
@@ -345,9 +252,6 @@ const SpellingSearch = (() => {
     RO[noMid ? 1 : 0] = { W0, Q0, M0, WI: Int32Array.from(wides), QI: Int32Array.from(qs), MI: Int32Array.from(ms), MID_T, MID_D };
     return RO[noMid ? 1 : 0];
   }
-  // WIDE_LANDING[mv * NR + d]: the one wide token that writes face move mv
-  // and leaves the cube in frame d (from whichever frame it starts in), or
-  // -1 (never more than one: checked when built). Flags 3 and 4 use it.
   let WIDE_LANDING = null;
   function wideLanding() {
     if (WIDE_LANDING) return WIDE_LANDING;
@@ -389,9 +293,6 @@ const SpellingSearch = (() => {
       H = grown;
     }
     const base = rowBase;
-    // A token's least MCC as the bound counts it: an R quarter turn may get
-    // MCC's 0.5 back, and the first of two same-axis moves (U then D) may add
-    // nothing (pf).
     if (!OWN_FIRST || OWN_FIRST.src !== mccMin) {
       OWN_FIRST = Float64Array.from(TOK, (tok, k) => ((tok[0] === 'R' || tok[0] === 'r') && !tok.endsWith('2') ? Math.max(0, mccMin[k] - 0.5) : mccMin[k]));
       OWN_FIRST.src = mccMin;
@@ -436,9 +337,6 @@ const SpellingSearch = (() => {
         const x = fc * NR + d;
         const cd = CONJ[d];
         const pp = i > 0 ? cd[face[i - 1]] : -1;
-        // bits of token k by flag: 0 MIN1 (the caller adds AFTER), 1 after
-        // the plain token before (exact at move 1), 2 the exact trigram,
-        // 3 after the wide w3 and the plain one, 4 after the wide w4
         const ctx2 = i > 0 ? ((i >= 2 ? cd[face[i - 2]] : NT) * NT1 + pp) * NT1 : 0;
         const ctx1 = pp * NT1;
         const w3 = x3 >= 0 ? WL[x3 + d] : -1;
@@ -513,10 +411,6 @@ const SpellingSearch = (() => {
             if (ctx4 >= 0) { v = c + lam * (MIN2[ctx4 + t1] + TRI[s4 + t1 * NT1 + t2]); if (v < v4) v4 = v; }
           }
         }
-        // a half turn split around a rotation (q, rotation, q): no other
-        // rotation after it. (Rotations cost more than anything else, so
-        // these options rarely decide the bound: the continuation is the
-        // cheaper flag-0 row plus AFTER.)
         for (let k = M0[x], e = M0[x + 1]; k < e; k++) {
           const q = MI[4 * k];
           const m = MI[4 * k + 1];
@@ -599,17 +493,6 @@ const SpellingSearch = (() => {
     return H;
   }
 
-  /**
-   * The same DP forwards (boundTable without first-token rows, mirrored):
-   * F[d * FLAGS + f] = the least that writing moves 0..q-1 adds (lead
-   * included) ending in frame d with boundTable's flag f; Fout = after move q
-   * too. The terms boundTable charges a move for its successor (own MCC 0
-   * before a same-axis move, AFTER after a split or rotation) use
-   * face[q + 1], as there. So for any cut m, min over (d, f) of F_m +
-   * H[n - m] equals the bound table's root (tested): the first moves of
-   * solutions that start alike share F (enumerate memoises it by prefix),
-   * and only the last rows of the table are needed to rule a solution out.
-   */
   function forwardStep(face, q, Fin, Fout, mccMin, pen, L, later = false) {
     const t = tables();
     const { NR, NT, CONJ, AXIS } = t;
@@ -776,15 +659,6 @@ const SpellingSearch = (() => {
   }
   const fwdMid = new Float64Array(24);
 
-  /**
-   * Exact-context options: per face move mv (< 18) and frame d, every way to
-   * write it (exactOptions(noMid).O0[mv * NR + d] .. O0[mv * NR + d + 1]):
-   * kind 0 one token (plain or wide), kind 1 a half turn as a plain and a
-   * wide quarter (either order), kind 2 a half turn split around a rotation
-   * (q, m, q2; later steps only). OT1..OT3 the tokens, OD the frame after.
-   * LASTS[(mv * NR + d)]: the distinct last tokens of the options of mv that
-   * end in frame d (LS0 offsets into LSV).
-   */
   const XO = [null, null];
   function exactOptions(noMid) {
     const k0 = noMid ? 1 : 0;
@@ -839,33 +713,9 @@ const SpellingSearch = (() => {
     return XO[k0];
   }
 
-  /**
-   * Exact-context bound table of one face-turn solution (token ids). State at
-   * boundary i (moves 0..i-1 written): the frame d and the last two written
-   * tokens (a, b) (NT = the start), so every token's naturalness bits are the
-   * exact trigram. X.V[j * RS + (d * NT1 + a) * NT1 + b], j = n - i: the least
-   * (penalty + natural * bits + minMCC) that moves i.. (and the end) can still
-   * add from that state (Infinity when the cross can no longer end on D).
-   * Later steps may rotate once mid-step: X.U[j * RS + (dm * NT1 + b) * NT1 + m]
-   * is the same right after a rotation m written before move i (frame dm,
-   * context b, m); the table lets a step rotate more than once (it only
-   * lowers the bound). MCC as in boundTable: each token's least increment,
-   * an R quarter turn may get 0.5 back, the last token of a move pays no own
-   * MCC when the next move is on the same axis (U then D). Only the states a
-   * spelling can reach are computed: those of row j depend on the last j
-   * moves and the two before them (or the start), so rows below `fromJ` are
-   * kept from the previous solution when it ends the same way (enumerate
-   * sorts for that). Stops early (X.rows < n) once the last moves alone cost
-   * more than stopAbove. Tested <= the real cost (test/spelling-search.test.js).
-   */
   function newExactTable() {
     return { V: new Float64Array(0), U: new Float64Array(0), SV: null, SU: null, gen: 0, rows: 0 };
   }
-  // exactTable's scratch: per option of the current move its cost without
-  // the context terms (OS) and where those read (OX); the row's groups
-  // (frame GD, last token GB, their tokens a before in AL[GA0..GA1)); one
-  // group's options: cost without the first token's bits (GS), first token
-  // (GF), rotations last
   let OS = new Float64Array(0);
   let OX = new Int32Array(0);
   const GD = new Int32Array(1024);
@@ -913,9 +763,6 @@ const SpellingSearch = (() => {
       const fc = i < n ? face[i] : 0;
       const pf = i + 1 < n && AXIS[fc] === AXIS[face[i + 1]];
       const o0 = fc * NR;
-      // Move i's options, per frame: the cost without the terms that depend
-      // on the context; kind 0 reads the next row at (d2, b, t1), kinds 1-2
-      // the bits TRI[b, t1, x].
       if (i < n) {
         for (let k = O0[o0], e = O0[o0 + NR]; k < e; k++) {
           const t1 = OT1[k];
@@ -936,10 +783,6 @@ const SpellingSearch = (() => {
           }
         }
       }
-      // The states a spelling can reach at boundary i, grouped by (frame,
-      // last token): after move i-1's options from every frame, each after
-      // any last token move i-2 can end with (the start or the lead at
-      // i-1 = 0), or after a rotation written before it.
       let ng = 0;
       let na = 0;
       if (i === 0) {
@@ -1050,22 +893,6 @@ const SpellingSearch = (() => {
     return X;
   }
 
-  /**
-   * Every spelling whose bound fits the budget, best-first over solutions.
-   * sols: [{ face: [token ids], look }]. opts: {
-   *   root: first step (the leading rotation is the free inspection, any of
-   *         the 24 orientations; it is not part of the written alg),
-   *   budget(wide): the most (C0 excluded) penalty + bits + minMCC + look a
-   *         spelling may reach and still matter (wide: a wide turn written),
-   *   leaf(tokens, leadIndex, endFrame, sol, step): a complete spelling to
-   *         score (step: its stepPenalty, when a walk wrote it).
-   * }
-   * Returns stats { solutions, walked, nodes }.
-   */
-  // enumerate runs as a generator: with opts.pauseMs it yields between
-  // solutions about every pauseMs, so an async caller (topSpellingsLive) can
-  // take tighter limits from other jobs in between; without it, it never
-  // yields and enumerate() runs it to the end at once.
   function enumerate(sols, opts) {
     const run = enumerateSteps(sols, opts);
     for (;;) {
@@ -1085,22 +912,12 @@ const SpellingSearch = (() => {
     const NT1 = L.NT1;
     const RS = NR * NT1 * NT1;
     const leads = opts.root ? t.LEAD_ROOT : t.LEAD_LATER;
-    // later steps: a written lead rotation (y, y', y2) is scored by the
-    // naturalness model like any token (its bits: leadBits); the bound
-    // table's start states hold it as context
     const later = !opts.root;
     const leadBits = (lt) => (lt >= 0 ? lam * lm.trigramBits(lm.START, lm.START, L.id[lt]) : 0);
     const maxRL = opts.maxRL === undefined ? SPELLING_MAX_RL : opts.maxRL;
     const maxUDF = opts.maxUDF === undefined ? SPELLING_MAX_UDF : opts.maxUDF;
     let n = 0; // the walked solution's length (table rows are indexed by n - i)
     const stats = { solutions: sols.length, walked: 0, nodes: 0, rows: 0, seeded: 0 };
-    // First steps walk with the exact-context table (exactTable): their 24
-    // inspection orientations make walks the expensive part. Later steps'
-    // walks are cheap and the rows most of the work, so they walk with the
-    // cheap table (boundTable, Hw): after a written non-plain token the next
-    // token's bits are its least after anything plus AFTER. So do plain
-    // crosses (opts.exact false: tens of thousands of solutions whose walks
-    // end early, while exact rows are hardly shared between them).
     const exact = !!opts.root && opts.exact !== false;
     const X = newExactTable();
     let Hw = null;
@@ -1130,11 +947,6 @@ const SpellingSearch = (() => {
     const pauseDue = () => pauseMs > 0 && (++tick & 63) === 0 && now() - lastPause >= pauseMs;
     const written = new Int32Array(64);
     const done = new Uint8Array(sols.length);
-    // Phase 1: a cheap estimate (not a bound) of each solution's plain
-    // spelling, to walk the likely best ones first and get a tight N-th best
-    // early. Phase 2: those, each with its own bound table. Phase 3: all the
-    // others, solutions that end alike one after the other so their bound
-    // rows are shared, each walked right away if its bound fits.
     const est = new Float64Array(sols.length);
     const yLeads = leads.filter(([, ld]) => YF[ld]);
     for (let k = 0; k < sols.length; k++) {
@@ -1157,10 +969,6 @@ const SpellingSearch = (() => {
     }
     const order = Array.from(sols.keys()).sort((x, y) => est[x] - est[y]);
     const first = order.slice(0, opts.prewalk || 256);
-    // Phase 1b: the plain spellings (every y-family lead) of the best
-    // estimated solutions are scored first: real candidates, so the N-th
-    // best -- and every walk's budget -- is tight from the start, instead of
-    // infinite until N spellings of whatever the first walks meet are found.
     const seedCount = Math.min(order.length, opts.seed || 0);
     const seeded = new Uint8Array(sols.length);
     for (let s = 0; s < seedCount; s++) {
@@ -1184,9 +992,6 @@ const SpellingSearch = (() => {
       if (rootOf(k) > budgetNow()) return;
       walk(k);
     };
-    // Writes token `tok` at position at0 after a walk node's tokens: the new
-    // penalties + bits (wps), naturalness context (wa, wb), least MCC so far
-    // (wmcc) and the token's own least MCC (wown), from the given state.
     let wps = 0;
     let wa = 0;
     let wb = 0;
@@ -1202,9 +1007,6 @@ const SpellingSearch = (() => {
         wa = b0;
         wb = w;
       }
-      // MCC's exceptions (mccMinimum): a D after a U (or U after D) may
-      // add nothing for the U; an R quarter two moves after itself
-      // across a U/D quarter gets 0.5 back
       const pk = at0 > 0 ? written[at0 - 1] : -1;
       const paired = pk >= 0 && FACE_UD[pk] && FACE_UD[pk] + FACE_UD[tok] === 3;
       wown = mccMin[tok];
@@ -1221,17 +1023,8 @@ const SpellingSearch = (() => {
       const V = X.V;
       const U = X.U;
       let lead = 0;
-      // A y or y' after nothing but U/D turns is written first instead (it
-      // commutes with them: "y U R U' R'", never "U y R U' R'"): the moves
-      // before i are all U/D turns while i <= ud.
       let ud = 0;
       while (ud < n && FACE_UD[face[ud]]) ud++;
-      // ps: penalties + bits so far; mcc: least MCC of the tokens before the
-      // last; pend: the last token's own least MCC (counted once the next
-      // token is known not to pair with it). The exact table is read at the
-      // last two written tokens (U right after a rotation written before
-      // move i); the cheap one by f (boundTable's flag: how many of the last
-      // tokens are plain), after a non-plain token plus AFTER.
       const rec = (i, d, r, f, nRL, nUDF, a, b, ps, mcc, pend, len, anyTurn, wide, afterRot) => {
         stats.nodes++;
         const budget = opts.budget(wide);
@@ -1322,11 +1115,6 @@ const SpellingSearch = (() => {
       }
     };
     let H = null;
-    // The loops run in plain functions, a batch per call until a pause is
-    // due, and the generator only yields between batches: with the loop in
-    // the generator itself, V8 threw its optimised code away at every yield
-    // (8,000 "exit from OSR'd inner loop" deopts in one browser step) and
-    // some jobs ran 3-9x slower.
     let next1 = 0;
     const prewalk = () => {
       for (; next1 < first.length; next1++) {
@@ -1362,12 +1150,6 @@ const SpellingSearch = (() => {
       if (same === lim && prev.length !== len) same = Math.max(0, same - 1);
       return Math.max(0, Math.min(same - 1, len + 1, prevRows + 1));
     };
-    // The cheap table meets in the middle -- forward rows of a solution's
-    // first moves (memoised by prefix) and only its last MITM_ROWS rows
-    // (shared with the solution before it) -- and rules most solutions out.
-    // The others get the rest of it (later steps) or the exact table (first
-    // steps; shared with the last solution that got one, it rules out most
-    // of the rest and bounds their walks tightly).
     const MITM_ROWS = 5;
     const fwdMemo = new Map();
     const F0 = new Float64Array(NR * FLAGS).fill(Infinity);
@@ -1403,9 +1185,6 @@ const SpellingSearch = (() => {
         const stop = budgetNow() - sols[k].look;
         const fromC = firstRow(prevC, prevCRows, face);
         const cut = Math.max(0, n - MITM_ROWS);
-        // The forward rows first: their least bounds the first moves, so the
-        // last rows can stop as soon as the moves they cover, the moves
-        // between (minMove each) and that least exceed the budget.
         const F = forwardAt(face, cut);
         let leastF = Infinity;
         for (let x = 0; x < NR * FLAGS; x++) if (F[x] < leastF) leastF = F[x];
@@ -1453,25 +1232,12 @@ const SpellingSearch = (() => {
     return stats;
   }
 
-  /**
-   * Least MCC of `path + anything` (algSpeedPrefix checkpoint of the
-   * committed path): its least start time, minus algSpeed's rounding.
-   */
   function mccFloor(checkpoint) {
     const st = checkpoint && checkpoint.state;
     const start = st && st.starts && st.starts.length ? Math.min(...st.starts.map(s => s[2])) : 0;
     return start - 0.05;
   }
 
-  /**
-   * The best `size` candidates of each view (a view = a filter the results
-   * page can apply instantly), each candidate kept once per key.
-   * views: [fn(candidate) -> belongs]. initial: optional per-view TPP limit
-   * known from elsewhere (other calls of the same type).
-   */
-  // Candidates in a strict total order: TPP, then key -- so which of several
-  // equal-TPP candidates make the best N does not depend on the order calls
-  // finish in (worker pools; an intermittently differing test showed it).
   const before = (a, b) => a.tpp < b.tpp || (a.tpp === b.tpp && a.key < b.key);
   class TopViews {
     constructor(views, size, initial) {
@@ -1483,7 +1249,6 @@ const SpellingSearch = (() => {
       this.keys = views.map(() => new Map());
     }
 
-    /** The TPP a candidate in view v must beat (Infinity until the view is full). */
     limit(v) {
       const h = this.heaps[v];
       return Math.min(this.initial[v], h.length < this.size ? Infinity : h[0].tpp);
@@ -1519,7 +1284,6 @@ const SpellingSearch = (() => {
       return kept;
     }
 
-    /** Lowers the per-view limits known from elsewhere (other jobs' real candidates). */
     tighten(limits) {
       let changed = false;
       for (let v = 0; v < this.views.length; v++) {
@@ -1532,10 +1296,6 @@ const SpellingSearch = (() => {
       return changed;
     }
 
-    /**
-     * The kept candidates as [key, tpp, view mask] (each once), for other
-     * jobs' limits (a view's N-th best among real candidates bounds it).
-     */
     snapshot() {
       const mask = new Map();
       for (let v = 0; v < this.heaps.length; v++) {
@@ -1546,7 +1306,6 @@ const SpellingSearch = (() => {
       return out;
     }
 
-    /** Every kept candidate once, best first. */
     list() {
       const seen = new Set();
       const out = [];
@@ -1575,40 +1334,12 @@ const SpellingSearch = (() => {
     }
   }
 
-  /**
-   * The best `size` spellings of each view, exactly. o: {
-   *   sols: [{ face: [face-turn tokens] or token ids, look, lookByEnd }]
-   *   (look: added to the cost; lookByEnd, optional: by end frame instead,
-   *   ['','y', 'y2', "y'"], with look its least),
-   *   root, pieces, floor (C0 + the committed steps' penalties: cost minus
-   *   that is what enumerate bounds), costOf(alg) (path cost, the real one),
-   *   mccOf(alg) (optional: the same without the step's own stepPenalty,
-   *   which a walk adds from what it summed while writing the spelling),
-   *   views: [{ test(candidate), wide (may contain wide turns) }], size,
-   *   initial: [TPP limit per view] (optional),
-   *   make(alg, leadIndex, endFrame, sol, tpp): the candidate (with .key and
-   *   .tpp) or null,
-   *   maxRL, maxUDF (optional), extra: candidates to offer as they are,
-   *   exact: false to bound a first step with the cheap table only,
-   * }
-   * Returns { list, stats }.
-   */
-  // Bounds are sums in a different order than the real cost: a spelling
-  // whose cost ties the N-th best exactly must not be pruned by rounding
-  // (which ties survive would then depend on the order calls finish in).
   const BUDGET_EPS = 1e-9;
   function topSpellings(o) {
     const { run, finish } = spellingRun(o, 0);
     for (;;) if (run.next().done) return finish();
   }
 
-  /**
-   * topSpellings for a job that shares limits with other jobs while it runs
-   * (o.live(snapshot) -> per-view limits or null, awaited about every
-   * o.pauseMs; snapshot = TopViews.snapshot() of this job, null when nothing
-   * changed since the last call). Same result as topSpellings with the final
-   * limits given up front could have pruned more; exact either way.
-   */
   async function topSpellingsLive(o) {
     const { run, finish, top, retighten } = spellingRun(o, o.pauseMs || 100);
     let version = -1;
@@ -1671,12 +1402,6 @@ const SpellingSearch = (() => {
     return { run: { next: () => { const r = run.next(); if (r.done) run.result = r.value; return r; } }, finish, top, retighten: () => { budgets = null; } };
   }
 
-  /**
-   * enumerate's cheap estimate of a solution's plain spelling (face-turn
-   * tokens), without its pair-choice cost: for choosing which solutions a
-   * seed-only search (topSpellings seedOnly) scores. plainEstimator(root, scoring)
-   * returns the estimate as a function (tables looked up once).
-   */
   function plainEstimator(root, scoring = null) {
     const t = tables();
     const L = lmTables();
@@ -1707,7 +1432,6 @@ const SpellingSearch = (() => {
     return plainEstimator(root)(faceTokens);
   }
 
-  /** The name of orientation `index` (a leadIndex or endFrame of enumerate). */
   function orientationName(index) {
     return tables().ROT_NAME[index];
   }

@@ -1,10 +1,6 @@
 /**
  * index.html: sign-in (the profiles on this device) and the
  * first-visit questions.
- *
- * A signed-in, onboarded profile goes straight to solver.html. ?profiles
- * shows the profile list anyway (the main screen's "switch profile"),
- * ?onboard runs the questions again for the signed-in profile.
  */
 'use strict';
 
@@ -52,30 +48,6 @@
     renderOnboarding();
   }
 
-  // ---- light / dark (top bar) ---------------------------------------------
-  function renderSwatches() {
-    const box = $('#theme-swatches');
-    if (!box) return;
-    box.innerHTML = '';
-    const current = document.documentElement.dataset.theme;
-    for (const t of PROFILE_THEMES) {
-      box.append(el('button', {
-        type: 'button', class: 'theme-swatch', 'aria-pressed': String(t === current),
-        onclick: () => setTheme(t),
-      }, t[0].toUpperCase() + t.slice(1)));
-    }
-  }
-  function setTheme(t) {
-    document.documentElement.dataset.theme = t;
-    if (draft) draft.theme = t;
-    const active = cubeProfiles.active();
-    if (active && (!draft || draft.editingId === active.id)) cubeProfiles.update(active.id, { prefs: { theme: t } });
-    renderSwatches();
-    // sprites are drawn in the theme's colours
-    if (draft) renderOnboarding(); else renderProfiles();
-  }
-
-  // ---- profile list (sign-in) -----------------------------------------------
   function renderProfiles(message = '') {
     draft = null;
     const title = $('#onboard-title');
@@ -148,7 +120,6 @@
     );
   }
 
-  // ---- the questions ----------------------------------------------------------
   function heading(key) {
     const text = `onboard.${key}.text`;
     return [el('h2', { text: caption(`onboard.${key}.title`) }), CAPTIONS[text] ? el('p', { class: 'sub', text: caption(text) }) : null].filter(Boolean);
@@ -164,7 +135,7 @@
 
   const SCREEN_RENDER = {
     welcome(body) {
-      const name = el('input', { class: 'input', type: 'text', maxlength: 24, placeholder: 'name', 'aria-label': 'name', value: draft.name });
+      const name = el('input', { class: 'input', type: 'text', maxlength: 24, 'aria-label': 'name', value: draft.name });
       name.addEventListener('input', () => { draft.name = name.value; });
       body.append(...heading('welcome'), name);
       if (!body.isConnected) setTimeout(() => name.focus(), 0);
@@ -245,16 +216,18 @@
     SCREEN_RENDER[key](sec);
   }
 
-  // every question on one page; each answer can be changed later in Options
   function renderOnboarding() {
     $('#onboard-title').textContent = draft.editingId ? 'Profile setup' : 'New profile';
     const body = $('#screen');
     body.innerHTML = '';
+    const more = el('details', { class: 'more-setup', open: !!draft.editingId },
+      el('summary', { text: 'More: goals, inspection, style, last layer, cross colours' }));
     for (const key of SCREENS) {
       const sec = el('section', { class: 'q', 'data-q': key });
       SCREEN_RENDER[key](sec);
-      body.append(sec);
+      (key === 'welcome' || key === 'speed' ? body : more).append(sec);
     }
+    body.append(more);
     $('#onboard-nav').hidden = false;
     $('#onboard-back').hidden = !cubeProfiles.list().length;
     $('#onboard-next').textContent = caption('onboard.done');
@@ -267,7 +240,6 @@
     if (draft && cubeProfiles.list().length) renderProfiles();
   }
 
-  /** Saves the profile and its settings (scoped to it), then opens the main screen. */
   function finish() {
     const ll = lastLayerOption(draft.answers.lastLayer);
     const fields = {
@@ -303,7 +275,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    renderSwatches();
     $('#onboard-next').addEventListener('click', next);
     $('#onboard-back').addEventListener('click', back);
     const active = cubeProfiles.active();

@@ -1,24 +1,16 @@
 const FACES = ['U', 'D', 'R', 'L', 'F', 'B'];
 const TURN_MODIFIERS = ['', "'", '2'];
 const OPPOSITES = { U: 'D', D: 'U', R: 'L', L: 'R', F: 'B', B: 'F' };
-const STORAGE_KEY = 'cubecrit_search_criteria';
-// Must match solver-ui.js's SESSION_STATE_KEY -- duplicated as a literal
-// here since index.html (where this is used) never loads solver-ui.js.
-const SESSION_STATE_KEY = 'cubecrit_session_state';
+const STORAGE_KEY = 'cubetree.criteria';
+const SESSION_STATE_KEY = 'cubetree.session';
 
-// One row per results-table
-// category, each with an optional matched and pseudo override. Keys match
-// solver-bridge.js's categoryFor()/categoryKeyFor() exactly.
 const SEARCH_CONFIG_CATEGORIES = ['cross', 'xcross', 'xxcross', 'xxxcross', 'singlePair', 'multislot'];
 
 // Always on (no checkbox): the pro move set and cross optimisation.
 const ALWAYS_ON_OPTIONS = ['cross_opt', 'pro_moves'];
 // Results-page view settings (look-ahead, multislot, wide moves, filters,
 // filter, page size).
-const VIEW_PREFS_KEY = 'cubecrit_view_prefs';
-// Config-page options that became results-page settings (normalizeCriteria
-// turns a saved one into the initial view setting). The solver page's tree
-// always has the multislot edges; the results page decides if they are searched.
+const VIEW_PREFS_KEY = 'cubetree.view';
 const RETIRED_OPTIONS = ['simplified_pseudo', 'multislotting'];
 // Saved-criteria format; 2: the time limit is null for none (was 60 by default).
 const CRITERIA_VERSION = 4;
@@ -80,8 +72,6 @@ function clearScrambleData() {
     localStorage.removeItem(scopedKey(SESSION_STATE_KEY));
 }
 
-/** Reads the per-category search-limit overrides into { [category]: {maxSolutions, maxLength}, [category + 'Pseudo']: {...} },
- * omitting any category/variant with nothing filled in. */
 function readSearchConfig() {
     const config = {};
     const readPair = (idPrefix) => {
@@ -100,20 +90,18 @@ function readSearchConfig() {
     return Object.keys(config).length ? config : undefined;
 }
 
-/** The per-type limits table of the settings drawer (one row per category; the ids readSearchConfig reads). */
 function buildLimitsTable() {
     const body = typeof document !== 'undefined' && document.getElementById('limits-body');
     if (!body || body.children.length) return;
-    const names = { cross: 'cross', xcross: 'xcross', xxcross: 'xxcross', xxxcross: 'xxxcross', singlePair: 'pair', multislot: 'multislot' };
+    const names = { cross: 'Cross', xcross: 'XCross', xxcross: 'XXCross', xxxcross: 'XXXCross', singlePair: 'Pair', multislot: 'Multislot' };
     for (const key of SEARCH_CONFIG_CATEGORIES) {
         const tr = document.createElement('tr');
-        const cell = (id, max, label) => `<td><input class="input" type="number" id="${id}" min="1" max="${max}" aria-label="${names[key]} ${label}"></td>`;
+        const cell = (id, max, label) => `<td><input class="input" type="number" id="${id}" min="1" max="${max}" placeholder="auto" aria-label="${names[key]} ${label}"></td>`;
         tr.innerHTML = `<td>${names[key]}</td>${cell(`cfg-${key}-maxsol`, 20000, 'max solutions')}${cell(`cfg-${key}-maxlen`, 20, 'move depth')}${cell(`cfg-${key}-pseudo-maxsol`, 20000, 'pseudo max solutions')}${cell(`cfg-${key}-pseudo-maxlen`, 20, 'pseudo move depth')}`;
         body.appendChild(tr);
     }
 }
 
-/** Inverse of readSearchConfig: fills the per-category inputs from a saved config. */
 function restoreSearchConfigInputs(searchConfig) {
     if (!searchConfig) return;
     const writePair = (idPrefix, override) => {
@@ -172,22 +160,12 @@ function restoreCheckboxState() {
     checkMatching('#advanced-group input[type="checkbox"]', advanced);
 }
 
-/**
- * Criteria as the solver page uses them: the always-on options added, and
- * the retired config-page settings moved out. "simplified pseudo" is now the
- * results page's simple-pseudo filter and look-ahead a results-page control;
- * a saved search from before keeps both, as initial view settings.
- */
 function normalizeCriteria(criteria) {
     const advanced = (criteria.advanced || []).filter(o => !RETIRED_OPTIONS.includes(o) && !ALWAYS_ON_OPTIONS.includes(o));
     const out = { ...criteria, advanced: [...advanced, ...ALWAYS_ON_OPTIONS] };
     const legacy = {};
     if ((criteria.advanced || []).includes('simplified_pseudo')) legacy.simplePseudo = true;
     if ((criteria.advanced || []).includes('multislotting')) legacy.multislot = true;
-    // The "search" settings (solutions per search, time limit) are gone
-    // (CRITERIA_VERSION 4): every search uses the default solutions per call
-    // (the per-type limits still override it) and has no time limit, even
-    // when a saved search from before set them.
     delete out.maxSolutions;
     delete out.timeLimit;
     if (criteria.lookaheadDepth > 1) legacy.lookaheadDepth = criteria.lookaheadDepth;
@@ -203,17 +181,6 @@ function loadSearchCriteria() {
     return rawState ? normalizeCriteria(JSON.parse(rawState)) : null;
 }
 
-// ---------------------------------------------------------------------------
-// Info dialog (both pages): what each part does, behind the "i" in the top
-// bar instead of inline captions. Its sections are captions.js keys
-// (info.<key>.title / .text), written by hand.
-// ---------------------------------------------------------------------------
-/**
- * The search a signed-in profile's answers give (skill-levels.js
- * settingsFromAnswers, as onboarding saves it), with the saved criteria's
- * own fields kept and a random-state scramble when it has none; saved.
- * Null without a profile.
- */
 function criteriaFromProfile(saved) {
     const p = typeof cubeProfiles !== 'undefined' && cubeProfiles ? cubeProfiles.active() : null;
     if (!p || typeof settingsFromAnswers !== 'function') return null;
@@ -240,7 +207,7 @@ function installInfoDialog() {
     dialog.className = 'info-dialog popup';
     dialog.setAttribute('aria-label', 'about');
     const keys = typeof INFO_SECTION_KEYS !== 'undefined' ? INFO_SECTION_KEYS : [];
-    dialog.innerHTML = `<div class="popup-head"><h2>About cube⑂tree</h2><button type="button" class="close-x close-btn" aria-label="close">&times;</button></div><div class="info-body"></div>`;
+    dialog.innerHTML = `<div class="popup-head"><h2>Help</h2><button type="button" class="close-x close-btn" aria-label="close">&times;</button></div><div class="info-body"></div>`;
     const body = dialog.querySelector('.info-body');
     for (const k of keys) {
         const h = document.createElement('h3');
@@ -401,48 +368,19 @@ function altAlgs(algorithms) {
     });
 }
 
-// algSpeed's tunable constants (MCC's, in signature order) and the per-step
-// penalties on top of it, fitted together (with the pair-choice weights) on
-// professional solves (; tools/tune-alg-speed.js cpools /
-// fit): reconstructions from reco.nz (data/reco_solves.txt), each pro step
-// ranked in the complete search's own list for its goal; loss = mean log10
-// rank + 0.1 x the gap between how often each move type is in the top
-// result and in the pro's step. Fitted
-// on 300 solves of Yiheng Wang and Xuanyi Geng (naturalness out of fold),
-// checked by cross-validation and on data/pro_references.txt (mean log10
-// rank 0.521 -> 0.454). Slice costs (sesliceMult, wideOther) keep their
-// earlier values: 19 of 3,342 pro steps use a slice, too few to fit them.
-// Penalties only (no move costs less than MCC says); a rotation at the very
-// start of a step (done while looking ahead) is free of penalties. The same
-// function at every step.
 const ALG_SPEED_DEFAULTS = { wristMult: 0.836, pushMult: 1.2, ringMult: 1.72, destabilize: 0.245, addRegrip: 0.25, double: 3.23, sesliceMult: 1.25, overWorkMult: 0.395, moveblock: 0.28, rotation: 4.8 };
 
-// `natural` weighs the alg's naturalness surprise (algSurprise, in bits):
-// how unlike real F2L its move sequence is. MCC prices finger mechanics
-// move by move but cannot tell `R U R' U' R U R'` (one fluent, familiar
-// motion) from `R2 U2 F R F' U2 R2` (each move cheap, the sequence
-// unfamiliar); human execution speed depends on both.
 const STEP_PENALTIES = { D: 0, F: 2.41, B: 3.5, wideRL: 2.3, wideUDFB: 3.02, wideOther: 3.31, rotMidY: 0, natural: 1.68 };
 
-// Pair planning off: the ranking a solver gets who
-// only wants the best step on its own -- no pair-choice term, and its own
-// MCC constants and penalties, fitted on professional solves scored with
-// that setting's lists (tools/tune-alg-speed.js fit --planning off).
 const PLANNING_OFF_SCORING = {
     mcc: { ...ALG_SPEED_DEFAULTS },
     pen: { ...STEP_PENALTIES },
 };
 const DEFAULT_SCORING = { mcc: ALG_SPEED_DEFAULTS, pen: STEP_PENALTIES };
-/** The MCC constants and step penalties (`{ mcc, pen }`) a session's settings rank with. */
 function scoringFor(settings) {
     return settings && settings.planning === false ? PLANNING_OFF_SCORING : DEFAULT_SCORING;
 }
 
-/**
- * Extra cost of one step's alg (see STEP_PENALTIES; `P`: another setting's,
- * see scoringFor); score a path as the sum over its steps. The same at every
- * step.
- */
 function stepPenalty(alg, P = STEP_PENALTIES) {
     let total = 0;
     // (A plain loop: this runs for every candidate of every search.)
@@ -465,19 +403,6 @@ function stepPenalty(alg, P = STEP_PENALTIES) {
     if (i && P.natural) total += P.natural * algSurprise(tokens);
     return total;
 }
-
-// ---------------------------------------------------------------------------
-// Naturalness: a move-sequence language model of
-// human F2L. An interpolated Kneser-Ney trigram over move tokens, trained on
-// HUMAN_F2L_ALGS (the standard F2L algorithms as commonly taught, plus their
-// left-right mirrors) and the pro reference steps (PRO_STEP_ALGS, counted
-// NATURALNESS.proWeight times, mirrored too). algSurprise(alg) = the alg's
-// surprise in bits, -log2 P(move | two previous moves) summed over its moves
-// and an end-of-alg token. Rotations are tokens like any move, a leading
-// one too (twenty-ninth pass: dropping it made a later step's free leading
-// y much cheaper than the mid-step y professionals use as often; a first
-// step's inspection is not part of its alg). stepPenalty still charges no
-// penalty for a leading rotation.
 
 // Standard human F2L algorithms (front-right slot unless noted), one per line;
 // left-right mirrors are added by code. Lines starting with # are headings.
@@ -658,9 +583,6 @@ F R U R' U' F'
 F' U' F R U R'
 `;
 
-// The professional corpus (PRO_STEP_ALGS: every step of every professional
-// solve, one array per solve) is generated into js/pro-steps.js, loaded
-// before this file in the pages and workers.
 function proStepAlgs() {
     return typeof PRO_STEP_ALGS !== 'undefined' ? PRO_STEP_ALGS : require('./pro-steps.js').PRO_STEP_ALGS;
 }
@@ -682,7 +604,6 @@ function naturalTokens(alg) {
     return out;
 }
 
-/** Left-right mirror of one move (R <-> L with every direction flipped; x and M keep theirs). */
 function mirrorMove(t) {
     const c = t[0];
     const face = { R: 'L', L: 'R', r: 'l', l: 'r' }[c] || c;
@@ -691,14 +612,6 @@ function mirrorMove(t) {
     return face + (suffix === '2' ? '2' : suffix === "'" ? '' : "'");
 }
 
-/**
- * Builds a naturalness model; `excludeSolve` (1-based) leaves that pro solve's
- * steps out of the training algs (leave-one-solve-out benchmarks). `proSteps`
- * (one array of step algs per solve) replaces proStepAlgs(), for tuning
- * tools that train on part of the data; `order` / `discount` override
- * NATURALNESS. `corpus` (an array of algs) replaces the F2L training algs
- * altogether (the last-layer model of tools/ll-build.js).
- */
 function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWeight, proSteps = null, order = NATURALNESS.order, discount = NATURALNESS.discount, corpus = null } = {}) {
     const { floor } = NATURALNESS;
     const D = discount;
@@ -740,7 +653,6 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
         }
     }
     const totals = counts.map(m => new Map([...m].map(([ctx, ws]) => [ctx, [...ws.values()].reduce((a, b) => a + b, 0)])));
-    /** -log2 P(w | ctx), ctx = the order - 1 previous tokens. */
     function bits(ctx, w) {
         let p = 1 / NATURAL_VOCAB_SIZE;
         for (let n = 0; n < order; n++) {
@@ -752,9 +664,6 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
         }
         return -Math.log2((1 - floor) * p + floor / NATURAL_VOCAB_SIZE);
     }
-    // Hot path (every candidate of every search): trigram surprises in a
-    // table indexed by token ids, filled on first use. Tokens outside the
-    // vocabulary (none in generated algs) take the slow path.
     const fast = order === 3;
     const ids = new Map(NATURAL_VOCAB.map((t, i) => [t, i]));
     const V = NATURAL_VOCAB.length; // ids 0..V-1; V = '<s>'
@@ -786,10 +695,6 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
         for (let i = order - 1; i < s.length; i++) total += bits(s.slice(i - order + 1, i), s[i]);
         return total;
     }
-    // Incremental form of surprise() (trigram models only), for searches that
-    // extend algs one token at a time: start with a = b = START, add
-    // trigramBits(a, b, w) for each token id w (then a = b, b = w) and
-    // trigramBits(a, b, END) at the end -- the same table, so the same sum.
     function trigramBits(a, b, w) {
         const k = (a * (V + 1) + b) * V + w;
         let x = table[k];
@@ -800,13 +705,6 @@ function buildNaturalnessModel({ excludeSolve = 0, proWeight = NATURALNESS.proWe
     return { surprise, bits, algs: algs.length, incremental };
 }
 
-/**
- * The corpus' later-step algorithms (every HUMAN_F2L_ALGS line and every
- * professional step after the first, with left-right mirrors; leading
- * rotations dropped, notation normalised), distinct. solver-bridge.js tries
- * them on every later step (corpusSolutions): the engine lists the
- * shortest solutions first and often never reaches the natural ones.
- */
 let f2lCorpusCache = null;
 function f2lCorpusAlgs() {
     if (!f2lCorpusCache) {
@@ -822,47 +720,22 @@ function f2lCorpusAlgs() {
     return f2lCorpusCache;
 }
 
-// Pair choice: look-ahead intuition. What a solver
-// sees of the unsolved pairs after a step (facelet-flags.js pairLookFeatures:
-// trapped corners, trapped edges, lone pieces home, pairs with both pieces
-// in U, connected pairs), weighed and added to the path cost -- once, for
-// the state the path leaves, not summed per step, and 0 once F2L is solved,
-// so a complete solution's cost is unchanged. Fitted so the single-step
-// ranking anticipates the 2-step look-ahead (tools/pair-choice.js).
-// (Not used by the ranking any more: pair planning off has no pair-choice
-// term, and on uses PAIR_PLANNING's look weights. Kept for tools/pair-choice.js.)
 const PAIR_CHOICE_LOOK = [0.54, 0.78, 0.45, -1.43, -5.66];
-// Pair planning (on by default; the results page can
-// turn it off): the pair-choice term also weighs the edge orientation of the
-// unsolved pairs' edges and the open back slots, in the orientation the cube
-// is left in (facelet-flags.js planFeatures, PLAN_FEATURES order), so a
-// rotation that leaves the remaining edges good, or a pair that leaves the
-// back slots solved, ranks higher. Fitted jointly with the look weights on
-// the same 2-step look-ahead data (tools/pair-choice.js --model none+look+plan),
-// then refined on professional solves with alg_speed (trapped edge 0.2 ->
-// -0.8, open back slot 0.54 -> 2.54; tools/tune-alg-speed.js).
 const PAIR_PLANNING = { look: [0.4, -0.8, 0.24, -1.4, -5.58], plan: [0.6, -1.59, 0.78, 2.54] };
 
 let naturalnessModel = null;
-/** Naturalness surprise of an alg in bits (see buildNaturalnessModel); built on first use. */
 function algSurprise(alg) {
     if (!naturalnessModel) naturalnessModel = buildNaturalnessModel();
     return naturalnessModel.surprise(alg);
 }
-/** The model algSurprise uses (built on first use). */
 function currentNaturalnessModel() {
     if (!naturalnessModel) naturalnessModel = buildNaturalnessModel();
     return naturalnessModel;
 }
-/** Swaps the model algSurprise uses (null: the default, rebuilt on next use); for benchmarks. */
 function useNaturalnessModel(model) {
     naturalnessModel = model;
 }
 
-// Upper-cased move tokens, cached (algSpeed upper-cases every move it looks
-// at). Interned (read back as an object key), so algSpeed's string switch and
-// its == comparisons with literals are pointer checks instead of content
-// compares.
 const MCC_UPPER = new Map();
 function mccUpper(t) {
     let u = MCC_UPPER.get(t);
@@ -1556,12 +1429,6 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
             }
         }
     }
-    // The grip search runs in rounds: each round simulates a few grips from
-    // one point of the sequence, the furthest-reaching one wins, and the next
-    // round starts where it had to regrip. `resume` / `stopAt` (algSpeedPrefix,
-    // algSpeedResume) pause before the first round that could look at a move
-    // at index >= stopAt and continue from there, which gives exactly the
-    // same result as scoring the whole sequence at once.
     const fullSeq = splitSeq;
     const fullUpper = fullSeq.map(mccUpper);
     let offset = resume ? resume.offset : 0;
@@ -1628,15 +1495,6 @@ function algSpeed(sequence, ignoreErrors = false, ignoreauf = false, wristMult =
     }
 }
 
-/**
- * algSpeed of `prefix + ' ' + suffix` for many suffixes after one prefix
- * (every candidate of a search follows the same committed path): the grip
- * search over the prefix is done once, up to the last point the suffix
- * cannot influence, and each suffix resumes from there. Constants `A`
- * (ALG_SPEED_DEFAULTS or another setting's, see scoringFor; the checkpoint
- * keeps them), no ignoreErrors/ignoreauf (how SolveSession.pathCost
- * scores). Exact: the same number algSpeed(prefix + ' ' + suffix) returns.
- */
 function algSpeedPrefix(prefix, A = ALG_SPEED_DEFAULTS) {
     const tokens = String(prefix || '').split(" ").filter(t => t !== "");
     if (!tokens.length) return { tokens, state: null, A };
@@ -1745,9 +1603,6 @@ if (typeof document !== 'undefined') {
             criteria = null;
         }
         if (!criteria || !criteria.scrambles?.length) {
-            // a signed-in profile without a saved search (storage cleared,
-            // an imported profile): the search its answers give, as
-            // onboarding saves it, with a fresh random-state scramble
             criteria = criteriaFromProfile(criteria);
             if (criteria) restoreCheckboxState(); // the form shows the search just saved
         }

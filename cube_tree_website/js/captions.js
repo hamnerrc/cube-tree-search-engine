@@ -2,18 +2,15 @@
  * The interface's sentences, by key. Code asks
  * caption(key, vars) instead of writing prose inline; short control labels
  * (button and setting names) stay in the HTML.
- *
- * {name} in a caption is filled from vars; an unknown key shows the key
- * itself, so a missing caption is easy to spot.
  */
 'use strict';
 
 const CAPTIONS = {
-  // --- onboarding (index.html) ---
+  // index.html
   'onboard.welcome.title': 'Name',
-  'onboard.welcome.text': 'Stored in this browser, nowhere else.',
+  'onboard.welcome.text': 'Stored in this browser only.',
   'onboard.speed.title': 'Average',
-  'onboard.speed.text': 'Your usual ao12, in seconds. Sets which suggestions you start with.',
+  'onboard.speed.text': 'Your usual ao12 in seconds, so the suggestions match your level. Everything else has a default and lives in Options.',
   'onboard.inspection.title': 'Inspection',
   'onboard.style.title': 'Style',
   'onboard.goals.title': 'Working on',
@@ -49,19 +46,19 @@ const CAPTIONS = {
   'profiles.deleteConfirm': 'Delete {name} and its settings?',
 
   'level.building': 'Building speed (10 s +)',
-  'level.building.note': 'Until you\'re under 10 seconds, plain CFOP gains you the most. Suggestions stick to xcrosses and optimal crosses with wide moves.',
+  'level.building.note': 'Until you\'re under 10 seconds, plain CFOP gains you the most. Suggestions stick to XCrosses and optimal crosses with wide moves.',
   'level.intermediate': 'Intermediate (8–10 s)',
-  'level.intermediate.note': 'Suggestions include xcrosses, wide-move crosses and pair influencing. Multislotting is off.',
+  'level.intermediate.note': 'Suggestions include XCrosses, wide-move crosses and pair influencing. Multislotting is off.',
   'level.advanced': 'Advanced (6–8 s)',
-  'level.advanced.note': 'Everything except xxcrosses.',
+  'level.advanced.note': 'Everything except XXCrosses.',
   'level.professional': 'Professional (under 6 s)',
-  'level.professional.note': 'Everything: xxcrosses, multislotting, pseudo F2L.',
+  'level.professional.note': 'Everything: XXCrosses, multislotting, pseudo F2L.',
 
-  'goal.xcross': 'Xcrosses',
+  'goal.xcross': 'XCrosses',
   'goal.wide_cross': 'Wide move crosses',
   'goal.pair_influencing': 'Influence pairs and EO',
   'goal.multislot': 'Multislotting',
-  'goal.xxcross': 'Xxcrosses',
+  'goal.xxcross': 'XXCrosses',
   'goal.pseudo_f2l': 'Pseudo-F2L',
 
   'inspection.cross': 'The cross, or less',
@@ -72,7 +69,7 @@ const CAPTIONS = {
   'style.efficiency': 'Fewer moves, even if awkward',
   'style.tps': 'Faster turning, even if longer',
 
-  // --- main screen ---
+  // solve page
   'solve.placeholder': 'Type moves, or tab for the first suggestion',
   'solve.offNode': 'That isn\'t a finished step yet. Suggestions come back once it is.',
   'solve.searching': 'Searching…',
@@ -85,9 +82,9 @@ const CAPTIONS = {
   'solve.loadingSolver': 'Loading solver…',
   'solve.noSetup': 'No profile set up. Sign in or answer the setup questions.',
 
-  // --- searcher: the three picks and their reasons ---
+  // suggestions
   'suggest.thinking': 'Searching',
-  'suggest.solved': 'Solved. Run a critique?',
+  'suggest.solved': 'Solved.',
   'suggest.offNode': 'No suggestion starts like that.',
   'suggest.following': 'Searching from your moves',
   'suggest.stepDone': '{label} done. Tab or enter for the next step.',
@@ -95,15 +92,13 @@ const CAPTIONS = {
   'suggest.greetingOne': 'One clear best step.',
   'suggest.keepGoing': 'No suggestion starts like that yet. Keep typing.',
   'suggest.title': 'Next step',
-  // the key legend under the solution bar
   'keys.tab': 'take it',
   'keys.arrows': 'other suggestions',
   'keys.esc': 'first suggestion',
-  // the box on the cube: the step it is in
   'stage.preview': 'Preview',
   'stage.typing': 'Typing',
   'stage.scrambled': 'Scrambled',
-  // --- searcher: the last layer and the last slot ---
+  // last layer and last slot
   'suggest.ll.stepDone': '{label} done. Tab or enter to write it down.',
   'suggest.ll.unknown': 'No alg on file for this case.',
   'suggest.ll.auf': 'AUF left.',
@@ -113,33 +108,32 @@ const CAPTIONS = {
   'suggest.ll.makeMain': 'Use it and make it your main alg for this case',
   'suggest.ll.neither': 'More algs',
   'suggest.ll.change': 'Other algs',
-  'reason.ll.fastest': 'Fastest for {label}.',
-  'reason.ll.main': 'Your alg for {label}.',
-  'reason.ll.next': 'Close second.',
-  'reason.ll.shorter': 'Fewer moves.',
-  'reason.ll.community': 'Commonly used.',
-  'reason.ll.favourite': 'Most used.',
-  'reason.ll.whole': 'Edges oriented: solves the whole LL ({label}).',
-  'reason.ll.twoLook': 'Two-look: orient first ({label}), then PLL.',
-  'reason.ll.other': '{label}.',
-  'reason.ls.skipsOll': 'Inserts the pair and orients the LL ({label}). No OLL.',
-  'reason.ls.edgesForZbll': 'Inserts the pair and orients edges ({label}), then ZBLL.',
-  'reason.fastest': 'Fastest to execute.',
-  'reason.nearly': 'Almost as fast, different pieces.',
-  'reason.free_pair': 'Leaves a free pair.',
-  'reason.edges_good': 'Leaves edges oriented.',
-  'reason.no_rotation': 'No rotation.',
-  'reason.wide_ergonomic': 'The wide move sits well in the hands here.',
-  'reason.shorter': '{n} moves shorter.',
-  'reason.efficient': 'Fewer moves per piece.',
-  'reason.smoother': 'Longer, but flows better.',
-  'reason.multislot': '{n} pairs at once.',
-  'reason.cancels': 'Cancels into your last move.',
-  'reason.back_slots': 'Gets a back slot while it\'s easy to see.',
-  'reason.lookahead_best': 'Best with the next step: {next}',
+  'reason.ll.fastest': 'fastest',
+  'reason.ll.main': 'yours',
+  'reason.ll.next': 'close second',
+  'reason.ll.shorter': 'fewer moves',
+  'reason.ll.community': 'common',
+  'reason.ll.favourite': 'most used',
+  'reason.ll.whole': 'EO done: whole LL',
+  'reason.ll.twoLook': 'two-look: OLL then PLL',
+  'reason.ll.other': '{label}',
+  'reason.ls.skipsOll': '{label}: skips OLL',
+  'reason.ls.edgesForZbll': '{label}: sets up ZBLL',
+  'reason.fastest': 'fastest',
+  'reason.nearly': 'nearly as fast, other pieces',
+  'reason.free_pair': 'free pair after',
+  'reason.edges_good': 'keeps EO',
+  'reason.no_rotation': 'no rotation',
+  'reason.wide_ergonomic': 'easy wide move',
+  'reason.shorter': '{n} moves shorter',
+  'reason.efficient': 'fewer moves per piece',
+  'reason.smoother': 'longer, flows better',
+  'reason.multislot': '{n} pairs',
+  'reason.cancels': 'cancels last move',
+  'reason.back_slots': 'back slot early',
+  'reason.lookahead_best': 'best with next: {next}',
 
-  // --- critique (no numbers: why a step is slower, and a similar better one) ---
-  'critique.button': 'Critique',
+  // critique
   'critique.title': 'Critique',
   'critique.intro': 'Click a step to show it on the cube.',
   'critique.step.top': '{label}: best found.',
@@ -176,7 +170,7 @@ const CAPTIONS = {
   'critique.ll.yourAlt': 'Yours: {alg}',
   'critique.step.fine': '{label}: fine.',
   'critique.alt.optional': 'Alternative: {alg}.',
-  'critique.allTop': 'Every step was the top suggestion. Nothing to critique.',
+  'critique.allTop': 'Every step was one of the suggestions. Nothing to critique.',
   'critique.ls.best': '{label}: fastest {set} alg.',
   'critique.ls.good': '{label}: good {set} alg.',
   'critique.ls.slower': '{label}: a faster {set} alg exists.',
@@ -185,12 +179,9 @@ const CAPTIONS = {
   'critique.needSolve': 'Nothing to critique yet.',
   'critique.working': 'Checking…',
 
-  // --- the alg sets page (algs.html) ---
-  'algs.search.placeholder': 'Search: OLL 27, t perm, sune, ZBLL as 3, or type moves',
+  // algs.html
+  'algs.search.placeholder': 'Find a case by name, or type an alg',
   'algs.group.all': 'All',
-  // what a set, or OLS's chosen subset, is: one line under the subsets
-  'algs.subset.oll': '57 cases, grouped by shape.',
-  'algs.subset.pll': '21 cases, once the last layer is oriented.',
   'algs.subset.coll': 'Orients the last layer and solves its corners in one alg, from any of the 57 OLLs (also called OLLCP); the edges are left for EPLL. One subset per OLL; a case is one corner permutation.',
   'algs.subset.zbll': 'The whole last layer when its edges are oriented. Subsets by corner orientation (T, U, L, H, Pi, S, AS), then by corner permutation (the COLL case).',
   'algs.subset.1lll': 'The whole last layer in one alg, from any state. One subset per OLL (PLL for an oriented layer), then one per corner permutation, as in COLL.',
@@ -219,28 +210,27 @@ const CAPTIONS = {
   'algs.note.solves': 'This alg solves',
   'algs.note.none': 'This alg doesn’t solve a case of these sets.',
 
-  // --- settings hints ---
+  // options
   'settings.ls.intro': 'Algs that insert the last pair and do part of the last layer with it. Tick the ones you know.',
   'settings.ls.rule': 'While any of these is on, the last two pairs are never solved at once.',
 
-  // --- help dialog sections (title, text) ---
+  // help
   'info.keys.title': 'Solution bar',
   'info.keys.text': 'One step per line. Tab takes the suggestion shown in grey, ↑/↓ cycle through the others, Esc goes back to the first. Anything after // is a comment. Typing the start of a step narrows the suggestions to ones that begin that way.',
   'info.cube.title': 'Cube',
   'info.cube.text': 'Drag to rotate, scroll or pinch to zoom, double-click to reset. The cube follows the caret; the bar under it plays the solution back.',
   'info.ranking.title': 'Ranking',
   'info.ranking.text': 'Steps are ranked by estimated execution time, fitted on reconstructions of top solvers, not by move count. Look-ahead (Options) ranks a step together with the best step after it.',
-  'info.glyphs.title': 'Critique',
-  'info.glyphs.text': 'Each step gets a mark after its line: best (the top of the list), slower (something faster fits, shown under the step), or beats the search (a step the search doesn\'t look for, and nothing it found is faster). No mark means it\'s close enough.',
+  'info.marks.title': 'Critique',
+  'info.marks.text': 'Each step gets a mark after its line: best (the top of the list), slower (something faster fits, shown under the step), or beats the search (a step the search doesn\'t look for, and nothing it found is faster). No mark means it\'s close enough.',
   'info.lastlayer.title': 'Last layer',
   'info.lastlayer.text': 'After F2L, each line that orients or solves the last layer is named after its case. Suggestions come from the method set in Options; every case and alg is on the Algs page.',
   'info.profile.title': 'Profiles',
   'info.profile.text': 'Stored in this browser only. Use the export code (profile list) to move one to another device.',
 };
 
-const INFO_SECTION_KEYS = ['keys', 'cube', 'ranking', 'glyphs', 'lastlayer', 'profile'];
+const INFO_SECTION_KEYS = ['keys', 'cube', 'ranking', 'marks', 'lastlayer', 'profile'];
 
-/** caption('reason.shorter', { n: 2 }) -> "2 moves shorter." An unknown key comes back as itself. */
 function caption(key, vars) {
   const text = Object.prototype.hasOwnProperty.call(CAPTIONS, key) ? CAPTIONS[key] : key;
   if (!vars) return text;

@@ -1,30 +1,9 @@
 // Random-state scramble generator.
-//
-// Picks a uniformly random reachable cube state at the cubie level, solves
-// it with a two-phase (Kociemba) search, and returns the inverse of that
-// solution as the scramble -- the same approach WCA scramble programs use.
-//
-// Nothing about the face turns is hand-typed: each basic move's cubie
-// definition is read off facelet-cube.js (itself cross-verified against
-// magiccube) by applying the move to a solved facelet string and decoding
-// the result with the standard Kociemba corner/edge facelet tables below.
-// Coordinate move tables are then built by BFS over real cubie states, so
-// no coordinate "set" inverses are needed either. See
-// test/random-state-scramble.test.js for the verification (facelet replay
-// of every scramble against the cubie state it was generated from, plus an
-// independent check with the Python `kociemba` package).
-//
-// Wrapped in a function scope: plain <script> tags share one global scope in
-// the browser.
 const RandomStateScramble = (() => {
     const faceletLib = (typeof module !== 'undefined' && module.exports)
         ? require('./facelet-cube.js')
         : { applyAlgorithm, SOLVED_FACELETS };
 
-    // Kociemba facelet tables, URFDLB layout (U1..U9 = 0..8, R = 9.., F = 18..,
-    // D = 27.., L = 36.., B = 45..). Corners URF UFL ULB UBR DFR DLF DBL DRB,
-    // edges UR UF UL UB DR DF DL DB FR FL BL BR. Decoding a solved cube through
-    // these and finding the identity is part of the test suite.
     const CORNER_FACELETS = [
         [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
         [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51],

@@ -46,7 +46,7 @@ test('a COLL step (edges oriented -> corners solved) is not an OLL one', () => {
   assert.strictEqual(L.stageOf(start), 'eo');
   const r = L.readSteps(start, [{ tokens: coll.split(' ') }], null);
   assert.strictEqual(r.stage, 'epll');
-  assert.strictEqual(r.steps[0].label, 'coll');
+  assert.strictEqual(r.steps[0].label, 'COLL');
 });
 
 test('lines after the F2L read as steps by replay; a line that moves nothing on merges', () => {
@@ -57,7 +57,7 @@ test('lines after the F2L read as steps by replay; a line that moves nothing on 
     { tokens: "U' F U R U' R' F'".split(' ') },               // orients (oll: the inverse)
     { tokens: TPERM.split(' ') },                             // solves (pll)
   ], null);
-  assert.deepStrictEqual(r.steps.map(s => [s.firstLine, s.lastLine, s.label]), [[0, 1, 'oll'], [2, 2, 'pll']]);
+  assert.deepStrictEqual(r.steps.map(s => [s.firstLine, s.lastLine, s.label]), [[0, 1, 'OLL'], [2, 2, 'PLL']]);
   assert.strictEqual(r.stage, 'done');
   assert.deepStrictEqual(r.tail.tokens, []);
 });
@@ -68,11 +68,11 @@ if (fs.existsSync(path.join(DATA_DIR, 'oll.json'))) {
     const d = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'oll.json'), 'utf8'));
     const data = { oll: { data: d, index: A.indexSet('oll', d) } };
     const start = after(A.invertAlg(SUNE));
-    const one = L.critique(start, [{ label: 'oll 27', toks: SUNE.split(' ') }], data);
+    const one = L.critique(start, [{ label: 'OLL 27', toks: SUNE.split(' ') }], data);
     assert.ok(['critique.ll.best', 'critique.ll.good'].includes(one[0].key), one[0].key);
     const seven = Array(7).fill(SUNE).join(' ').split(' ');
     assert.strictEqual(L.stageOf(applyAlgorithm(start, seven.join(' '))), 'done');
-    const slow = L.critique(start, [{ label: 'oll 27', toks: seven }], data);
+    const slow = L.critique(start, [{ label: 'OLL 27', toks: seven }], data);
     assert.strictEqual(slow[0].key, 'critique.ll.slower');
     // the alt solves the case from the cube as it stands
     assert.ok(['oriented', 'auf', 'done'].includes(L.stageOf(applyAlgorithm(start, slow[0].alt.vars.alg))));
@@ -86,12 +86,12 @@ else {
     const d = JSON.parse(fs.readFileSync(path.join(DATA_DIR, `${s.id}.json`), 'utf8'));
     data[s.id] = { data: d, index: A.indexSet(s.id, d) };
   }
-  test('labels name the case: "oll 27", "pll t"', () => {
+  test('labels name the case: "OLL 27", "PLL T"', () => {
     const start = after(`${TPERM} ${A.invertAlg(SUNE)}`);
     const r = L.readSteps(start, [{ tokens: SUNE.split(' ') }, { tokens: TPERM.split(' ') }], data);
     const labels = r.steps.map(s => s.label);
-    assert.strictEqual(labels[0], 'oll 27');
-    assert.strictEqual(labels[1], 'pll t');
+    assert.strictEqual(labels[0], 'OLL 27');
+    assert.strictEqual(labels[1], 'PLL T');
   });
   let seed = 7;
   const rand = n => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };

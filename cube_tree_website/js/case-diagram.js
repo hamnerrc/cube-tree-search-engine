@@ -8,7 +8,6 @@
 'use strict';
 
 const CaseDiagram = (() => {
-  // face letter -> sticker colour key of pixel-cube.js (X: a sticker that does not matter)
   const COLOUR_OF_FACE = { U: 'Y', D: 'W', F: 'G', B: 'B', R: 'O', L: 'R', '.': 'X' };
   const HEX = {
     Y: '#ffd500', W: '#e9e9e4', G: '#17c84c', B: '#1e5bff', O: '#ff8a00', R: '#e8231c', X: '#5d5d5a',
@@ -17,22 +16,15 @@ const CaseDiagram = (() => {
     Y: '#fff27a', W: '#ffffff', G: '#5cf58a', B: '#6f9bff', O: '#ffb45c', R: '#ff6a5c', X: '#7a7a76',
   };
 
-  /** Face-letter facelets -> pixel-cube.js colour letters. */
   const toColours = labels => [...labels].map(c => COLOUR_OF_FACE[c] || 'X').join('');
 
-  // The top view, in art pixels: stickers S wide, 1 apart; side strips T thick.
   const S = 6, G = 1, T = 2;
   const FACE = 3 * S + 2 * G;               // 20
   const SIZE = T + G + FACE + G + T + 2;    // 28 with a 1-pixel margin
-  // facelet indices of the side strips, in drawing order (top view, F at the bottom)
   const STRIPS = {
     back: [47, 46, 45], front: [18, 19, 20], left: [36, 37, 38], right: [11, 10, 9],
   };
 
-  /**
-   * Draws the top view of `labels` (masked face letters) on `canvas` at art
-   * resolution; CSS scales it (image-rendering: pixelated).
-   */
   function topView(canvas, labels, opts = {}) {
     canvas.width = SIZE;
     canvas.height = SIZE;
@@ -54,7 +46,6 @@ const CaseDiagram = (() => {
     STRIPS.right.forEach((f, k) => fill(col(labels[f]), x0 + FACE + G, y0 + k * (S + G), T, S));
   }
 
-  // The 3D view: one hidden PixelCube renders every picture, copied out.
   let iso = null;
   function isoCube() {
     if (iso) return iso;
@@ -66,19 +57,15 @@ const CaseDiagram = (() => {
     iso = { canvas: c, cube };
     return iso;
   }
-  /** Draws `labels` (masked face letters) as a small 3D cube, U, F and R showing. */
   function cubeView(canvas, labels, opts = {}) {
     const { canvas: src, cube } = isoCube();
     if (opts.line) cube.setTheme({ line: opts.line });
     cube.setFacelets(toColours(labels));
     canvas.width = src.width;
     canvas.height = src.height;
-    // the renderer's pixels themselves, not a copy of its canvas (one less
-    // GPU canvas-to-canvas copy; a rare wrong-colour tile was reported)
     canvas.getContext('2d').putImageData(cube.img, 0, 0);
   }
 
-  /** The picture of a case of a set: its stored state (face letters), masked. */
   function draw(canvas, setId, stateLabels, opts = {}) {
     const labels = AlgSets.maskedLabels(opts.mask || setId, AlgSets.toCubie(stateLabels));
     if (AlgSets.SET_BY_ID[setId].slot) cubeView(canvas, labels, opts);

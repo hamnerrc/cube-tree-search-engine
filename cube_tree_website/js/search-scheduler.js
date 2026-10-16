@@ -1,43 +1,11 @@
 /**
  * Priority scheduling of searches onto the solver
  * engines.
- *
- * Each engine worker runs one solve at a time. A plain FIFO would make the
- * search for the scramble on screen wait behind every background scramble,
- * so instead:
- *
- *  - BACKGROUND jobs (other scrambles) start one at a time, only while
- *    nothing else is running.
- *  - ACTIVE jobs (the scramble on screen, e.g. the search started by
- *    committing a result) start immediately.
- *  - Every engine call of every job goes through a priority gate per engine
- *    (helper, or array of helpers = a worker pool, one slot per worker): calls
- *    already in flight finish, then the ACTIVE job's calls run, and a
- *    BACKGROUND job's calls wait for as long as any ACTIVE job is still running
- *    -- including its non-engine post-processing between calls -- so a
- *    background search pauses at its next engine call instead of competing. A
- *    pool runs up to one call per worker at once.
- *  - A job's priority can change while it is queued or running (setPriority):
- *    switching scrambles promotes the newly active one and demotes the old.
- *  - A stale job (replaced on screen: the next step after a click, another
- *    setting) keeps its priority but its calls run after every other call
- *    of that priority; they still run whenever nothing else is waiting, so
- *    a job waiting on one of them (a shared engine call) is never stuck.
- *  - Within one priority, calls made through engine.withRank(rank) (the
- *    look-ahead's path of candidate indices, solver-bridge.js lookaheadFork)
- *    run lowest rank first -- the step's own calls (no rank) before any
- *    look-ahead call, the best candidate's follow-ups before the next one's
- *    -- and equal ranks in arrival order.
- *
- * Jobs talk to the engines only through wrap(helper), which gates the
- * helper's solve* methods (dispatching each call to a free pool member);
- * everything else passes through to the first member untouched.
  */
 'use strict';
 
 const SEARCH_PRIORITY = { BACKGROUND: 0, ACTIVE: 1 };
 
-/** Lexicographic order of look-ahead ranks (null = [] = first). */
 function compareSearchRanks(a, b) {
   a = a || [];
   b = b || [];
@@ -130,11 +98,6 @@ function createSearchScheduler() {
   }
 
   return {
-    /**
-     * Queues run(wrap) -- wrap(helper or helper array) returns an engine whose
-     * calls are gated (and spread over the array's members) -- and returns
-     * the job; job.promise settles with run's result.
-     */
     submit(run, priority = SEARCH_PRIORITY.BACKGROUND) {
       const job = { run, priority, state: 'queued' };
       job.promise = new Promise((resolve, reject) => { job._resolve = resolve; job._reject = reject; });
@@ -142,7 +105,6 @@ function createSearchScheduler() {
       pump();
       return job;
     },
-    /** Marks a job stale (its calls yield to other jobs' of its priority) or not. */
     setStale(job, stale = true) {
       if (!job || job.state === 'done') return;
       job.stale = !!stale;
@@ -154,9 +116,7 @@ function createSearchScheduler() {
       pump();
     },
     get idle() { return !queued.length && !running.size; },
-    /** Is any job but `job` queued or running (does the engine time belong to someone else)? */
     busyBesides(job) { return queued.length > 0 || [...running].some(j => j !== job); },
-    /** Calls fn once nothing is queued or running (at once, if so now). */
     whenIdle(fn) { idleWaiters.push(fn); if (!queued.length && !running.size) pump(); },
   };
 }

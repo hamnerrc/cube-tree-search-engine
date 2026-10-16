@@ -1,5 +1,5 @@
 // Screenshots of the site in headless Chrome (Chrome DevTools Protocol), for
-// design reviews (README "Design review").
+// design reviews.
 // usage: node tools/review-shots.js <outdir> [tag]     THEME=dark for the dark theme
 // Serve the site first: `python3 -m http.server 8765` in cube_tree_website/.
 // Shots: sign-in, solver (viewport and full page), Options, algs page, phone width.

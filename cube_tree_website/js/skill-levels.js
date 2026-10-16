@@ -2,8 +2,6 @@
  * Onboarding data: the speed brackets, the learning goals
  * each bracket should be offered, and how the answers set the solver's existing
  * settings.
- *
- * The wording shown to users lives in captions.js (keys below).
  */
 'use strict';
 
@@ -17,10 +15,6 @@ const SKILL_LEVELS = [
   { id: 'professional', minSeconds: 0, caption: 'level.professional' },
 ];
 
-// What a solver might learn next. A goal is recommended for brackets
-// [from, to] (indices into SKILL_LEVELS); faster brackets see it under
-// "show all" as a basic, slower ones as "later". `settings` are what picking
-// it switches on: first-step types (advanced) and results settings (view).
 const LEARNING_GOALS = [
   { id: 'xcross', from: 0, to: 3, caption: 'goal.xcross', settings: { advanced: ['xcross'] } },
   { id: 'wide_cross', from: 0, to: 3, caption: 'goal.wide_cross', settings: { view: { wideMoves: true } } },
@@ -30,9 +24,6 @@ const LEARNING_GOALS = [
   { id: 'pseudo_f2l', from: 3, to: 3, caption: 'goal.pseudo_f2l', settings: { advanced: ['full_pseudo'] } },
 ];
 
-// How far a solver plans in inspection -> the first-step types searched (a
-// type above the solver's level only when they chose that goal).
-// `aliases`: ids saved by earlier versions of the questions.
 const INSPECTION_OPTIONS = [
   { id: 'cross', caption: 'inspection.cross', advanced: [] },
   { id: 'cross_pair', caption: 'inspection.cross_pair', advanced: [] },
@@ -40,7 +31,6 @@ const INSPECTION_OPTIONS = [
   { id: 'multi_pairs', caption: 'inspection.multi_pairs', advanced: ['xcross', 'xxcross'], aliases: ['xxcross'] },
 ];
 const inspectionOption = id => INSPECTION_OPTIONS.find(o => o.id === id || (o.aliases || []).includes(id)) || INSPECTION_OPTIONS[0];
-// The goal a first-step type belongs to (for gating it by level).
 const ADVANCED_GOAL = { xcross: 'xcross', xxcross: 'xxcross', full_pseudo: 'pseudo_f2l' };
 
 const STYLE_OPTIONS = [
@@ -50,17 +40,13 @@ const STYLE_OPTIONS = [
 
 const CROSS_COLOURS = ['white', 'yellow', 'green', 'blue', 'red', 'orange'];
 
-// The last layer the solver uses: the solving screen's method and the sets they
-// know.
 const LAST_LAYER_OPTIONS = [
   { id: 'twolook', caption: 'lastlayer.twolook', method: 'oll', knownSets: [] },
   { id: 'full', caption: 'lastlayer.full', method: 'oll', knownSets: ['oll', 'pll'] },
-  // (COLL covers every OLL now: 329 cases; a COLL user marks the ones they know)
   { id: 'coll', caption: 'lastlayer.coll', method: 'coll', knownSets: ['oll', 'pll'] },
   { id: 'zbll', caption: 'lastlayer.zbll', method: 'zbll', knownSets: ['oll', 'pll'] },
   { id: '1lll', caption: 'lastlayer.1lll', method: '1lll', knownSets: ['oll', 'pll'] },
 ];
-// Last-slot tricks they use (each switches its set on; none: all off).
 const LAST_SLOT_OPTIONS = [
   { id: 'wv', caption: 'lastslot.wv' },
   { id: 'sv', caption: 'lastslot.sv' },
@@ -71,7 +57,6 @@ const LAST_SLOT_OPTIONS = [
 ];
 const lastLayerOption = id => LAST_LAYER_OPTIONS.find(o => o.id === id) || null;
 
-/** Index into SKILL_LEVELS for an average time (seconds); unknown -> the intermediate bracket. */
 function levelFor(seconds) {
   const t = Number(seconds);
   if (!Number.isFinite(t) || t <= 0) return 1;
@@ -79,7 +64,6 @@ function levelFor(seconds) {
   return i < 0 ? SKILL_LEVELS.length - 1 : i;
 }
 
-/** The goals split for a bracket: recommended now, basics (already behind), later (ahead). */
 function goalsFor(level) {
   const out = { recommended: [], basics: [], later: [] };
   for (const g of LEARNING_GOALS) {
@@ -90,7 +74,6 @@ function goalsFor(level) {
   return out;
 }
 
-/** Is goal `id` one the suggestions may bring up for this profile (recommended, or chosen)? */
 function goalAllowed(id, answers) {
   const a = answers || {};
   if ((a.goals || []).includes(id)) return true;
@@ -99,11 +82,6 @@ function goalAllowed(id, answers) {
   return levelFor(a.speed) >= g.from;
 }
 
-/**
- * Onboarding answers -> the existing settings: { colors, advanced, view }.
- * advanced: the first-step types (inspection planning plus chosen goals);
- * view: results settings the goals switch on (never off: defaults stay).
- */
 function settingsFromAnswers(answers) {
   const a = answers || {};
   const advanced = new Set(inspectionOption(a.inspection).advanced.filter(x => goalAllowed(ADVANCED_GOAL[x], a)));
@@ -114,7 +92,6 @@ function settingsFromAnswers(answers) {
     for (const x of g.settings.advanced || []) advanced.add(x);
     Object.assign(view, g.settings.view || {});
   }
-  // the last layer and the last slot (when the questions were answered)
   const ll = lastLayerOption(a.lastLayer);
   if (ll) view.llMethod = ll.method;
   if (Array.isArray(a.lastSlot)) view.lsSets = Object.fromEntries(LAST_SLOT_OPTIONS.map(o => [o.id, a.lastSlot.includes(o.id)]));

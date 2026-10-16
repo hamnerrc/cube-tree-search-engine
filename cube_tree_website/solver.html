@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>cube⑂tree</title>
-    <link rel="stylesheet" href="styles.css?v=48">
-    <script src="js/profile.js?v=48"></script>
+    <title>cubetree</title>
+    <link rel="stylesheet" href="styles.css?v=57">
+    <script src="js/profile.js?v=57"></script>
     <script>
         (function () {
             var p = cubeProfiles && cubeProfiles.active();
@@ -17,13 +17,13 @@
 
 <body>
     <header class="header">
-        <a class="logo" href="solver.html">cube<span class="fork">⑂</span>tree</a>
+        <a class="logo" href="solver.html">cube<svg class="fork" viewBox="0 0 12 17" aria-hidden="true"><path d="M6 16V10M6 10C6 7 2 8 2 4V1M6 10C6 7 10 8 10 4V1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>tree</a>
         <nav class="tabs" aria-label="pages">
             <a class="tab" href="solver.html" aria-current="page">Solve</a>
             <a class="tab" href="algs.html">Algs</a>
         </nav>
         <div class="userbar">
-            <button type="button" class="link" id="info-btn">Help</button>
+            <button type="button" class="btn" id="info-btn">Help</button>
             <a class="profile-chip" id="profile-chip" href="index.html?profiles" title="Switch profile">
                 <span class="initial" aria-hidden="true"></span><span id="profile-name"></span>
             </a>
@@ -32,6 +32,30 @@
     </header>
 
     <main class="solve-page">
+        <section class="scramble-panel" aria-label="scramble">
+            <div class="panel-head">
+                <h2>Scramble <span class="count" id="scramble-pos">1/1</span></h2>
+                <span class="scramble-status" id="scramble-status"></span>
+                <div class="scramble-nav">
+                    <input type="hidden" id="current-scramble-num" value="1">
+                    <button type="button" class="btn tiny" id="scramble-prev" aria-label="previous scramble" title="Previous scramble">&lsaquo;</button>
+                    <button type="button" class="btn tiny" id="scramble-next" aria-label="next scramble" title="Next scramble">&rsaquo;</button>
+                    <button type="button" class="btn tiny" id="new-scramble-btn" title="New random scramble">New</button>
+                    <button type="button" class="btn tiny" id="scramble-edit-btn" aria-expanded="false" aria-controls="scramble-edit">Edit list</button>
+                </div>
+            </div>
+            <div id="scramble-display" class="scramble-text">loading…</div>
+            <div class="scramble-edit" id="scramble-edit" hidden>
+                <textarea class="textarea" id="scramble-input" rows="4" placeholder="One scramble per line" aria-label="scrambles, one per line"></textarea>
+                <div class="row">
+                    <button type="button" class="btn" id="generate-scrambles">Generate</button>
+                    <input class="input" type="number" id="scramble-count" value="1" min="1" max="50" style="width:64px" aria-label="number of scrambles to generate">
+                    <span class="hint">random-state</span>
+                    <button type="button" class="btn primary" id="apply-scrambles">Use these</button>
+                </div>
+            </div>
+        </section>
+
         <section class="cube-box cube-panel" aria-label="cube">
             <div class="cube-stage" id="cube-stage">
                 <canvas id="cube-canvas" aria-label="the cube at the playback position" role="img"></canvas>
@@ -46,7 +70,7 @@
                 <div class="gauge" id="gauge" role="img" aria-label="stages solved at this point">
                     <i data-stage="cross" title="Cross"></i><i data-stage="p1" title="First pair"></i><i data-stage="p2" title="Second pair"></i><i data-stage="p3" title="Third pair"></i><i data-stage="p4" title="Last pair"></i><i data-stage="oll" title="Last layer oriented"></i><i data-stage="pll" title="Solved"></i>
                 </div>
-                <div class="gauge-labels" aria-hidden="true"><span>Cross</span><span>F2L</span><span>LL</span></div>
+                <div class="gauge-labels" aria-hidden="true"><span>Cross</span><span>1</span><span>2</span><span>3</span><span>4</span><span>OLL</span><span>PLL</span></div>
             </div>
             <div class="playback">
                 <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" step="1" aria-label="playback position">
@@ -59,31 +83,8 @@
         </section>
 
         <div class="work">
-            <section class="panel scramble-panel" aria-label="scramble">
-                <div class="panel-head">
-                    <h2>Scramble <span class="count" id="scramble-pos">1/1</span></h2>
-                    <span class="scramble-status" id="scramble-status"></span>
-                    <div class="scramble-nav">
-                        <input type="hidden" id="current-scramble-num" value="1">
-                        <button type="button" class="btn tiny" id="scramble-prev" aria-label="previous scramble" title="Previous scramble">&lsaquo;</button>
-                        <button type="button" class="btn tiny" id="scramble-next" aria-label="next scramble" title="Next scramble">&rsaquo;</button>
-                        <button type="button" class="btn tiny" id="new-scramble-btn" title="New random scramble">New</button>
-                        <button type="button" class="btn tiny" id="scramble-edit-btn" aria-expanded="false" aria-controls="scramble-edit">Edit list</button>
-                    </div>
-                </div>
-                <div id="scramble-display" class="scramble-text">loading…</div>
-                <div class="scramble-edit" id="scramble-edit" hidden>
-                    <textarea class="textarea" id="scramble-input" rows="4" placeholder="One scramble per line" aria-label="scrambles, one per line"></textarea>
-                    <div class="row">
-                        <button type="button" class="btn" id="generate-scrambles">Generate</button>
-                        <input class="input" type="number" id="scramble-count" value="1" min="1" max="50" style="width:64px" aria-label="number of scrambles to generate">
-                        <span class="hint">random-state</span>
-                        <button type="button" class="btn primary" id="apply-scrambles">Use these</button>
-                    </div>
-                </div>
-            </section>
 
-            <section class="panel suggestions" id="suggestions" aria-label="suggestions" aria-live="polite">
+            <section class="suggestions" id="suggestions" aria-label="suggestions" aria-live="polite">
                 <div class="panel-head">
                     <h2 id="suggest-title"></h2>
                     <p class="suggest-note" id="suggest-note"></p>
@@ -92,7 +93,7 @@
                 <div class="picks" id="picks"></div>
             </section>
 
-            <section class="panel solution-panel" aria-label="solution">
+            <section class="solution-panel" aria-label="solution">
                 <div class="panel-head">
                     <h2>Solution</h2>
                     <span class="move-count" id="move-count" title="slice turn metric / execution turn metric (inspection not counted)"></span>
@@ -209,9 +210,10 @@
                     </div>
                 </div>
                 <details>
-                    <summary>Move limits per step type</summary>
+                    <summary>Search limits per step type</summary>
+                    <p class="hint">Leave a box empty to keep the built-in limit, which depends on how many pairs are already solved.</p>
                     <table class="limits-table">
-                        <thead><tr><th>type</th><th>max sol.</th><th>depth</th><th>pseudo sol.</th><th>pseudo depth</th></tr></thead>
+                        <thead><tr><th>Step</th><th>Solutions</th><th>Moves</th><th>Pseudo solutions</th><th>Pseudo moves</th></tr></thead>
                         <tbody id="limits-body"></tbody>
                     </table>
                 </details>
@@ -222,27 +224,27 @@
         </div>
     </dialog>
 
-    <script src="js/captions.js?v=48"></script>
-    <script src="js/segmented.js?v=48"></script>
-    <script src="js/skill-levels.js?v=48"></script>
-    <script src="js/pro-steps.js?v=48"></script>
-    <script src="js/script.js?v=48"></script>
-    <script src="js/facelet-cube.js?v=48"></script>
-    <script src="js/random-state-scramble.js?v=48"></script>
-    <script src="js/facelet-flags.js?v=48"></script>
-    <script src="js/cross-optimization.js?v=48"></script>
-    <script src="js/spelling-search.js?v=48"></script>
-    <script src="crossSolver/solver-helper.js?v=48"></script>
-    <script src="pseudoCrossSolver/solver-helper.js?v=48"></script>
-    <script src="js/search-scheduler.js?v=48"></script>
-    <script src="js/solver-bridge.js?v=48"></script>
-    <script src="js/alg-sets.js?v=48"></script>
-    <script src="js/last-layer.js?v=48"></script>
-    <script src="js/pixel-cube.js?v=48"></script>
-    <script src="js/solve-editor.js?v=48"></script>
-    <script src="js/suggest.js?v=48"></script>
-    <script src="js/critique.js?v=48"></script>
-    <script src="js/solver-ui.js?v=48"></script>
+    <script src="js/captions.js?v=57"></script>
+    <script src="js/segmented.js?v=57"></script>
+    <script src="js/skill-levels.js?v=57"></script>
+    <script src="js/pro-steps.js?v=57"></script>
+    <script src="js/script.js?v=57"></script>
+    <script src="js/facelet-cube.js?v=57"></script>
+    <script src="js/random-state-scramble.js?v=57"></script>
+    <script src="js/facelet-flags.js?v=57"></script>
+    <script src="js/cross-optimization.js?v=57"></script>
+    <script src="js/spelling-search.js?v=57"></script>
+    <script src="crossSolver/solver-helper.js?v=57"></script>
+    <script src="pseudoCrossSolver/solver-helper.js?v=57"></script>
+    <script src="js/search-scheduler.js?v=57"></script>
+    <script src="js/solver-bridge.js?v=57"></script>
+    <script src="js/alg-sets.js?v=57"></script>
+    <script src="js/last-layer.js?v=57"></script>
+    <script src="js/pixel-cube.js?v=57"></script>
+    <script src="js/solve-editor.js?v=57"></script>
+    <script src="js/suggest.js?v=57"></script>
+    <script src="js/critique.js?v=57"></script>
+    <script src="js/solver-ui.js?v=57"></script>
 </body>
 
 </html>

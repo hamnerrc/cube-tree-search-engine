@@ -338,7 +338,7 @@ def build_html_inspector(start_id, node_map):
     </script>
 </body>
 </html>"""
-    with open(SCRIPT_DIR.parent / "f2l_table_inspector.html", "w", encoding="utf-8") as f:
+    with open(SCRIPT_DIR / "f2l_table_inspector.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
 
